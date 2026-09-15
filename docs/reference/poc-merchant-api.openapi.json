@@ -1,0 +1,1455 @@
+{
+  "components": {
+    "schemas": {
+      "AdvanceIn": {
+        "properties": {
+          "days": {
+            "default": 1,
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Days",
+            "type": "integer"
+          }
+        },
+        "title": "AdvanceIn",
+        "type": "object"
+      },
+      "AnswerIn": {
+        "description": "Who answered, and - optionally - which business they are answering for.\n\n**`merchant_id` IS OPTIONAL AND IS CHECKED, WHICH ARE NOT THE SAME THING.**\nThe contract addresses an action by id alone, so it cannot be required; when\nit IS sent it is compared against the row's own owner and a mismatch is\nrefused before anything is read. Task 16 shipped an audit row that\nmisdescribed its own mutation because a caller-supplied id was never checked\nagainst the row it named.",
+        "properties": {
+          "answered_by": {
+            "default": "the merchant",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Answered By",
+            "type": "string"
+          },
+          "merchant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merchant Id"
+          }
+        },
+        "title": "AnswerIn",
+        "type": "object"
+      },
+      "AutonomyIn": {
+        "properties": {
+          "autonomy_level": {
+            "$ref": "#/components/schemas/AutonomyLevel"
+          }
+        },
+        "required": [
+          "autonomy_level"
+        ],
+        "title": "AutonomyIn",
+        "type": "object"
+      },
+      "AutonomyLevel": {
+        "enum": [
+          "ALERTS_ONLY",
+          "APPROVE_FIRST",
+          "FULL_AUTO"
+        ],
+        "title": "AutonomyLevel",
+        "type": "string"
+      },
+      "BillingIn": {
+        "properties": {
+          "billing_status": {
+            "default": "APPROVED",
+            "title": "Billing Status",
+            "type": "string"
+          },
+          "merchant_id": {
+            "format": "uuid",
+            "title": "Merchant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "merchant_id"
+        ],
+        "title": "BillingIn",
+        "type": "object"
+      },
+      "BudgetIn": {
+        "properties": {
+          "monthly_budget_cents": {
+            "exclusiveMinimum": 0.0,
+            "title": "Monthly Budget Cents",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "monthly_budget_cents"
+        ],
+        "title": "BudgetIn",
+        "type": "object"
+      },
+      "BusinessKind": {
+        "enum": [
+          "LOCAL_SERVICE",
+          "ECOMMERCE",
+          "PROFESSIONAL_PRACTICE"
+        ],
+        "title": "BusinessKind",
+        "type": "string"
+      },
+      "ConversionIn": {
+        "properties": {
+          "merchant_id": {
+            "format": "uuid",
+            "title": "Merchant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "merchant_id"
+        ],
+        "title": "ConversionIn",
+        "type": "object"
+      },
+      "CreateMerchantIn": {
+        "description": "A business for the demo to be about.\n\n**`category_code` HAS NO DEFAULT, AND THAT IS A SAFETY DECISION RATHER THAN\nSTRICTNESS.** It used to default to `local_services_plumbing`, and the\nargument for that - \"a default that is wrong for a real merchant is visible\nin `GET /api/merchants/{id}` rather than buried\" - was true about *visibility*\nand wrong about *consequence*, because this is the one field a SAFETY CHECK\nreads.\n\n`workflows.generation.restricted_reason` is `RESTRICTED_VERTICALS.get(\ncategory_code)`, and Blueprint \u00a719 Q4 has it refuse ONBOARDING rather than\nfail at launch, so that a trade this platform cannot advertise never has its\nwebsite crawled, its account queried or a model asked about it. **The default\nwas the one value guaranteed to pass that lookup** - plumbing is the demo\nvertical, definitionally unrestricted - so a caller who omitted the field\ncreated a merchant that sailed through the gate, and a dental surgery or a\npharmacy onboarded as a plumber gets crawled and written about before anybody\nasks what trade it is.\n\n**A silent default answering the question a safety check depends on is not a\ndefault, it is an answer nobody gave.** The console always sends one; a\nrequired field a caller can omit into a false pass is not something a\nclient-side habit should be standing between.\n\n`autonomy_level` and `monthly_budget_cents` keep their defaults: both are\nread by rules that CONSTRAIN what happens, so a wrong one is conservative or\nvisible rather than permissive.\n\n**AND IT IS NOW CHECKED AGAINST A VOCABULARY, NOT MERELY REQUIRED.** Making\nit required closed the half a caller reached by omission; `dental_surgery`\nfor `healthcare_dental_surgery` still passed, which is the half\n`lexicons.py` calls check 11's biggest weakness. `max_length` is the\ncolumn's 80 rather than an arbitrary 50, because membership is the check\nthat matters and a second length limit is a second thing to keep in step.",
+        "properties": {
+          "autonomy_level": {
+            "$ref": "#/components/schemas/AutonomyLevel",
+            "default": "APPROVE_FIRST"
+          },
+          "category_code": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Category Code",
+            "type": "string"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "monthly_budget_cents": {
+            "default": 90000,
+            "exclusiveMinimum": 0.0,
+            "title": "Monthly Budget Cents",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "website_url": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Website Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "website_url",
+          "category_code"
+        ],
+        "title": "CreateMerchantIn",
+        "type": "object"
+      },
+      "FaultIn": {
+        "properties": {
+          "count": {
+            "default": 1,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "kind": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Kind",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "FaultIn",
+        "type": "object"
+      },
+      "Goal": {
+        "enum": [
+          "CALLS",
+          "FORM_LEADS",
+          "STORE_VISITS",
+          "ONLINE_SALES",
+          "APP_INSTALLS"
+        ],
+        "title": "Goal",
+        "type": "string"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "OnboardIn": {
+        "properties": {
+          "business_kind": {
+            "$ref": "#/components/schemas/BusinessKind",
+            "default": "LOCAL_SERVICE"
+          },
+          "goal": {
+            "$ref": "#/components/schemas/Goal",
+            "default": "CALLS"
+          },
+          "monthly_budget_cents": {
+            "exclusiveMinimum": 0.0,
+            "title": "Monthly Budget Cents",
+            "type": "integer"
+          },
+          "service_radius_km": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Radius Km"
+          },
+          "website_url": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Website Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "website_url",
+          "monthly_budget_cents"
+        ],
+        "title": "OnboardIn",
+        "type": "object"
+      },
+      "RevertIn": {
+        "properties": {
+          "merchant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merchant Id"
+          }
+        },
+        "title": "RevertIn",
+        "type": "object"
+      },
+      "SeedIn": {
+        "description": "Seed a demo account. `reset_platform` is off by default and says why.\n\nA reset empties every PPCWay table and the whole simulated world. That is\nwhat `ppcway demo` does at the start of a run, and it is the right thing\nTHERE; here it would destroy the other businesses a client had already made\nwhile clicking around. Off unless asked for.",
+        "properties": {
+          "autonomy_level": {
+            "$ref": "#/components/schemas/AutonomyLevel",
+            "default": "APPROVE_FIRST"
+          },
+          "business_name": {
+            "default": "Alpha Plumbing",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Business Name",
+            "type": "string"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "monthly_budget_cents": {
+            "default": 90000,
+            "exclusiveMinimum": 0.0,
+            "title": "Monthly Budget Cents",
+            "type": "integer"
+          },
+          "reset_platform": {
+            "default": false,
+            "title": "Reset Platform",
+            "type": "boolean"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          }
+        },
+        "title": "SeedIn",
+        "type": "object"
+      },
+      "SignUpIn": {
+        "description": "A business registering itself, to connect a Google account it already has.\n\n**THE FIELDS ARE THE ONES NOBODY ELSE CAN ANSWER.** The name is not among\nthem: it comes from the crawl, because a name read off the merchant's own\nwebsite is a fact about the business, whereas a typed one is a claim and a\nGoogle-supplied one would be read back out of a field we populated.\n\n**`currency` IS REQUIRED AND THAT IS DELIBERATE.** Every figure on every\nscreen is formatted in it, so a silent default would misformat all of them\nwhile looking entirely normal - the same defect as `category_code`'s default,\nagainst a field that decides how money is READ rather than whether to\nproceed. The Google account carries its own `currency_code`, and the two\ndisagreeing is a real and currently unchecked state, so guessing this one\nwould manufacture the mismatch rather than merely fail to detect it.\n\nThe guardrail limits are here for the reason `GuardrailConfig`'s own\ndocstring gives: they are \"what this merchant agreed to, not platform\ndefaults\". Writing them on a merchant's behalf would put a version number on\nan agreement nobody made, and every audit row records which version\nauthorised it.",
+        "properties": {
+          "autonomy_level": {
+            "$ref": "#/components/schemas/AutonomyLevel",
+            "default": "APPROVE_FIRST"
+          },
+          "category_code": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Category Code",
+            "type": "string"
+          },
+          "country": {
+            "maxLength": 2,
+            "minLength": 2,
+            "title": "Country",
+            "type": "string"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "Currency",
+            "type": "string"
+          },
+          "max_bid_cents": {
+            "exclusiveMinimum": 0.0,
+            "title": "Max Bid Cents",
+            "type": "integer"
+          },
+          "max_cpa_cents": {
+            "exclusiveMinimum": 0.0,
+            "title": "Max Cpa Cents",
+            "type": "integer"
+          },
+          "max_daily_budget_cents": {
+            "exclusiveMinimum": 0.0,
+            "title": "Max Daily Budget Cents",
+            "type": "integer"
+          },
+          "min_bid_cents": {
+            "exclusiveMinimum": 0.0,
+            "title": "Min Bid Cents",
+            "type": "integer"
+          },
+          "timezone": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          },
+          "website_url": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Website Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "website_url",
+          "category_code",
+          "country",
+          "timezone",
+          "currency",
+          "max_daily_budget_cents",
+          "max_cpa_cents",
+          "min_bid_cents",
+          "max_bid_cents"
+        ],
+        "title": "SignUpIn",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "PPCWay merchant API",
+    "version": "1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/actions/{action_id}/revert": {
+      "post": {
+        "description": "Undo an applied change, through the one door.\n\n`/v1/actions/{id}/revert` and not a local call: the undo is a mutation and\ngoes through the door like any other, guarded and logged in its own right.\n\n**AN UNDO CAN BE REFUSED AND THAT IS CLAIM 4 HOLDING, NOT FAILING.** Task 32\nmeasured the case: a change made at the per-change cap cannot be reversed,\nbecause undoing a cut of 25% needs a rise of 33% and `delta_limits` will not\nallow it. The claim is a disjunction - reversible OR refused loudly with a\nreason - so this reports which of the two happened rather than reporting the\nsecond as the first.",
+        "operationId": "revert_action_api_actions__action_id__revert_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Action Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevertIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revert Action Api Actions  Action Id  Revert Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revert Action"
+      }
+    },
+    "/api/categories": {
+      "get": {
+        "description": "The trades a business may be created as, with the restricted ones named.\n\n**SERVED SO THAT NOBODY HOLDS A SECOND COPY.** web-ui offered to keep this\nlist console-side with a checker proving its restriction wording matched\n`google.py`-style, character for character. A vocabulary that decides which\ntrades get refused should not live where nothing upstream validates it, and\n`restriction_reason` here is `restricted_reason(code)` verbatim - so the\nsentence on the picker and the sentence in a refusal are one string, and\nthere is nothing for a checker to police.\n\nRestricted trades are INCLUDED. A merchant who cannot find their trade picks\nthe nearest one that is listed, so hiding a restricted trade does not refuse\nit - it launders it into a different category.",
+        "operationId": "list_categories_api_categories_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Categories Api Categories Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Categories"
+      }
+    },
+    "/api/health": {
+      "get": {
+        "description": "What this service can reach, each answered separately.\n\n**THREE FACTS AND NOT ONE BOOLEAN.** \"Healthy\" would be true of a service\nthat could reach neither the database nor the gateway and had simply not\ntried. Each dependency is asked and each answer stands on its own, so a\nclient watching this can say which half is down.",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Api Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/api/merchants": {
+      "get": {
+        "operationId": "list_merchants_api_merchants_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Merchants Api Merchants Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Merchants"
+      },
+      "post": {
+        "description": "Create a business with a simulated Google Ads account under the MCC.\n\n**THIS ENDPOINT REQUIRES A SIMULATED DEPLOYMENT AND THAT IS NOT A GAP.** It\ncreates a merchant AND provisions the Google account it is linked to, which\nis only something we can do to a simulator. In a real deployment a merchant\narrives by signing up and connecting their own account through Google's\nconsent screen, and creating the row without that would leave a business\nwith a link to an account nobody had authorised.\n\n`ppcway.acceptance.world.seed_merchant` writes the four rows - the merchant,\nthe link, a first business profile and the guardrail limits - and is used\nrather than reproduced. The limits in particular are a judgement about what\na merchant agreed to, and a second copy of them here would be a second set\nof numbers to keep in step.",
+        "operationId": "create_merchant_api_merchants_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMerchantIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Merchant Api Merchants Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Merchant"
+      }
+    },
+    "/api/merchants/{merchant_id}": {
+      "get": {
+        "operationId": "get_merchant_api_merchants__merchant_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Merchant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Merchant Api Merchants  Merchant Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Merchant"
+      }
+    },
+    "/api/merchants/{merchant_id}/actions": {
+      "get": {
+        "description": "The audit log: everything this platform decided about this merchant.\n\nNewest first, every status, each row carrying what changed, the reason it\nwas proposed, what the guardrails said, and whether an undo may be asked\nfor. Nothing is filtered out - a rejection is part of the record of what was\ndone on somebody's behalf, and a log that showed only the successes would be\nthe wrong shape for the thing it exists to prove.",
+        "operationId": "list_actions_api_merchants__merchant_id__actions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Merchant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Actions Api Merchants  Merchant Id  Actions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Actions"
+      }
+    },
+    "/api/merchants/{merchant_id}/autonomy": {
+      "put": {
+        "description": "Change how much this platform may do on its own.\n\n**WHAT THIS DOES NOT WRITE, SAID PLAINLY RATHER THAN IMPLIED AWAY.**\nBlueprint \u00a78.3 makes autonomy consent a compliance artifact -\n`autonomy_consent` records WHO agreed, from which address, against which\nguardrail version - and this PoC has no authenticated user to put in it. A\nconsent row with a made-up user id would be a compliance record that is\nworse than none, so none is written, and no response here claims one was.\nThe level itself is what the guardrails read (`check_autonomy_level` reads\n`Merchant.autonomy_level`), so the change is real; what is missing is the\nevidence of who asked for it.\n\nThe level is validated by `AutonomyIn` against the enum, so an unrecognised\none is a 400 before it reaches a row. That matters more than it looks:\n`gateway.actions._autonomy_level` treats a level it does not recognise as\nUNEVALUABLE, and every change for that merchant then fails closed forever\nwith a reason about our own data.",
+        "operationId": "set_autonomy_api_merchants__merchant_id__autonomy_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Merchant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutonomyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Autonomy Api Merchants  Merchant Id  Autonomy Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Autonomy"
+      }
+    },
+    "/api/merchants/{merchant_id}/budget": {
+      "put": {
+        "description": "The merchant changes their mind about what to spend in a month.\n\n**A NEW PROFILE VERSION, NOT AN EDIT**, because that is how this platform\nrecords a merchant changing their mind: `load_pacing_state` reads the\nhighest version, and the earlier one stays as the record of what they had\nagreed before. An in-place edit would leave no evidence that the figure the\npacing rule is now correcting towards is not the one the campaign was built\nfor.\n\n**AND THIS IS WHAT GIVES THE PACING RULE SOMETHING TO SAY.** A campaign\nlaunched by `daily_budget_cents(monthly)` paces almost exactly on target BY\nCONSTRUCTION - the daily budget IS the monthly one divided by the month - so\n`budget_pacing` correctly proposes nothing about a campaign nobody has\ntouched, and a demo without this lever shows a merchant an empty approval\nqueue and no way to fill it. `ppcway.acceptance.story` records the same\nmeasurement and needs the same act.\n\nThe campaign's LIVE daily budget is deliberately NOT changed here. That is a\nmutation of a merchant's account, it goes through the one door with the\nguardrails on it, and the whole point is that the automation proposes it and\nthe merchant is asked.",
+        "operationId": "set_budget_api_merchants__merchant_id__budget_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Merchant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Budget Api Merchants  Merchant Id  Budget Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Budget"
+      }
+    },
+    "/api/merchants/{merchant_id}/google/campaigns": {
+      "get": {
+        "description": "What Google holds for this business, read through the one door.\n\nThe only read this proof of concept makes against a real Google Ads\naccount. Passed through unshaped, like `/api/quota`: the names, statuses\nand figures are Google's, the timestamp is when the door asked, and a\nrefusal travels inside the answer with Google's reason and one sentence for\nthe merchant, so the console can say \"Google would not answer\" rather than\nshowing a connection error.",
+        "operationId": "google_campaigns_api_merchants__merchant_id__google_campaigns_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Merchant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Google Campaigns Api Merchants  Merchant Id  Google Campaigns Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Google Campaigns"
+      }
+    },
+    "/api/merchants/{merchant_id}/launch": {
+      "post": {
+        "description": "Log one intent, let the guardrails answer it, then send the four steps.\n\n**THE LAUNCH IS ONE LOGGED DECISION AND FOUR CALLS, AND THE ORDER IS\nENFORCED BY THE DOOR.** A single `CREATE_CAMPAIGN` action whose\n`after_values` name the ordered steps authorises the whole sequence;\n`/v1/mutate` rebuilds each step from that row and refuses it until its\npredecessors have landed with the ids they really created. So this loop\nbeing written correctly is not what makes the order safe.\n\n**PRESSING LAUNCH IS THE APPROVAL.** For an APPROVE_FIRST merchant the\nlogged intent comes back REQUIRES_APPROVAL, exactly like any other change,\nand the approval is applied here - which re-runs every check but autonomy on\na context built now. That is the same shape `ppcway.acceptance.story._launch`\nrecords: demanding PENDING was demanding that the merchant not be asked.",
+        "operationId": "launch_api_merchants__merchant_id__launch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Merchant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Launch Api Merchants  Merchant Id  Launch Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Launch"
+      }
+    },
+    "/api/merchants/{merchant_id}/metrics": {
+      "get": {
+        "description": "Impressions, clicks, cost and conversions by day.\n\n`days_covered` travels with the rows so a client can say \"no figures yet\"\nrather than drawing an empty chart a merchant reads as zero traffic - the\nsame distinction `ReconciliationReport.unresolvable` exists for one layer\nout: \"we looked and there was nothing\" is not \"we did not look\".",
+        "operationId": "get_metrics_api_merchants__merchant_id__metrics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Merchant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Metrics Api Merchants  Merchant Id  Metrics Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Metrics"
+      }
+    },
+    "/api/merchants/{merchant_id}/onboard": {
+      "post": {
+        "description": "Read the website, decide the structure and the bidding, and write a preview.\n\nNothing is changed on the Google account: the only two calls this makes are\nthe keyword-ideas read and a pre-flight, and `preflight_campaign_sync` forces\n`validate_only` whatever the payload says.",
+        "operationId": "onboard_merchant_api_merchants__merchant_id__onboard_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Merchant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnboardIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Onboard Merchant Api Merchants  Merchant Id  Onboard Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Onboard Merchant"
+      }
+    },
+    "/api/merchants/{merchant_id}/preview": {
+      "get": {
+        "operationId": "get_preview_api_merchants__merchant_id__preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Merchant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Preview Api Merchants  Merchant Id  Preview Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Preview"
+      }
+    },
+    "/api/merchants/{merchant_id}/proposals": {
+      "get": {
+        "description": "Everything waiting for this merchant to answer.\n\nREQUIRES_APPROVAL and nothing else: a queue that also showed rejected or\napplied rows would be an audit log with a misleading name, and\n`/api/merchants/{id}/actions` is the audit log.\n\n**A LAUNCH IS EXCLUDED, AND THAT IS AN INHERITED GAP RATHER THAN A CHOICE\nABOUT WHAT MERCHANTS SHOULD SEE.** `gateway.actions.submit`'s launch branch\nreturns without touching the status, so a launch that has been approved AND\nCARRIED OUT still reads REQUIRES_APPROVAL for ever - Task 29 disclosed this\nin as many words: the audit log cannot tell \"waiting for the merchant\" from\n\"the merchant said yes and the launch is under way\". Both are unresolved,\nwhich is what the door's gate requires, so the launch proceeds correctly; it\nis the READER of the log who is told less than the truth.\n\nLeft in, that row sits in the approval queue permanently, asking a merchant\nto approve a campaign that is already running - and pressing approve on it\nreaches the launch branch again and resolves nothing, so the queue would not\neven empty. `is_launch` is the platform's own test for what a launch is\n(read from `after_values`, not from the action type, because a\nCREATE_CAMPAIGN that is not a sequence is a different thing), so this filter\ncannot drift from it. The row is still in `/actions`, with the status the\ndatabase actually holds.",
+        "operationId": "list_proposals_api_merchants__merchant_id__proposals_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Merchant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Proposals Api Merchants  Merchant Id  Proposals Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Proposals"
+      }
+    },
+    "/api/proposals/{action_id}/approve": {
+      "post": {
+        "description": "Apply what the merchant approved. GUARD again, then MUTATE, then RECORD.\n\nLOG is not repeated because the row already exists - that is what an\napproval queue is - but every check except autonomy runs again on a context\nbuilt NOW, because the account may have moved while the merchant was\nthinking. So a 200 here is not necessarily an applied change: read\n`applied`, and when it is false read `refusal`.",
+        "operationId": "approve_proposal_api_proposals__action_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Action Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Approve Proposal Api Proposals  Action Id  Approve Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Proposal"
+      }
+    },
+    "/api/proposals/{action_id}/reject": {
+      "post": {
+        "description": "The merchant said no. Nothing is sent anywhere, so nothing is guarded.\n\n`answered_by` is recorded on the row and is the one thing not already there:\na refusal with nobody's name on it is indistinguishable from a guardrail\nrejection when somebody asks, months later, why a change did not happen.",
+        "operationId": "reject_proposal_api_proposals__action_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Action Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reject Proposal Api Proposals  Action Id  Reject Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Proposal"
+      }
+    },
+    "/api/quota": {
+      "get": {
+        "description": "The gateway's own quota state, unmodified.\n\nPassed through rather than re-shaped: the numbers are the door's, the\nceiling is the door's setting, and a second vocabulary for them here would\nbe a second thing to keep true.",
+        "operationId": "quota_api_quota_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Quota Api Quota Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Quota"
+      }
+    },
+    "/api/signups": {
+      "post": {
+        "description": "Register a business that will connect its OWN Google account.\n\n**THIS IS THE REAL-DEPLOYMENT PATH AND IT IS A SECOND ENDPOINT RATHER THAN A\nFLAG.** `POST /api/merchants` provisions a Google account and therefore\nrequires a simulated deployment; conjuring somebody an account they do not\nown is a request that should be refused, and that guard stays. The two are\ndifferent ACTS, not one act with a branch - and a branch that runs in only\none configuration is how the real-mode path stays untested.\n\n**IT NEVER PROVISIONS, AND THAT IS CHECKED RATHER THAN PROMISED.**\n`tests/api/test_signup.py::test_only_the_simulated_endpoint_can_provision_an_account`\nwalks this module for the functions that reference `provision` and requires\nthe set to be exactly `{create_merchant}`.\n\n**THE RESTRICTED GATE IS ASKED BEFORE THE CRAWL**, which is \u00a719 Q4's own\nordering and the reason it is written here rather than left to onboarding: a\nmerchant whose trade this platform cannot advertise should not have their\nwebsite read on the way to being told so. Taking a durable Google credential\nis strictly more than reading their site, so it must not happen first\neither - which is why this endpoint exists at all rather than the console\nsending them to Google before we know their trade.\n\n**ONE ROW, NOT `seed_merchant`'s FOUR.** No `GoogleAdsLink`: the link comes\nfrom a consent the merchant completes, and a row asserting a link nobody\nauthorised is precisely what `create_merchant`'s docstring refuses. No\n`BusinessProfile` either - onboarding writes that from the crawl it does\nitself. The `GuardrailConfig` IS written, from limits the merchant agreed\nto on the way in.\n\n**A LINKLESS MERCHANT CANNOT SPEND, AND NOT BECAUSE OF ANYTHING HERE.**\n`guardrails.check_link_valid` calls `_require(c.link_status, ...)`, which\nraises `_Unevaluable` on `None`, so check 1 fail-closes before anything\nreaches Google. The safety property was enforced before this endpoint\nexisted; this docstring records where it comes from so nobody re-implements\nit as a status column.\n\nThe console sends the merchant to `/start?merchant_id=...` next, which is\nunchanged - there is no new contract with the OAuth half.",
+        "operationId": "sign_up_api_signups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignUpIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Sign Up Api Signups Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sign Up"
+      }
+    },
+    "/api/sim/advance": {
+      "post": {
+        "description": "Run the simulated world forward, then let the optimization loop see it.\n\n**ADVANCING THE CALENDAR WITHOUT RUNNING THE LOOP WOULD SHOW A CLIENT\nNOTHING.** The rules read the store, the store is filled by ingestion, and\ningestion reads the days the auction has generated - so the three are one\nact from a demo's point of view, and splitting them into three endpoints\nwould make \"advance 30 days\" appear to do nothing at all.\n\nEvery merchant with a linked account and a campaign we know about is swept.\nOne merchant's failure is reported and does not stop the others - see\n`ppcway.api.optimizing`.",
+        "operationId": "sim_advance_api_sim_advance_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdvanceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Sim Advance Api Sim Advance Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sim Advance"
+      }
+    },
+    "/api/sim/billing": {
+      "post": {
+        "description": "Approve (or un-approve) billing at Google, and mirror it onto the link.\n\n**BOTH HALVES, AND THE SECOND IS NOT BOOKKEEPING.** `check_billing_ready`\nreads `GoogleAdsLink.billing_status`, which is PPCWay's MIRROR of a fact\nGoogle owns - and nothing in `src/` syncs it (the account-health poll reads\nit rather than writing it). So the mirror is written at the moment Google's\noriginal is changed, exactly as `ppcway.acceptance.story._billing` does it,\nand `docs/ACCEPTANCE.md` names that as a limitation rather than letting it\nlook like a sync.",
+        "operationId": "sim_billing_api_sim_billing_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BillingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Sim Billing Api Sim Billing Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sim Billing"
+      }
+    },
+    "/api/sim/conversion": {
+      "post": {
+        "description": "Record that a conversion has been seen end to end. Story step 6.\n\nA PPCWay row rather than a simulator one, because what it records is that WE\nsaw the conversion arrive: Google's own conversion action is a different\nfact, and conflating them is how a platform tells a merchant their tracking\nworks when it has never seen a lead. `decide_bidding` refuses a launch\nwithout one (\u00a713.5's gate, which does not bend for volume), so this is what\nturns that refusal into a launch.",
+        "operationId": "sim_conversion_api_sim_conversion_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Sim Conversion Api Sim Conversion Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sim Conversion"
+      }
+    },
+    "/api/sim/fault": {
+      "post": {
+        "description": "Arm a Google-side failure for the next few calls.",
+        "operationId": "sim_fault_api_sim_fault_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FaultIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Sim Fault Api Sim Fault Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sim Fault"
+      }
+    },
+    "/api/sim/seed": {
+      "post": {
+        "description": "A merchant, an account under the MCC, and optionally a clean slate.\n\nEverything here is `ppcway.acceptance.world`'s, which is the module the demo\nand the acceptance checks already use. A second seeding path would be a\nsecond definition of what a demo account looks like.",
+        "operationId": "sim_seed_api_sim_seed_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeedIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Sim Seed Api Sim Seed Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sim Seed"
+      }
+    }
+  }
+}

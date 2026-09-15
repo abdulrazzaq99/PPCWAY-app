@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PPCWay Screen Guide</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --canvas: #F4F6F8;
+    --shell: #EAEEF2;
+    --panel: #FFFFFF;
+    --ink: #16202A;
+    --muted: #5C6B7A;
+    --line: #DDE3EA;
+    --emerald: #117E58;
+    --emerald-soft: #E3F2EB;
+    --amber: #B7791F;
+    --amber-soft: #FBF1DF;
+    --red: #B93838;
+    --red-soft: #F9E6E6;
+    --sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --canvas: #0F1519;
+      --shell: #141C23;
+      --panel: #1A242E;
+      --ink: #EEF2F5;
+      --muted: #9AA8B5;
+      --line: #2B3843;
+      --emerald: #4CC495;
+      --emerald-soft: #163326;
+      --amber: #E0A84A;
+      --amber-soft: #3A2C12;
+      --red: #E27070;
+      --red-soft: #3D1C1C;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --canvas: #0F1519;
+    --shell: #141C23;
+    --panel: #1A242E;
+    --ink: #EEF2F5;
+    --muted: #9AA8B5;
+    --line: #2B3843;
+    --emerald: #4CC495;
+    --emerald-soft: #163326;
+    --amber: #E0A84A;
+    --amber-soft: #3A2C12;
+    --red: #E27070;
+    --red-soft: #3D1C1C;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    padding-block: 0 96px;
+    padding-inline: 20px;
+  }
+  a { color: var(--emerald); }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--emerald); outline-offset: 2px; }
+  h1, h2, h3, h4 { margin: 0; text-wrap: balance; font-weight: 600; line-height: 1.15; }
+  p { margin: 0; }
+  img { max-width: 100%; display: block; }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+  .prose { max-width: 66ch; }
+
+  /* Masthead */
+  .mast {
+    padding-block: 56px 40px;
+    border-bottom: 1px solid var(--line);
+    display: grid;
+    gap: 20px;
+  }
+  .wordmark {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-weight: 600; font-size: 18px; letter-spacing: -0.01em;
+  }
+  .wordmark i {
+    width: 22px; height: 22px; border-radius: 7px; background: var(--emerald); display: inline-block;
+  }
+  .mast h1 { font-size: clamp(30px, 4.6vw, 44px); letter-spacing: -0.02em; }
+  .lede { font-size: 19px; color: var(--muted); max-width: 62ch; }
+
+  /* How it works strip */
+  .rules {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+    margin-block: 40px;
+  }
+  .rule {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 20px 22px; display: grid; gap: 8px; align-content: start;
+  }
+  .rule h3 { font-size: 17px; }
+  .rule p { color: var(--muted); font-size: 15px; }
+  .rule .k { font-family: var(--mono); font-size: 12px; color: var(--emerald); letter-spacing: 0.04em; text-transform: uppercase; }
+
+  /* Contents */
+  .toc {
+    background: var(--shell); border-radius: 20px; padding: 22px 26px;
+    display: grid; gap: 12px; margin-block: 8px 56px;
+  }
+  .toc h2 { font-size: 15px; color: var(--muted); font-weight: 500; }
+  .toc ol { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 28px; }
+  .toc li a { text-decoration: none; color: var(--ink); display: flex; justify-content: space-between; gap: 12px; padding-block: 5px; border-bottom: 1px solid var(--line); }
+  .toc li a:hover { color: var(--emerald); }
+  .toc li a span { color: var(--muted); font-size: 14px; }
+
+  /* Part headers */
+  .part { margin-block: 72px 28px; display: grid; gap: 10px; }
+  .part .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .part h2 { font-size: 30px; letter-spacing: -0.015em; }
+  .part p { color: var(--muted); font-size: 17px; }
+
+  /* Screen sections */
+  .screen {
+    background: var(--shell); border-radius: 20px; padding: 14px;
+    margin-block: 0 28px; display: grid; gap: 14px;
+    scroll-margin-top: 20px;
+  }
+  .screen figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .screen figure img { width: 100%; height: auto; }
+  .screen figcaption { padding: 10px 16px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); font-family: var(--mono); }
+  .screen .body { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 26px 28px; display: grid; gap: 22px; }
+  .screen .head { display: grid; gap: 6px; }
+  .screen .head h3 { font-size: 24px; letter-spacing: -0.01em; }
+  .screen .head .where { color: var(--muted); font-size: 15px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+  .col h4 { font-size: 13px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+  .col p + p { margin-top: 10px; }
+  .col ul { margin: 0; padding-left: 18px; display: grid; gap: 8px; }
+  .ref { font-family: var(--mono); font-size: 12px; color: var(--muted); background: var(--shell); padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
+
+  .poc { border-top: 1px solid var(--line); padding-top: 18px; display: grid; gap: 10px; }
+  .poc h4 { font-size: 13px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; }
+  .poc ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+  .poc li { display: grid; grid-template-columns: 96px 1fr; gap: 12px; align-items: start; font-size: 15px; }
+  .pill { display: inline-block; font-size: 12px; font-weight: 500; padding: 2px 9px; border-radius: 999px; line-height: 1.6; text-align: center; white-space: nowrap; }
+  .pill.ok { background: var(--emerald-soft); color: var(--emerald); }
+  .pill.wait { background: var(--amber-soft); color: var(--amber); }
+  .pill.out { background: var(--shell); color: var(--muted); }
+  .pill.live { background: var(--emerald); color: #fff; }
+
+  .note { background: var(--amber-soft); border-radius: 10px; padding: 12px 16px; font-size: 15px; }
+  .note b { color: var(--amber); font-weight: 600; }
+
+  /* Glossary */
+  dl { margin: 0; display: grid; grid-template-columns: 200px 1fr; gap: 12px 24px; }
+  dt { font-weight: 600; }
+  dd { margin: 0; color: var(--muted); }
+  dl > * { padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+
+  footer { margin-top: 64px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); padding-top: 18px; }
+
+  @media (max-width: 760px) {
+    .rules { grid-template-columns: 1fr; }
+    .toc ol { grid-template-columns: 1fr; }
+    .cols { grid-template-columns: 1fr; gap: 18px; }
+    .screen .body { padding: 20px 18px; }
+    dl { grid-template-columns: 1fr; gap: 4px 0; }
+    dt { padding-bottom: 0; border-bottom: 0; }
+    .poc li { grid-template-columns: 1fr; gap: 4px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="mast">
+    <span class="wordmark"><i></i>ppcway</span>
+    <h1>The PPCWay console, one screen at a time</h1>
+    <p class="lede">PPCWay runs Google search ads for small businesses like a plumber or an electrician. This page walks through every screen in the new design, says what a business owner sees, and explains in plain words what the system is doing underneath. It also says which parts the proof of concept has built.</p>
+  </header>
+
+  <section class="rules" aria-label="Three ideas behind every screen">
+    <div class="rule">
+      <span class="k">Idea one</span>
+      <h3>Plain words before numbers</h3>
+      <p>Every screen opens with a sentence a person can read, such as "You spent $1,240 and got 58 calls." The number comes after the sentence, and the chart after the number. No Google Ads jargon unless you switch on the Advanced view.</p>
+    </div>
+    <div class="rule">
+      <span class="k">Idea two</span>
+      <h3>Ask first, then act</h3>
+      <p>By default PPCWay proposes a change, explains why, and waits. Nothing changes until the owner says yes. Anything left alone expires after seven days. Every change can be undone.</p>
+    </div>
+    <div class="rule">
+      <span class="k">Idea three</span>
+      <h3>One door to Google, with limits on it</h3>
+      <p>Only one part of the system is allowed to talk to Google Ads. Before any change goes through that door it is checked against the owner's limits: most spent in a day, most paid for a call, biggest change at once. If a limit says no, that is the product working, not a fault.</p>
+    </div>
+  </section>
+
+  <nav class="toc" aria-label="Contents">
+    <h2>What is on this page</h2>
+    <ol>
+      <li><a href="#home">Home <span>the daily glance</span></a></li>
+      <li><a href="#campaigns">Campaigns <span>the ad, in plain English</span></a></li>
+      <li><a href="#approvals">Approvals <span>changes waiting for a yes</span></a></li>
+      <li><a href="#activity">Activity <span>everything that happened</span></a></li>
+      <li><a href="#advanced">Advanced view <span>Google's own numbers</span></a></li>
+      <li><a href="#settings">Settings <span>how much PPCWay may do</span></a></li>
+      <li><a href="#alerts">Alerts <span>designed, not built</span></a></li>
+      <li><a href="#onboarding">Getting set up <span>five steps, about fifteen minutes</span></a></li>
+      <li><a href="#glossary">Words used here <span>a short glossary</span></a></li>
+    </ol>
+  </nav>
+
+  <div class="part">
+    <span class="eyebrow">Part one</span>
+    <h2>The everyday screens</h2>
+    <p class="prose">These are the pages an owner sees after setup. The left sidebar is the same on all of them: the business name, five pages, an Advanced view switch, and Help.</p>
+  </div>
+
+  <!-- HOME -->
+  <section class="screen" id="home">
+    <figure>
+      <img src="figma-poc-frames/01-home.png" alt="The Home screen: a headline sentence, a cost-per-call chart, a list of what PPCWay did this week, one proposal waiting, and the campaign list." width="1440" height="1000">
+      <figcaption>Figma frame 01, Home</figcaption>
+    </figure>
+    <div class="body">
+      <div class="head">
+        <h3>Home</h3>
+        <p class="where">The first thing an owner sees. Answers "is my money working?" in one glance.</p>
+      </div>
+      <div class="cols">
+        <div class="col">
+          <h4>What you see</h4>
+          <p>A sentence at the top: how much was spent and how many calls it brought. Under it, the cost of one call and whether that is better or worse than last month.</p>
+          <p>A bar chart of cost per call by week. A short list headed "What PPCWay did this week", each line a sentence with an Undo link. On the right, a yellow card if one change is waiting for a decision, and the list of campaigns with a status word: Live, Learning, Paused.</p>
+        </div>
+        <div class="col">
+          <h4>What happens underneath</h4>
+          <p>The architecture document calls this the "default view" of the dashboard <span class="ref">Blueprint §10.1</span>. It lists exactly these rows: spend, results, cost per result, the trend against last period, a plain-English activity feed, and campaign names in ordinary words.</p>
+          <p>The sentences in "What PPCWay did this week" are not written by the screen. They are stored with each change when it happens <span class="ref">§8.4</span>, so the website, the weekly email and the support team all read the same words.</p>
+          <p>The yellow card is a change held for approval <span class="ref">§8.3</span>. Undo asks the system to put the setting back and records that as its own entry.</p>
+        </div>
+      </div>
+      <div class="poc">
+        <h4>In the proof of concept</h4>
+        <ul>
+          <li><span class="pill ok">Built</span><span>Headline, cost chart, weekly activity, the waiting card, and the campaign list, all fed by the running system.</span></li>
+          <li><span class="pill out">Left out</span><span>"What people searched to find you". Nothing in the proof of concept can supply search terms yet, so the panel is absent rather than filled with made-up words.</span></li>
+          <li><span class="pill out">Left out</span><span>The "Searches" page in the sidebar, for the same reason.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- CAMPAIGNS -->
+  <section class="screen" id="campaigns">
+    <figure>
+      <img src="figma-poc-frames/02-campaigns.png" alt="The Campaigns screen: the campaign described in one sentence, the search phrases it targets, the ad as people will see it, excluded searches, a launch checklist and the budget." width="1440" height="1260">
+      <figcaption>Figma frame 02, Campaigns</figcaption>
+    </figure>
+    <div class="body">
+      <div class="head">
+        <h3>Campaigns</h3>
+        <p class="where">The ad campaign PPCWay wrote, explained before it goes live.</p>
+      </div>
+      <div class="cols">
+        <div class="col">
+          <h4>What you see</h4>
+          <p>One sentence saying who will see the ad, where, for what searches, and how much a day. Then the search phrases grouped by topic, the ad exactly as it will appear on Google, and a list of searches the ad will never pay for, such as "jobs" or "salary".</p>
+          <p>On the right, a checklist before launch: Google account linked, payment method added, call counting working. Each says Done or Needs you. Below it the daily budget and a promise never to spend more than a stated ceiling in one day.</p>
+        </div>
+        <div class="col">
+          <h4>What happens underneath</h4>
+          <p>This is step 9 of the setup journey in the architecture document, the "plain-English preview" <span class="ref">§4.4</span>. Everything on the left was produced by the steps before it: reading the website, choosing search topics, writing ad wording and checking it against Google's rules, then assembling the campaign by fixed rules.</p>
+          <p>The checklist exists because of one hard fact: Google will not let any software enter a payment card <span class="ref">§13.1</span>. The owner must do that on Google's own site. So the campaign is made fully approvable while that is outstanding, and coming back is one click.</p>
+          <p>Call counting is on the list because without it PPCWay can only see clicks, not results <span class="ref">§13.5</span>. The ceiling under the budget is one of the hard spend limits every change is checked against <span class="ref">§5.5</span>.</p>
+        </div>
+      </div>
+      <div class="poc">
+        <h4>In the proof of concept</h4>
+        <ul>
+          <li><span class="pill ok">Built</span><span>The sentence, the phrases, the ad preview, the excluded searches, the launch checklist with real Done and Needs you states, and the budget with its ceiling.</span></li>
+          <li><span class="pill out">Left out</span><span>"Edit any part", "Edit keywords" and "Edit wording". The proof of concept has no way to act on them yet, so the links are not shown.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- APPROVALS -->
+  <section class="screen" id="approvals">
+    <figure>
+      <img src="figma-poc-frames/03-approvals.png" alt="The Approvals screen: two proposed changes each with a reason, the before and after values, Approve and Skip buttons, and a list of decisions made this month." width="1440" height="1080">
+      <figcaption>Figma frame 03, Approvals</figcaption>
+    </figure>
+    <div class="body">
+      <div class="head">
+        <h3>Approvals</h3>
+        <p class="where">Changes PPCWay would like to make, waiting for a yes or a no.</p>
+      </div>
+      <div class="cols">
+        <div class="col">
+          <h4>What you see</h4>
+          <p>A headline saying how many changes are waiting. Each one is a yellow card: what the change is, why, the value now and the value proposed, how many days before it expires, and two buttons, Approve and Skip this.</p>
+          <p>Below, the decisions already made this month. On the right, a short explanation of how approvals work and the owner's current setting, "Approve first".</p>
+        </div>
+        <div class="col">
+          <h4>What happens underneath</h4>
+          <p>PPCWay runs on a schedule, reads the numbers, and applies fixed rules that produce proposals <span class="ref">§4.5</span>. Each proposal then passes through the checks at the door to Google. Check number three is the owner's autonomy setting <span class="ref">§5.5</span>. With "Approve first" the proposal is held here instead of applied, and expires after seven days <span class="ref">§8.3</span>.</p>
+          <p>The "Now / Proposed" row is stored before anything happens, so the change can be reversed later <span class="ref">§8.4</span>. The document is careful about one thing the screen repeats: undo restores the setting, not the money already spent.</p>
+        </div>
+      </div>
+      <div class="poc">
+        <h4>In the proof of concept</h4>
+        <ul>
+          <li><span class="pill ok">Built</span><span>Waiting cards with reasons, before and after values, expiry, Approve and Skip, the month's decisions, and the setting panel.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ACTIVITY -->
+  <section class="screen" id="activity">
+    <figure>
+      <img src="figma-poc-frames/04-activity.png" alt="The Activity screen: a filterable list of everything PPCWay did, grouped by day, with counts for the month and the owner's limits on the right." width="1440" height="1000">
+      <figcaption>Figma frame 04, Activity</figcaption>
+    </figure>
+    <div class="body">
+      <div class="head">
+        <h3>Activity</h3>
+        <p class="where">The full record of what PPCWay did, in plain words, with Undo on each line.</p>
+      </div>
+      <div class="cols">
+        <div class="col">
+          <h4>What you see</h4>
+          <p>A list grouped by Today, Yesterday and Earlier this week. Each line is a sentence such as "Paused 3 search terms that spent $38 without a single call", with when it happened and an Undo link. Filters across the top: Everything, Applied, Waiting for you, Undone, Held by your limits.</p>
+          <p>On the right, counts for the month and the owner's limits: most spent in a day, most paid for one call, biggest change in one day.</p>
+        </div>
+        <div class="col">
+          <h4>What happens underneath</h4>
+          <p>The architecture document calls this record the "audit spine" of the whole product <span class="ref">§8.4</span>. Every change is written down before it is made, can never be edited afterwards, and carries enough detail to reverse it. That is why the subline says changes are "written down before they happen".</p>
+          <p>"Held by your limits" shows changes the door refused. The document's rule is to fail closed: if a limit cannot be checked, nothing is spent <span class="ref">§4.1</span>. So the screen calls a refusal "the system working, not a fault".</p>
+          <p>An undo is a change in its own right and gets its own line, "You undid…", rather than quietly disappearing from the list.</p>
+        </div>
+      </div>
+      <div class="poc">
+        <h4>In the proof of concept</h4>
+        <ul>
+          <li><span class="pill ok">Built</span><span>The grouped list, all five filters, Undo and Review links, the monthly counts, and the limits panel.</span></li>
+          <li><span class="pill out">Left out</span><span>"Change limits". Limits can be read but not yet edited from the console, so the list shows the version in force.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ADVANCED -->
+  <section class="screen" id="advanced">
+    <figure>
+      <img src="figma-poc-frames/05-advanced-view.png" alt="The Advanced view: a table of search campaigns with impressions, clicks, click-through rate, cost per click, calls and cost, using Google's own names." width="1440" height="720">
+      <figcaption>Figma frame 05, Advanced view (Home with the switch on)</figcaption>
+    </figure>
+    <div class="body">
+      <div class="head">
+        <h3>Advanced view</h3>
+        <p class="where">For owners who already know Google Ads. The same account in Google's own words and numbers.</p>
+      </div>
+      <div class="cols">
+        <div class="col">
+          <h4>What you see</h4>
+          <p>Flip the switch at the foot of the sidebar and Home becomes a table: each campaign with impressions, clicks, click-through rate, average cost per click, calls and cost, plus a total row. Tabs for Campaigns, Ad groups, Keywords and Search terms.</p>
+        </div>
+        <div class="col">
+          <h4>What happens underneath</h4>
+          <p>The architecture document specifies two views of the same dashboard and this is the second column: Google entity names, raw metrics, per-campaign breakdowns <span class="ref">§10.1</span>. Google also requires any tool like PPCWay to be able to report at account, campaign, ad group and ad level <span class="ref">§12.3</span>, which is what the four tabs are for.</p>
+          <p>The subline, "anything you change here is still checked against your limits", is the one-door rule again. There is no back way into Google that skips the checks.</p>
+        </div>
+      </div>
+      <div class="poc">
+        <h4>In the proof of concept</h4>
+        <ul>
+          <li><span class="pill live">Live</span><span>The Campaigns tab reads straight from a real Google Ads test account. The campaign created there this week appears with its real status and budget. Clicks and cost stay at zero because test accounts never show ads to the public.</span></li>
+          <li><span class="pill out">Left out</span><span>Ad groups, Keywords and Search terms tabs are shown greyed out, and "New campaign" is absent.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="screen" id="settings">
+    <figure>
+      <img src="figma-poc-frames/06-settings.png" alt="The Settings screen: three autonomy levels, the limits PPCWay must never cross, the subscription plan and who can see the account." width="1440" height="880">
+      <figcaption>Figma frame 06, Settings</figcaption>
+    </figure>
+    <div class="body">
+      <div class="head">
+        <h3>Settings</h3>
+        <p class="where">How much PPCWay may do on its own, and the lines it must never cross.</p>
+      </div>
+      <div class="cols">
+        <div class="col">
+          <h4>What you see</h4>
+          <p>Three choices in plain words. "Tell me, I'll decide": PPCWay only points things out. "Ask me first": PPCWay proposes and waits for a yes. "Just get on with it": PPCWay makes changes inside the limits and tells you afterwards.</p>
+          <p>Under that, the limits: most spent in a day, most paid for one call, biggest change in one day, most keywords paused at once. On the right, the subscription plan and who else can see the account.</p>
+        </div>
+        <div class="col">
+          <h4>What happens underneath</h4>
+          <p>The three choices are the three autonomy levels in the architecture document <span class="ref">§8.3</span>. It insists the level is enforced at the door to Google, not by the screen, so no part of the system can act above what the owner chose. The third level needs a separate, recorded consent that names what may change, which is why the design showed it as "later this year".</p>
+          <p>The four limits are checks five to eight at the door <span class="ref">§5.5</span>. "Most keywords paused at once" is the "blast radius" check, there to stop a bad reading of the numbers from pausing everything.</p>
+        </div>
+      </div>
+      <div class="poc">
+        <h4>In the proof of concept</h4>
+        <ul>
+          <li><span class="pill ok">Built</span><span>All three levels can be chosen, including "Just get on with it", because the running system already supports it with the recorded consent the document asks for. The limits list shows the values in force.</span></li>
+          <li><span class="pill ok">Added</span><span>A "Your Google Ads account" panel showing the link to Google and a "Sign in to Google again" button, moved here from the old Connect page.</span></li>
+          <li><span class="pill out">Left out</span><span>"Your plan" and "Who can see this account". The proof of concept has no login, billing or team members.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ALERTS -->
+  <section class="screen" id="alerts">
+    <figure>
+      <img src="figma-poc-frames/07-alerts-not-built.png" alt="The Alerts screen: a declined card in red, a disapproved ad in yellow, an informational note, older alerts, and who receives emails." width="1440" height="880">
+      <figcaption>Figma frame 07, Alerts. Designed, not built in the proof of concept.</figcaption>
+    </figure>
+    <div class="body">
+      <div class="head">
+        <h3>Alerts</h3>
+        <p class="where">The few things that interrupt an owner: money and account problems.</p>
+      </div>
+      <div class="cols">
+        <div class="col">
+          <h4>What you see</h4>
+          <p>A red row when Google declined the card, with "Fix on Google". A yellow row when Google turned an ad down, with "See what changed". A plain row for good news such as calls being up. Older alerts below, and on the right, which email addresses get which alerts.</p>
+        </div>
+        <div class="col">
+          <h4>What happens underneath</h4>
+          <p>The architecture document has a table of every event that notifies an owner and how serious it is <span class="ref">§10.3</span>. A declined card or a suspended account is "Critical" and cannot be switched off, because it concerns money and whether the account survives. Every alert must carry a next action, so "Fix on Google" is a rule, not a nicety.</p>
+          <p>Google does not push these events out. PPCWay has to poll for them a few times a day <span class="ref">§5.7</span>: ad disapprovals, suspensions, billing holds, and changes made in Google Ads by someone else.</p>
+        </div>
+      </div>
+      <div class="poc">
+        <h4>In the proof of concept</h4>
+        <ul>
+          <li><span class="pill out">Not built</span><span>There is no notification or email service in the proof of concept. The two facts this screen would show that do exist, a billing hold and a turned-down ad, already appear on Campaigns and Activity.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <div class="part" id="onboarding">
+    <span class="eyebrow">Part two</span>
+    <h2>Getting set up</h2>
+    <p class="prose">Five steps from a new account to a live campaign. The architecture document aims for a median of under fifteen minutes and lists the thirteen things that have to happen along the way <span class="ref">§4.4</span>. The rail on the left of each step shows where you are.</p>
+  </div>
+
+  <!-- STEP 1 -->
+  <section class="screen" id="step1">
+    <figure>
+      <img src="figma-poc-frames/10-onboarding-1-account.png" alt="Step 1, Account and plan: sign in with Google or email, and choose a subscription plan." width="1440" height="940">
+      <figcaption>Figma frame 10, Step 1 of 5</figcaption>
+    </figure>
+    <div class="body">
+      <div class="head">
+        <h3>Step 1, Account and plan</h3>
+        <p class="where">Create a PPCWay login and choose a monthly plan.</p>
+      </div>
+      <div class="cols">
+        <div class="col">
+          <h4>What you see</h4>
+          <p>Sign in with Google or an email address, then pick Starter, Growth or Agency. The side note explains that the plan pays for PPCWay and that Google bills the ads separately.</p>
+        </div>
+        <div class="col">
+          <h4>What happens underneath</h4>
+          <p>Step 1 of the setup journey: sign-up and plan selection through Stripe, about 45 seconds <span class="ref">§4.4</span>.</p>
+        </div>
+      </div>
+      <div class="poc">
+        <h4>In the proof of concept</h4>
+        <ul>
+          <li><span class="pill out">Not built</span><span>There is no login or billing for PPCWay itself. The rail shows this step ticked and labelled "not in this proof of concept" so the client sees where it will sit.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 2 -->
+  <section class="screen" id="step2">
+    <figure>
+      <img src="figma-poc-frames/11-onboarding-2-connect.png" alt="Step 2, Connect your Google Ads account: three rows showing linked, payment method needed, and currency confirmed, with a button to add a payment method on Google." width="1440" height="740">
+      <figcaption>Figma frame 11, Step 2 of 5</figcaption>
+    </figure>
+    <div class="body">
+      <div class="head">
+        <h3>Step 2, Connect Google Ads</h3>
+        <p class="where">The handshake between PPCWay and Google. This is the step demonstrated live.</p>
+      </div>
+      <div class="cols">
+        <div class="col">
+          <h4>What you see</h4>
+          <p>Three rows. "Linked to PPCWay" with the account number, Done. "Payment method on Google", Needs you, with a button that opens Google in a new tab. "Active, in Canadian dollars", Done. The side note explains why only Google may take the card.</p>
+        </div>
+        <div class="col">
+          <h4>What happens underneath</h4>
+          <p>Steps 2 and 3 of the journey <span class="ref">§4.4</span>. The owner signs in to Google once and agrees to let PPCWay manage ads. Google hands back a key that PPCWay stores encrypted. PPCWay then asks Google which ad accounts that person can use, lists them, and links the chosen one under PPCWay's manager account. From then on, only the one door service ever uses that key.</p>
+          <p>Billing is checked the moment the link is made, so the owner hears at minute one rather than minute twelve <span class="ref">§13.1</span>. "We'll check it for you" means PPCWay polls Google until the card is in place.</p>
+        </div>
+      </div>
+      <div class="poc">
+        <h4>In the proof of concept</h4>
+        <ul>
+          <li><span class="pill live">Live</span><span>Signing in with Google, listing the accessible accounts and linking one is real, against a Google Ads test manager account. The ledger rows reflect the real link.</span></li>
+          <li><span class="pill wait">Stand-in</span><span>"Add payment method on Google" is simulated in the demonstration world and says so, since a test account has no real billing.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 3 -->
+  <section class="screen" id="step3">
+    <figure>
+      <img src="figma-poc-frames/12-onboarding-3-business.png" alt="Step 3, Tell us about your business: website, service area, what you want from ads, and monthly budget, with a side panel of what was found on the site." width="1440" height="940">
+      <figcaption>Figma frame 12, Step 3 of 5</figcaption>
+    </figure>
+    <div class="body">
+      <div class="head">
+        <h3>Step 3, Your business</h3>
+        <p class="where">The one real form. Most of it is filled in already from the website.</p>
+      </div>
+      <div class="cols">
+        <div class="col">
+          <h4>What you see</h4>
+          <p>Website, where you work as a radius around a town, what you want from your ads (phone calls, form enquiries or online sales), and a monthly budget with the daily amount worked out underneath. On the right, "What we found on your site" in three short lines.</p>
+        </div>
+        <div class="col">
+          <h4>What happens underneath</h4>
+          <p>Step 4, which the document calls "the main human step", three to five minutes <span class="ref">§4.4</span>. While the owner types, step 5 is already running: a crawler reads the website and summarises it, which is what the side panel shows.</p>
+          <p>The goal choice matters later. It decides how the campaign bids <span class="ref">§6.5</span> and what "results" means on Home: calls, enquiries or sales.</p>
+        </div>
+      </div>
+      <div class="poc">
+        <h4>In the proof of concept</h4>
+        <ul>
+          <li><span class="pill ok">Built</span><span>The form, the crawl summary, and the daily budget sentence, all fed by the running system.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 4 -->
+  <section class="screen" id="step4">
+    <figure>
+      <img src="figma-poc-frames/13-onboarding-4-calls.png" alt="Step 4, Count your calls: three rows for calls from the ad, calls from the website number and form enquiries, with an Add the tag for me button." width="1440" height="740">
+      <figcaption>Figma frame 13, Step 4 of 5</figcaption>
+    </figure>
+    <div class="body">
+      <div class="head">
+        <h3>Step 4, Count your calls</h3>
+        <p class="where">Without this, PPCWay can only see clicks, not work.</p>
+      </div>
+      <div class="cols">
+        <div class="col">
+          <h4>What you see</h4>
+          <p>Three rows: calls straight from the ad (Google counts these itself), calls from the number on the website, and enquiries from the contact form. The last two need a small tag on the site, and one button offers to add it.</p>
+        </div>
+        <div class="col">
+          <h4>What happens underneath</h4>
+          <p>Step 11 of the journey, conversion tracking <span class="ref">§4.4</span>. The architecture document calls this "the single point of failure" for the whole idea <span class="ref">§13.5</span>: without it, PPCWay would be tuning ads toward clicks that may never ring the phone. So it is a gate. A real test visit has to be seen before launch, not just a tag that exists.</p>
+          <p>"Add the tag for me" uses Google Tag Manager, which the document prefers over pasting code by hand because pasted code breaks when a website is redesigned.</p>
+        </div>
+      </div>
+      <div class="poc">
+        <h4>In the proof of concept</h4>
+        <ul>
+          <li><span class="pill ok">Built</span><span>The three rows with real Done and Needs you states, and the gate on launch.</span></li>
+          <li><span class="pill wait">Stand-in</span><span>"Add the tag for me" is left out. The row explains what the owner does instead, and in the demonstration world a "verify a test conversion" button stands in for the real visit.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen" id="step5">
+    <div class="body">
+      <div class="head">
+        <h3>Step 5, Review and launch</h3>
+        <p class="where">The Campaigns screen, shown inside the setup rail.</p>
+      </div>
+      <div class="cols">
+        <div class="col">
+          <h4>What you see</h4>
+          <p>The same page as <a href="#campaigns">Campaigns</a> above: the campaign in one sentence, the phrases, the ad, the checklist, and "Approve and launch".</p>
+        </div>
+        <div class="col">
+          <h4>What happens underneath</h4>
+          <p>Steps 9 and 12 <span class="ref">§4.4</span>. On approval the one door service sends the campaign to Google in a handful of batched calls, and the optimisation schedule starts from there.</p>
+        </div>
+      </div>
+      <div class="poc">
+        <h4>In the proof of concept</h4>
+        <ul>
+          <li><span class="pill ok">Built</span><span>Launch goes through the door with every check applied. In the demonstration world Google is simulated; with a real link it reads from the test account.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <div class="part" id="glossary">
+    <span class="eyebrow">Reference</span>
+    <h2>Words used here</h2>
+  </div>
+  <dl>
+    <dt>Campaign</dt><dd>One set of ads with a budget and a list of searches to appear for. A plumber might have one for emergency repairs and one for water heaters.</dd>
+    <dt>Search term</dt><dd>What a person actually typed into Google before seeing the ad.</dd>
+    <dt>Keyword</dt><dd>A phrase the owner is willing to pay to appear for, such as "emergency plumber near me".</dd>
+    <dt>Call, result, conversion</dt><dd>Three names for the same thing: a person doing what the ad was for. Google calls it a conversion. PPCWay says calls, enquiries or sales depending on the owner's goal.</dd>
+    <dt>Manager account</dt><dd>A Google Ads account that can look after other accounts. PPCWay has one, and links each business's account under it.</dd>
+    <dt>Test account</dt><dd>A Google Ads account that behaves like a real one but never shows ads to the public and never charges money. The proof of concept links to one.</dd>
+    <dt>Limits, guardrails</dt><dd>The owner's rules that every change is checked against before it reaches Google: most spent in a day, most paid for a call, biggest change at once, most things paused at once.</dd>
+    <dt>Autonomy level</dt><dd>How much PPCWay may do without asking: only tell, ask first, or act within limits and report.</dd>
+    <dt>Simulated, demonstration world</dt><dd>A copy of Google Ads that runs inside the proof of concept so the whole flow can be shown without a real account. The console always says which world it is in.</dd>
+    <dt>Blueprint §</dt><dd>A section of the Technical Architecture Blueprint, version 1.0, dated 13 August 2026, which this page draws from.</dd>
+  </dl>
+
+  <footer>
+    Screens are the twelve frames of the PPCWay Figma file as read on 9 September 2026. Section numbers refer to the Technical Architecture and Implementation Blueprint v1.0.
+  </footer>
+</div>
+</body>
+</html>
