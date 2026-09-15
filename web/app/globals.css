@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+/*
+  PPCWay design tokens, from the Figma file "PPCWay", Version 2, blue brand.
+  Every colour on a screen comes from one of these. Add a token before adding a hex.
+*/
+:root {
+  /* Surfaces */
+  --canvas: #f1f4f7;
+  --panel: #ffffff;
+  --rail: #0f1720;
+  --rail-soft: #19232d;
+  --rail-dot: #243140;
+
+  /* Text */
+  --ink: #0f1720;
+  --muted: #5b6874;
+  --faint: #8a98a5;
+  --rail-text: #7e90a0;
+  --rail-icon: #94a4b1;
+
+  /* Lines */
+  --line: #e2e7ec;
+  --line-soft: #edf1f4;
+  --line-input: #c9d0d7;
+
+  /* Brand: done, healthy, or the main action */
+  --brand: #2f5bd3;
+  --brand-dark: #2549b0;
+  --brand-pale: #e8edfb;
+  --brand-bar: #cfdaf6;
+  --brand-line: #b9c9f0;
+  --brand-label: #b7c8f5;
+  --brand-tint: #f0f3fb;
+
+  /* Amber: waiting on the merchant */
+  --amber: #b7791f;
+  --amber-dark: #8b5c17;
+  --amber-pale: #fce7c4;
+  --amber-tint: #fff9ed;
+  --amber-line: #f6e1bf;
+
+  /* Red: broken, or money at risk */
+  --red: #9e281e;
+  --red-pale: #fdecec;
+
+  /* Shape */
+  --radius-shell: 16px;
+  --radius-control: 12px;
+  --radius-pill: 100px;
+
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-panel: var(--panel);
+  --color-rail: var(--rail);
+  --color-rail-soft: var(--rail-soft);
+  --color-rail-dot: var(--rail-dot);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-rail-text: var(--rail-text);
+  --color-rail-icon: var(--rail-icon);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-line-input: var(--line-input);
+  --color-brand: var(--brand);
+  --color-brand-dark: var(--brand-dark);
+  --color-brand-pale: var(--brand-pale);
+  --color-brand-bar: var(--brand-bar);
+  --color-brand-line: var(--brand-line);
+  --color-brand-label: var(--brand-label);
+  --color-brand-tint: var(--brand-tint);
+  --color-amber: var(--amber);
+  --color-amber-dark: var(--amber-dark);
+  --color-amber-pale: var(--amber-pale);
+  --color-amber-tint: var(--amber-tint);
+  --color-amber-line: var(--amber-line);
+  --color-red: var(--red);
+  --color-red-pale: var(--red-pale);
+
+  --radius-shell: var(--radius-shell);
+  --radius-control: var(--radius-control);
+  --radius-pill: var(--radius-pill);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  min-height: 100%;
+  margin: 0;
+}
+
+/* Type scale from the Figma file: sizes and line heights as drawn */
+.text-headline {
+  font-size: 32px;
+  line-height: 39px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.text-subline {
+  font-size: 17px;
+  line-height: 21px;
+  color: var(--muted);
+}
+.text-section {
+  font-size: 16px;
+  line-height: 19px;
+  font-weight: 600;
+}
+.text-body {
+  font-size: 15px;
+  line-height: 18px;
+}
+.text-label {
+  font-size: 14px;
+  line-height: 17px;
+  font-weight: 500;
+}
+.text-meta {
+  font-size: 13px;
+  line-height: 16px;
+}
