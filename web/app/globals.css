@@ -130,3 +130,35 @@ body {
   font-size: 13px;
   line-height: 16px;
 }
+
+/* Motion, from the "States and motion" frame */
+:root {
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --dur-page: 180ms;
+  --dur-hover: 120ms;
+  --dur-press: 80ms;
+  --dur-confirm: 220ms;
+}
+@keyframes ppc-skeleton {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+.skeleton-bar {
+  background: var(--line-soft);
+  border-radius: 7px;
+  height: 14px;
+  animation: ppc-skeleton 1600ms ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-bar {
+    animation: none;
+  }
+  * {
+    transition-duration: 0ms !important;
+  }
+}
