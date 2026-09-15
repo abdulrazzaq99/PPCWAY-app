@@ -42,7 +42,20 @@
 
   /* Red: broken, or money at risk */
   --red: #9e281e;
+  --red-strong: #c0392b;
   --red-pale: #fdecec;
+  --red-line: #f5d0cb;
+  --red-chip: #f9dbda;
+  --red-label: #f7c9c4;
+
+  /* Small surfaces drawn on the dashboard frames */
+  --amber-chip: #fff3e1;
+  --grey-chip: #eceff2;
+  --grey-dot: #7b8a99;
+  --track: #e5eaef;
+  --ad-bg: #f9fafb;
+  --ad-link: #1b4ebf;
+  --bar-soft: #cfd8e0;
 
   /* Shape */
   --radius-shell: 16px;
@@ -79,7 +92,18 @@
   --color-amber-tint: var(--amber-tint);
   --color-amber-line: var(--amber-line);
   --color-red: var(--red);
+  --color-red-strong: var(--red-strong);
   --color-red-pale: var(--red-pale);
+  --color-red-line: var(--red-line);
+  --color-red-chip: var(--red-chip);
+  --color-red-label: var(--red-label);
+  --color-amber-chip: var(--amber-chip);
+  --color-grey-chip: var(--grey-chip);
+  --color-grey-dot: var(--grey-dot);
+  --color-track: var(--track);
+  --color-ad-bg: var(--ad-bg);
+  --color-ad-link: var(--ad-link);
+  --color-bar-soft: var(--bar-soft);
 
   --radius-shell: var(--radius-shell);
   --radius-control: var(--radius-control);
@@ -160,5 +184,29 @@ body {
   }
   * {
     transition-duration: 0ms !important;
+  }
+}
+
+/* Landing page: the hero fades and lifts into place on load, 600ms, once. */
+@keyframes ppc-hero-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.hero-in {
+  animation: ppc-hero-in 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-in {
+    animation: none;
+  }
+  [data-shown] {
+    opacity: 1 !important;
+    transform: none !important;
   }
 }

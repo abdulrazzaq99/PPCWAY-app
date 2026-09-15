@@ -15,6 +15,7 @@ export function AuthShell({
   footnote,
   children,
   below,
+  brand = "ppcway",
 }: {
   headline: string;
   body: string;
@@ -22,12 +23,14 @@ export function AuthShell({
   children: ReactNode;
   /** The line under the card, such as "New to PPCWay? Create an account". */
   below?: ReactNode;
+  /** The wordmark; an agency's clients see the agency's name. */
+  brand?: string;
 }) {
   return (
     <div className="flex min-h-dvh flex-col lg:flex-row">
       <aside className="bg-rail text-white lg:flex lg:w-[540px] lg:shrink-0 lg:flex-col lg:justify-between">
         <div className="px-6 pt-8 pb-8 sm:px-10 lg:px-14 lg:pt-14 lg:pb-0">
-          <Brand tone="dark" href="/" />
+          <Brand tone="dark" href="/" name={brand} />
         </div>
         <div className="px-6 pb-10 sm:px-10 lg:px-14 lg:pb-0">
           <h1 className="max-w-[428px] text-[26px] leading-[32px] font-semibold text-balance sm:text-[32px] sm:leading-[39px]">

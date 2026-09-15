@@ -1,6 +1,12 @@
-import { redirect } from "next/navigation";
+import type { Metadata } from "next";
+import { Landing } from "@/components/landing/landing";
 
-/* The overview lives here once the dashboard is built. Until then, the door is sign-in. */
+export const metadata: Metadata = {
+  title: "PPCWay: Google Ads that look after themselves",
+  description:
+    "We write the campaign, watch it every day, and explain every change in plain words. Start with a free check of your website.",
+};
+
 export default function Home() {
-  redirect("/login");
+  return <Landing />;
 }
