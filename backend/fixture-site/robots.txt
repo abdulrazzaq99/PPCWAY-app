@@ -1,0 +1,13 @@
+# The fixture site's robots.txt.
+#
+# Two groups on purpose. The `*` group is the one PPCWay's crawler obeys, and
+# the `EvilBot` group above it exists so that a reader which simply takes the
+# FIRST group in the file - a common way to get this format wrong - obeys the
+# wrong one and lets the crawler into /private.
+
+User-agent: EvilBot
+Disallow: /
+
+User-agent: *
+Disallow: /private
+Allow: /

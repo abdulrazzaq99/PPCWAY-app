@@ -13,7 +13,9 @@ import {
   Target,
 } from "@phosphor-icons/react/dist/ssr";
 import { Brand } from "@/components/ui/brand";
-import { ActivityRow, Rows, Tile } from "@/components/app/blocks";
+import type { ReactNode } from "react";
+import { ActivityRow, BarChart, ListRow, NoticeCard, Rows, Tile } from "@/components/app/blocks";
+import { ProductCarousel } from "./product-carousel";
 import { cn } from "@/lib/cn";
 import { Reveal } from "./reveal";
 
@@ -98,12 +100,12 @@ function Nav() {
           >
             Sign in
           </Link>
-          <a
+          <Link
             href="/audit"
             className="bg-brand hover:bg-brand-dark inline-flex h-11 items-center rounded-full px-5 text-[15px] font-semibold whitespace-nowrap text-white transition-colors duration-[120ms] active:scale-[0.98]"
           >
             Get a free audit
-          </a>
+          </Link>
         </div>
       </div>
     </header>
@@ -113,64 +115,194 @@ function Nav() {
 /* ---------- Hero: split, form left, real product right ---------- */
 function Hero() {
   return (
-    <section className="mx-auto grid max-w-[1200px] gap-12 px-5 pt-14 pb-16 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center lg:gap-16 lg:pt-20 lg:pb-24">
-      <div className="hero-in">
-        <h1 className="text-ink text-[38px] leading-[42px] font-semibold tracking-[-0.02em] text-balance sm:text-[48px] sm:leading-[52px] lg:text-[56px] lg:leading-[60px]">
-          Google Ads that look after themselves.
-        </h1>
-        <p className="text-muted mt-5 max-w-[520px] text-[17px] leading-[24px] sm:text-[19px] sm:leading-[27px]">
-          We write the campaign, watch it every day, and explain every change in plain words. Start
-          with a free check of your website.
-        </p>
-        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
-          <AuditLink size="lg" />
-          <p className="text-muted text-[14px] leading-5">
-            Eight checks, one working day. We change nothing on your site.
+    <section className="overflow-x-clip">
+      <div className="mx-auto grid max-w-[1200px] gap-12 px-5 pt-14 pb-16 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center lg:gap-16 lg:pt-20 lg:pb-24">
+        <div className="hero-in">
+          <h1 className="text-ink text-[38px] leading-[42px] font-semibold tracking-[-0.02em] text-balance sm:text-[48px] sm:leading-[52px] lg:text-[56px] lg:leading-[60px]">
+            Google Ads that look after themselves.
+          </h1>
+          <p className="text-muted mt-5 max-w-[520px] text-[17px] leading-[24px] sm:text-[19px] sm:leading-[27px]">
+            We write the campaign, watch it every day, and explain every change in plain words.
+            Start with a free check of your website.
           </p>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
+            <AuditLink size="lg" />
+            <p className="text-muted text-[14px] leading-5">
+              Eight checks, one working day. We change nothing on your site.
+            </p>
+          </div>
         </div>
-      </div>
-      <div className="hero-in [transition-delay:120ms]">
-        <ProductPreview />
+        <div className="hero-in [transition-delay:120ms]">
+          <ProductPreview />
+        </div>
       </div>
     </section>
   );
 }
 
-/** The dashboard, for real: the same blocks the signed-in app renders. */
+/** Four product cards, for real: the same blocks the signed-in app renders. */
 function ProductPreview() {
   return (
-    <div
-      className="bg-panel border-line rounded-[20px] border p-4 shadow-[0_24px_60px_-30px_rgba(15,23,32,0.25)] sm:p-6"
-      aria-label="A preview of the PPCWay overview page"
-    >
+    <ProductCarousel
+      label="What PPCWay looks like"
+      slides={[
+        {
+          name: "Overview",
+          card: (
+            <PreviewCard
+              title="Your ads brought 58 calls this month."
+              intro="12 more than last month, and each one cost you $4.60 less."
+            >
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <Tile tone="brand" label="Cost per call" value="$21.40" chip="18% cheaper" />
+                <Tile label="Calls" value="58" chip="12 more" />
+              </div>
+              <div className="border-line-soft mt-4 border-t pt-1">
+                <Rows>
+                  <ActivityRow
+                    icon="bars"
+                    iconTone="amber"
+                    title="Paused 3 search terms that spent $38 without a call."
+                    meta="Applied Tuesday, saved about $38 a month"
+                    action="Undo"
+                  />
+                  <ActivityRow
+                    icon="plus"
+                    iconTone="brand"
+                    title={<>Added &ldquo;emergency plumber near me&rdquo; as a keyword.</>}
+                    meta="Applied Monday, after it brought 4 calls"
+                    action="Undo"
+                  />
+                </Rows>
+              </div>
+            </PreviewCard>
+          ),
+        },
+        {
+          name: "Approvals",
+          card: (
+            <PreviewCard
+              title="One change is waiting for you."
+              intro="Nothing happens until you say yes. Leave it and it expires on Friday."
+            >
+              <NoticeCard
+                className="mt-4"
+                tone="amber"
+                tag="Waiting for you"
+                tagTone="amber"
+                title="Raise the most we pay for a call from $25 to $30"
+                body="Calls at $25 ran out by Thursday afternoon three weeks running. Another $5 would have bought about six more calls a week."
+                primary={{ label: "Approve" }}
+                secondary={{ label: "Skip this" }}
+              />
+              <div className="border-line-soft mt-4 border-t pt-1">
+                <Rows>
+                  <ActivityRow
+                    icon="check"
+                    iconTone="brand"
+                    title="Approved: pause the Saturday ads."
+                    meta="You said yes on Monday. Saved $22 so far."
+                    muted
+                  />
+                </Rows>
+              </div>
+            </PreviewCard>
+          ),
+        },
+        {
+          name: "Website check",
+          card: (
+            <PreviewCard
+              title="Eight checks. Six fine, two need you."
+              intro="Green is fine. Amber needs a small change from you. Grey is ours to handle."
+            >
+              <Rows className="mt-3">
+                <ListRow
+                  title="Counting calls and forms"
+                  meta="No way to count a call yet. We add it when you connect."
+                  chip="Needs you"
+                  chipTone="amber"
+                  dot
+                />
+                <ListRow
+                  title="Speed on a phone"
+                  meta="2.9 seconds on 4G. Google wants under 2.5."
+                  chip="Good"
+                  chipTone="pale"
+                  dot
+                />
+                <ListRow
+                  title="Contact form"
+                  meta="Works, but there is no thank-you page to count a send."
+                  chip="Needs you"
+                  chipTone="amber"
+                  dot
+                />
+                <ListRow
+                  title="Page matches the ad"
+                  meta="Water heater searches land on your water heater page."
+                  chip="Good"
+                  chipTone="pale"
+                  dot
+                />
+                <ListRow
+                  title="Google's tags"
+                  meta="Tag Manager, Analytics and Ads, present and firing."
+                  chip="Ours"
+                  chipTone="grey"
+                  dot
+                />
+              </Rows>
+            </PreviewCard>
+          ),
+        },
+        {
+          name: "Monday email",
+          card: (
+            <PreviewCard
+              title="Last week: 14 calls for $298."
+              intro="Your cheapest week so far. Here is the six-week picture."
+            >
+              <BarChart
+                bars={[0.45, 0.55, 0.5, 0.7, 0.8, 1]}
+                pill="14 calls"
+                axisStart="Six weeks ago"
+                axisEnd="Last week"
+              />
+              <div className="border-line-soft mt-3 border-t pt-1">
+                <Rows>
+                  <ListRow
+                    title="Best day was Thursday, 5 calls."
+                    meta="Three of them searched for water heater repair."
+                  />
+                </Rows>
+              </div>
+            </PreviewCard>
+          ),
+        },
+      ]}
+    />
+  );
+}
+
+function PreviewCard({
+  title,
+  intro,
+  children,
+}: {
+  title: string;
+  intro: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="bg-panel border-line h-full rounded-[20px] border p-4 shadow-[0_30px_70px_-30px_rgba(15,23,32,0.35)] sm:p-6">
       <p className="text-ink text-[18px] leading-[22px] font-semibold sm:text-[22px] sm:leading-[27px]">
-        Your ads brought 58 calls this month.
+        {title}
       </p>
       <p className="text-muted mt-1 text-[13px] leading-4 sm:text-[14px] sm:leading-[17px]">
-        12 more than last month, and each one cost you $4.60 less.
+        {intro}
       </p>
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        <Tile tone="brand" label="Cost per call" value="$21.40" chip="18% cheaper" />
-        <Tile label="Calls" value="58" chip="12 more" />
-      </div>
-      <div className="border-line-soft mt-4 border-t pt-1">
-        <Rows>
-          <ActivityRow
-            icon="bars"
-            iconTone="amber"
-            title="Paused 3 search terms that spent $38 without a call."
-            meta="Applied Tuesday, saved about $38 a month"
-            action="Undo"
-          />
-          <ActivityRow
-            icon="plus"
-            iconTone="brand"
-            title={<>Added &ldquo;emergency plumber near me&rdquo; as a keyword.</>}
-            meta="Applied Monday, after it brought 4 calls"
-            action="Undo"
-          />
-        </Rows>
-      </div>
+      {children}
     </div>
   );
 }
@@ -462,7 +594,7 @@ function Pricing() {
                 </li>
               ))}
             </ul>
-            <a
+            <Link
               href="/audit"
               className={cn(
                 "mt-7 inline-flex h-11 items-center gap-2 rounded-full px-5 text-[15px] font-semibold transition-colors duration-[120ms] active:scale-[0.98]",
@@ -473,7 +605,7 @@ function Pricing() {
             >
               Get a free audit
               <ArrowRight size={16} weight="bold" aria-hidden />
-            </a>
+            </Link>
           </Reveal>
         ))}
       </div>

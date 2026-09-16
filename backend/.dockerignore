@@ -1,0 +1,9 @@
+.venv
+.git
+data
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+tests
+fixture-site

@@ -38,22 +38,53 @@ export function AuditRequest() {
   const [consent, setConsent] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
   const [working, setWorking] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
 
   const set = (key: keyof Values) => (event: React.ChangeEvent<HTMLInputElement>) =>
     setValues((v) => ({ ...v, [key]: event.target.value }));
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const next = validate(values, consent);
     setErrors(next);
     if (Object.keys(next).length) return;
     setWorking(true);
-    // No audit endpoint yet: the request is held on the page and shown as sent.
-    window.setTimeout(() => {
+    setServerError(null);
+    try {
+      const res = await fetch("/api/audit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: values.name.trim(),
+          email: values.email.trim(),
+          phone: values.phone.trim(),
+          business_name: values.business.trim(),
+          site: values.site.trim(),
+          consent,
+          source: "landing",
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        id?: string;
+        error?: string;
+        detail?: unknown;
+      };
+      if (res.ok && data.id) {
+        setSent(data.id);
+      } else if (res.status === 422 && Array.isArray(data.detail)) {
+        const first = data.detail[0] as { msg?: string };
+        setServerError(
+          (first?.msg ?? "Check the form and try again.").replace(/^Value error, /, ""),
+        );
+      } else {
+        setServerError(data.error ?? "Something went wrong on our side. Try again in a minute.");
+      }
+    } catch {
+      setServerError("We could not reach the audit service. Check your connection and try again.");
+    } finally {
       setWorking(false);
-      setSent(true);
-    }, 600);
+    }
   }
 
   return (
@@ -87,9 +118,17 @@ export function AuditRequest() {
               report needs a word from you.
             </span>
           </div>
-          <Link href="/" className="text-brand text-[14px] leading-[17px] font-semibold">
-            Back to the home page
-          </Link>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            <Link
+              href={`/audit/${sent}`}
+              className="text-brand text-[14px] leading-[17px] font-semibold"
+            >
+              Watch the checks run
+            </Link>
+            <Link href="/" className="text-muted text-[14px] leading-[17px] font-semibold">
+              Back to the home page
+            </Link>
+          </div>
         </AuthCard>
       ) : (
         <AuthCard
@@ -169,7 +208,8 @@ export function AuditRequest() {
           <div className="flex flex-col gap-2">
             <Checkbox checked={consent} onChange={setConsent}>
               PPCWay may email and call me about this audit. No newsletters, and I can ask you to
-              stop at any time.
+              stop at any time. PPCWay reads my website to write the report and may send what it
+              says to its AI provider, Anthropic.
             </Checkbox>
             {errors.consent ? (
               <p className="text-meta font-medium text-[#c0392b]" role="alert">
@@ -177,6 +217,11 @@ export function AuditRequest() {
               </p>
             ) : null}
           </div>
+          {serverError ? (
+            <p className="text-meta font-medium text-[#c0392b]" role="alert">
+              {serverError}
+            </p>
+          ) : null}
           <Button type="submit" full working={working ? "Sending" : false}>
             Send me the free audit
           </Button>

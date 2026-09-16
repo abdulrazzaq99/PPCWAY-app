@@ -1,0 +1,17 @@
+# Local development: the API on 8300 with a SQLite file under ./data.
+# Neon and Upstash are for the deployment; nothing here reaches them.
+services:
+  api:
+    build: .
+    ports:
+      - "8300:8300"
+    env_file:
+      - ../web/.env        # PAGESPEED_API_KEY and the Google credentials; nothing else is read
+    environment:
+      ENVIRONMENT: dev
+      DATABASE_URL: sqlite:////app/data/ppcway.db
+      WEB_URL: http://localhost:3000
+    volumes:
+      - ./data:/app/data
+      - ./src:/app/src     # edit and restart, no rebuild
+    restart: unless-stopped

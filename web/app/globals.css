@@ -210,3 +210,13 @@ body {
     transform: none !important;
   }
 }
+
+/* The audit report's waiting bar. */
+@keyframes ppc-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
