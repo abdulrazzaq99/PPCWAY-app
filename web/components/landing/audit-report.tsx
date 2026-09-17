@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Brand } from "@/components/ui/brand";
+import { AuditPage } from "@/components/audit/shell";
+import { CheckingRows } from "@/components/audit/find-views";
 import { ListRow, Rows } from "@/components/app/blocks";
 import type { ChipTone } from "@/components/app/blocks";
 
@@ -83,16 +84,8 @@ export function AuditReportView({ id }: { id: string }) {
     : null;
 
   return (
-    <div className="bg-canvas text-ink min-h-dvh">
-      <header className="border-line bg-canvas/85 border-b backdrop-blur">
-        <div className="mx-auto flex h-[72px] max-w-[880px] items-center justify-between px-5 sm:px-8">
-          <Brand tone="light" href="/" />
-          <Link href="/audit" className="text-brand text-[15px] font-semibold">
-            Check another site
-          </Link>
-        </div>
-      </header>
-      <main className="mx-auto max-w-[880px] px-5 py-10 sm:px-8 sm:py-14">
+    <AuditPage>
+      <div>
         {error ? (
           <p className="text-red-strong text-[16px] leading-6 font-medium" role="alert">
             {error}
@@ -111,15 +104,39 @@ export function AuditReportView({ id }: { id: string }) {
           </div>
         ) : run.status !== "done" || !report ? (
           <div>
-            <h1 className="text-[28px] leading-[34px] font-semibold text-balance">
-              Checking {run.site} now.
+            <h1 className="text-[32px] leading-[38px] font-bold text-balance sm:text-[42px] sm:leading-[51px]">
+              Checking {run.site.replace(/^https?:\/\//, "").replace(/\/$/, "")}.
             </h1>
-            <p className="text-muted mt-3 text-[16px] leading-6">
-              This takes about a minute. We read your pages, load the home page on a phone, ask
-              Google how fast it is, and look for the tags. We change nothing on your site.
+            <p className="text-muted mt-6 max-w-[700px] text-[18px] leading-[22px]">
+              About a minute. You can stay on this page. We read your pages, load the home page on a
+              phone, ask Google how fast it is, and look for the tags. We change nothing on your
+              site.
             </p>
-            <div className="bg-brand-bar mt-8 h-1 w-full overflow-hidden rounded-full">
-              <div className="bg-brand h-full w-1/3 animate-[ppc-slide_1.6s_ease-in-out_infinite] rounded-full" />
+            <div className="bg-panel border-line mt-6 rounded-[16px] border px-5 py-1 sm:px-7">
+              <CheckingRows
+                steps={[
+                  {
+                    title: "Your website",
+                    meta: "Reading up to 25 pages: services, areas, phone numbers and tracking tags",
+                    state: run.status === "running" ? "running" : "todo",
+                  },
+                  {
+                    title: "On a phone and a laptop",
+                    meta: "What loads, what fires, and what the first screen shows",
+                    state: "todo",
+                  },
+                  {
+                    title: "Speed, from Google",
+                    meta: "Lighthouse on a mid-range phone on 4G",
+                    state: "todo",
+                  },
+                  {
+                    title: "Your Google listing and your ads",
+                    meta: "Coming soon: category, reviews, hours, and whether you show for the searches that matter",
+                    state: "todo",
+                  },
+                ]}
+              />
             </div>
           </div>
         ) : (
@@ -273,8 +290,8 @@ export function AuditReportView({ id }: { id: string }) {
             </div>
           </div>
         )}
-      </main>
-    </div>
+      </div>
+    </AuditPage>
   );
 }
 

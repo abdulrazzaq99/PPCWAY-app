@@ -16,7 +16,7 @@ from uuid import UUID
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -37,12 +37,19 @@ SITE = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)+(/.*)?$", re.IGNORECASE)
 
 
 class AuditRequestIn(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
-    email: EmailStr
-    phone: str = Field(min_length=7, max_length=40)
+    """What the public forms send. The business and its website are enough to run the
+    checks; the person's details arrive when they ask for the report by email."""
+
     business_name: str = Field(min_length=1, max_length=200)
     site: str = Field(min_length=3, max_length=500)
-    consent: bool
+    city: str = Field(default="", max_length=120)
+    trade: str = Field(default="", max_length=120)
+    name: str = Field(default="", max_length=200)
+    email: EmailStr | None = None
+    phone: str = Field(default="", max_length=40)
+    consent: bool = False
+    #: "yes", "no" or "unsure": whether they already run Google Ads.
+    advertising: str = Field(default="", pattern="^(yes|no|unsure|)$")
     source: str = Field(default="landing", pattern="^(landing|onboarding)$")
 
     @field_validator("site")
@@ -53,12 +60,11 @@ class AuditRequestIn(BaseModel):
             raise ValueError("Type your website address, like alphaplumbing.ca")
         return bare
 
-    @field_validator("consent")
-    @classmethod
-    def _must_consent(cls, value: bool) -> bool:
-        if not value:
+    @model_validator(mode="after")
+    def _consent_when_we_would_contact(self) -> AuditRequestIn:
+        if self.email and not self.consent:
             raise ValueError("Tick the box so we can send you the report.")
-        return value
+        return self
 
 
 class AuditOut(BaseModel):
@@ -89,12 +95,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> AuditOut:
         req = AuditRequest(
             name=body.name.strip(),
-            email=str(body.email).lower(),
+            email=str(body.email).lower() if body.email else "",
             phone=body.phone.strip(),
             business_name=body.business_name.strip(),
             site=body.site,
             source=body.source,
-            consent_text=CONSENT_TEXT,
+            consent_text=CONSENT_TEXT if body.consent else "",
         )
         run = AuditRun(site=normalise_site(body.site), status="queued")
         session.add(req)

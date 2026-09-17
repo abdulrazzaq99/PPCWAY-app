@@ -1,5 +1,4 @@
 id	name	x	y	w	h
-92:17095	Index	0	220	1440	1358
 17:4106	V2 States and motion	1600	220	1440	1330
 17:3588	V2 Log in	0	2198	1440	900
 66:2	V2 Log in	1600	2198	1440	900
@@ -168,3 +167,13 @@ id	name	x	y	w	h
 90:16249	V2 · Mobile · Home	3920	40494	390	844
 87:8594	V2 · Mobile · Home	4410	40494	390	844
 87:8668	V2 · Mobile · Home	0	41498	390	844
+179:4047	Index	0	220	1440	1428
+181:5823	V2 · Audit · Find your business	0	0	1440	981
+181:5880	V2 · Audit · Confirm your listing	0	0	1440	684
+181:5920	V2 · Audit · Checking	0	0	1440	758
+181:5971	V2 · Audit · We could not find you	0	0	1440	712
+181:6011	V2 · Audit · Report, already advertising	0	0	1440	2101
+181:6215	V2 · Audit · Report, not advertising yet	0	0	1440	2098
+181:6419	V2 · Mobile · Audit report	0	0	390	2598
+181:6555	V2 · Marketing · Landing page	0	0	1440	5915
+181:6981	V2 · Marketing · Landing page (phone)	0	0	390	7711
