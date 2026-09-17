@@ -108,3 +108,28 @@ on the Version 2 tokens. Every "Get a free audit" button goes to `/audit`
 website and a consent tick, then a thank-you card. Nothing is stored yet; the
 request is shown as sent until the audit endpoint exists. The photo in the "Nothing changes without your OK" band is a
 seeded Picsum placeholder to be replaced with a real one.
+
+`/audit/<id>` is the public report for one audit run: the two screenshots, the
+eight checks, three more under the hood (first screen, site health, local
+presence), what to fix first, and everything we saw
+(`components/landing/audit-report.tsx`). It polls `/api/audit/<id>`, which the
+Next.js route handlers forward to the backend's `/v1/audits/<id>`.
+
+## Audit flow (added to Figma 16 September, built 17 September)
+
+The frames are drawn in the old emerald; the screens use the blue brand like the rest.
+
+| Frame | Screen | Route |
+|---|---|---|
+| 181:5823 | Find your business, and the three matches | `/audit`, `/audit?view=results` |
+| 181:5880 | Confirm your listing | `/audit?view=confirm` |
+| 181:5920 | Checking | `/audit?view=checking` (static); `/audit/<id>` while a real run is in progress |
+| 181:5971 | We could not find you | `/audit?view=not-found` (the form starts a real run when a website is given) |
+| 181:6011 | Report, already advertising | `/audit/report?view=advertising` |
+| 181:6215 | Report, not advertising yet | `/audit/report?view=fresh` |
+| 181:6419 | Mobile audit report | the report pages at phone width |
+| 181:6555, 181:6981 | Marketing landing page | `/` was designed in code before these frames existed; not redrawn |
+| 179:4047 | Index | replaces 92:17095 |
+
+The live report at `/audit/<id>` still uses the eight-checks layout until the listing,
+ads and competition data exist to fill the frame's four panels.

@@ -5,6 +5,7 @@ import { Button, LinkButton } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { ManualForm } from "./manual-form";
 import { AuditPage, Card, Pill } from "./shell";
+import { StartAudit } from "./start-audit";
 
 /*
   Frames 181:5823 (Find your business, with three matches), 181:5880 (Confirm your
@@ -13,18 +14,30 @@ import { AuditPage, Card, Pill } from "./shell";
   that carries a website today. A client component because Field takes a render
   function for its input, which cannot cross from a server component.
 */
+export type Typed = { name: string; city: string; site: string };
+const SAMPLE: Typed = { name: "Alpha Plumbing", city: "Mississauga, Ontario", site: "" };
+
 export function AuditFindView({
   view,
+  typed,
 }: {
   view: "find" | "results" | "confirm" | "checking" | "not-found";
+  typed?: Partial<Typed>;
 }) {
-  if (view === "confirm") return <ConfirmView />;
+  const t: Typed = { ...SAMPLE, ...typed };
+  if (view === "confirm") return <ConfirmView typed={t} />;
   if (view === "checking") return <CheckingView />;
   if (view === "not-found") return <NotFoundView />;
-  return <FindView results={view === "results"} />;
+  return <FindView results={view === "results"} typed={t} />;
 }
 
-function FindView({ results }: { results: boolean }) {
+function query(t: Typed, view: string): string {
+  const q = new URLSearchParams({ view, name: t.name, city: t.city });
+  if (t.site) q.set("site", t.site);
+  return `/audit?${q.toString()}`;
+}
+
+function FindView({ results, typed }: { results: boolean; typed: Typed }) {
   return (
     <AuditPage>
       <Pill>Free audit, no account needed</Pill>
@@ -41,12 +54,7 @@ function FindView({ results }: { results: boolean }) {
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Business name">
               {(id) => (
-                <Input
-                  id={id}
-                  name="name"
-                  defaultValue="Alpha Plumbing"
-                  autoComplete="organization"
-                />
+                <Input id={id} name="name" defaultValue={typed.name} autoComplete="organization" />
               )}
             </Field>
             <Field label="City or town">
@@ -54,12 +62,27 @@ function FindView({ results }: { results: boolean }) {
                 <Input
                   id={id}
                   name="city"
-                  defaultValue="Mississauga, Ontario"
+                  defaultValue={typed.city}
                   autoComplete="address-level2"
                 />
               )}
             </Field>
           </div>
+          <Field
+            label="Website"
+            hint="The page your ads would send people to. We read it and change nothing."
+          >
+            {(id) => (
+              <Input
+                id={id}
+                name="site"
+                defaultValue={typed.site}
+                placeholder="alphaplumbing.ca"
+                inputMode="url"
+                autoComplete="url"
+              />
+            )}
+          </Field>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-faint text-[14px] leading-[17px]">
               No card, no login. It takes about a minute.
@@ -100,7 +123,7 @@ function FindView({ results }: { results: boolean }) {
             >
               None of these are us
             </Link>
-            <LinkButton href="/audit?view=confirm" size="sm" className="h-[42px]">
+            <LinkButton href={query(typed, "confirm")} size="sm" className="h-[42px]">
               This one
             </LinkButton>
           </div>
@@ -141,7 +164,7 @@ function Result({
   );
 }
 
-function ConfirmView() {
+function ConfirmView({ typed }: { typed: Typed }) {
   return (
     <AuditPage>
       <h1 className="text-[32px] leading-[38px] font-bold sm:text-[42px] sm:leading-[51px]">
@@ -165,7 +188,8 @@ function ConfirmView() {
               Plumber · 1420 Dundas Street East, Mississauga, Ontario
             </p>
             <p className="text-muted mt-[10px] text-[15px] leading-[18px]">
-              4.6 out of 5, from 87 reviews · Open now, closes 9 pm · alphaplumbing.ca
+              4.6 out of 5, from 87 reviews · Open now, closes 9 pm ·{" "}
+              {typed.site || "alphaplumbing.ca"}
             </p>
             <div className="mt-[10px] flex flex-wrap gap-2">
               <Pill tone="grey">Emergency plumbing</Pill>
@@ -176,14 +200,17 @@ function ConfirmView() {
         </div>
         <div className="border-line-soft flex flex-col gap-3 border-t px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
           <Link
-            href="/audit?view=results"
+            href={query(typed, "results")}
             className="text-muted text-[14px] leading-[17px] font-semibold"
           >
             Not us. Search again
           </Link>
-          <LinkButton href="/audit?view=checking" size="sm" className="h-[42px]">
-            Yes, that is us. Check it
-          </LinkButton>
+          <StartAudit
+            business={typed.name}
+            city={typed.city}
+            site={typed.site}
+            label="Yes, that is us. Check it"
+          />
         </div>
       </Card>
       <p className="text-faint mt-6 text-[14px] leading-[17px]">

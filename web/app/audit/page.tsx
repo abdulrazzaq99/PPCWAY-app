@@ -12,8 +12,13 @@ export const metadata: Metadata = {
 export default async function AuditPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; name?: string; city?: string; site?: string }>;
 }) {
-  const { view } = await searchParams;
-  return <AuditFindView view={pickView(AUDIT_VIEWS, view)} />;
+  const { view, name, city, site } = await searchParams;
+  const typed = {
+    ...(name ? { name } : {}),
+    ...(city ? { city } : {}),
+    ...(site ? { site: site.trim().replace(/^https?:\/\//, "") } : {}),
+  };
+  return <AuditFindView view={pickView(AUDIT_VIEWS, view)} typed={typed} />;
 }
