@@ -131,5 +131,22 @@ The frames are drawn in the old emerald; the screens use the blue brand like the
 | 181:6555, 181:6981 | Marketing landing page | `/` was designed in code before these frames existed; not redrawn |
 | 179:4047 | Index | replaces 92:17095 |
 
+On 21 September the sample report gained five pieces ahead of the frames, to be drawn
+back into 181:6011 and 181:6215: the four cards put problems first (costly ones with a
+red edge, then fixes with an amber one, each chipped "PPCWay fixes this" or "Yours, with
+our steps"), a ten-step score meter, "Working well" underneath, and one blue footer per
+card with its own button; the score after our fixes, the cost per day, the list behind
+a free account, and a bar that follows the reader. The closing button now reads "Fix
+these for me".
+
+On 29 September the report was cut to what a free audit can prove without the
+prospect's Google Ads account: Your Google listing and How you compare nearby (both
+from Places), Your website (already real), and a locked fourth card, "Your ads today",
+which names its rows, shows no numbers, and asks for a read-only Google Ads connection.
+The money line is now labelled "Estimate" and rests on Google's search volume and click
+prices for the town, not on the prospect's spend. Frames 181:6011 and 181:6215 still
+draw the old four; the Verified badge and the service chips left the design because
+Places publishes neither.
+
 The live report at `/audit/<id>` still uses the eight-checks layout until the listing,
 ads and competition data exist to fill the frame's four panels.
