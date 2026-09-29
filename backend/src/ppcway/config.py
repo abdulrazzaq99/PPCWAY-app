@@ -45,6 +45,8 @@ class Settings(BaseSettings):
 
     # The website audit.
     pagespeed_api_key: SecretStr | None = None
+    #: Places API (New) and Geocoding, for "Find my business". Server side only.
+    google_maps_api_key: SecretStr | None = None
     #: Where the audit's headless browser and crawler may spend, per site.
     audit_crawl_max_pages: int = 25
     audit_crawl_timeout_seconds: int = 60

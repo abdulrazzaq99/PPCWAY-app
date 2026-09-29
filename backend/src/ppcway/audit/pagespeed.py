@@ -93,6 +93,7 @@ def parse_pagespeed(payload: dict[str, Any], strategy: str = "mobile") -> SpeedS
     weight = _num(audits, "total-byte-weight")
     blocking = _num(audits, "render-blocking-resources")
     cls = _num(audits, "cumulative-layout-shift")
+
     def category(name: str) -> int | None:
         sc = (lh.get("categories") or {}).get(name, {}).get("score")
         return round(sc * 100) if isinstance(sc, (int, float)) else None
@@ -145,17 +146,19 @@ def fetch_pagespeed(
     params = {
         "url": url,
         "strategy": strategy,
-        "key": api_key,
         # One call, four categories: vitals, mobile usability, accessibility, best practices.
         "category": ["performance", "seo", "accessibility", "best-practices"],
     }
+    # The key travels in a header: in the query string, httpx's error for a refused
+    # call quotes the URL, and the runner logs that error.
+    headers = {"X-Goog-Api-Key": api_key}
     own = client is None
     c = client or httpx.Client(timeout=httpx.Timeout(timeout_seconds))
     try:
         last: Exception | None = None
         for _ in range(max(1, attempts)):
             try:
-                response = c.get(ENDPOINT, params=params)
+                response = c.get(ENDPOINT, params=params, headers=headers)
                 response.raise_for_status()
                 return parse_pagespeed(response.json(), strategy)
             except httpx.TimeoutException as exc:

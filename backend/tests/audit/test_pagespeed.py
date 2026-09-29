@@ -39,3 +39,22 @@ def test_real_user_data_wins_over_the_lab_when_present() -> None:
 def test_an_empty_reply_is_all_unknown() -> None:
     s = parse_pagespeed({})
     assert s.performance_score is None and s.lcp_ms is None and s.lcp_verdict == "unknown"
+
+
+def test_the_key_never_rides_in_the_url() -> None:
+    import httpx
+    import pytest
+
+    from ppcway.audit.pagespeed import fetch_pagespeed
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "secret-key" not in str(request.url)
+        assert request.headers["X-Goog-Api-Key"] == "secret-key"
+        return httpx.Response(400, json={"error": {"message": "FAILED_DOCUMENT_REQUEST"}})
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as client,
+        pytest.raises(httpx.HTTPStatusError) as refused,
+    ):
+        fetch_pagespeed("https://example.ca/", api_key="secret-key", client=client)
+    assert "secret-key" not in str(refused.value)
