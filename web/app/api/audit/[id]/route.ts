@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const BACKEND = process.env.BACKEND_URL ?? "http://localhost:8000";
+const BACKEND = process.env.BACKEND_URL ?? "http://localhost:8300";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

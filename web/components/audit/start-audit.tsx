@@ -14,11 +14,14 @@ export function StartAudit({
   city,
   site,
   label,
+  placeId = "",
 }: {
   business: string;
   city: string;
   site: string;
   label: string;
+  /** The Google listing they confirmed, so the report can read it again later. */
+  placeId?: string;
 }) {
   const router = useRouter();
   const [working, setWorking] = useState(false);
@@ -35,7 +38,13 @@ export function StartAudit({
       const res = await fetch("/api/audit", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ business_name: business, city, site, source: "landing" }),
+        body: JSON.stringify({
+          business_name: business,
+          city,
+          site,
+          source: "landing",
+          place_id: placeId,
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         id?: string;

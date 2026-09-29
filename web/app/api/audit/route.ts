@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
   The public audit form posts here; this forwards to the backend so its address
   and any future key stay on the server. BACKEND_URL defaults to the local API.
 */
-const BACKEND = process.env.BACKEND_URL ?? "http://localhost:8000";
+const BACKEND = process.env.BACKEND_URL ?? "http://localhost:8300";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);

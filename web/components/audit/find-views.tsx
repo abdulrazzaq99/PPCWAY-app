@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { Button, LinkButton } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
+import type { Listing } from "@/lib/listing";
+import { listingMeta, listingRating } from "@/lib/listing";
 import { ManualForm } from "./manual-form";
 import { AuditPage, Card, Pill } from "./shell";
 import { StartAudit } from "./start-audit";
@@ -10,25 +12,51 @@ import { StartAudit } from "./start-audit";
 /*
   Frames 181:5823 (Find your business, with three matches), 181:5880 (Confirm your
   listing), 181:5920 (Checking) and 181:5971 (We could not find you).
-  Static sample data; the live run starts from the not-found form, which is the one
-  that carries a website today. A client component because Field takes a render
-  function for its input, which cannot cross from a server component.
+
+  With `listings` or `chosen` the screens show what Google returned; with neither
+  they fall back to the drawn sample, which is how the frames are reviewed. The
+  frames' Verified badge and service chips are gone: Google publishes neither, and
+  only the owner's own sign-in would.
 */
 export type Typed = { name: string; city: string; site: string };
 const SAMPLE: Typed = { name: "Alpha Plumbing", city: "Mississauga, Ontario", site: "" };
 
+const SAMPLE_MATCHES = [
+  {
+    name: "Alpha Plumbing",
+    meta: "1420 Dundas Street East, Mississauga · Plumber · Open now",
+    chip: "4.6 · 87 reviews",
+  },
+  {
+    name: "Alpha Plumbing & Drains",
+    meta: "Etobicoke, Toronto · Plumber",
+    chip: "3.9 · 12 reviews",
+  },
+  {
+    name: "Alpha Plumbing Services",
+    meta: "Brampton · Plumber · No hours listed",
+    chip: "No reviews yet",
+  },
+];
+
 export function AuditFindView({
   view,
   typed,
+  listings,
+  chosen,
+  error,
 }: {
   view: "find" | "results" | "confirm" | "checking" | "not-found";
   typed?: Partial<Typed>;
+  listings?: Listing[];
+  chosen?: Listing;
+  error?: string;
 }) {
   const t: Typed = { ...SAMPLE, ...typed };
-  if (view === "confirm") return <ConfirmView typed={t} />;
+  if (view === "confirm") return <ConfirmView typed={t} chosen={chosen} />;
   if (view === "checking") return <CheckingView />;
   if (view === "not-found") return <NotFoundView />;
-  return <FindView results={view === "results"} typed={t} />;
+  return <FindView results={view === "results"} typed={t} listings={listings} error={error} />;
 }
 
 function query(t: Typed, view: string): string {
@@ -37,7 +65,19 @@ function query(t: Typed, view: string): string {
   return `/audit?${q.toString()}`;
 }
 
-function FindView({ results, typed }: { results: boolean; typed: Typed }) {
+function FindView({
+  results,
+  typed,
+  listings,
+  error,
+}: {
+  results: boolean;
+  typed: Typed;
+  listings?: Listing[];
+  error?: string;
+}) {
+  const live = listings !== undefined;
+  const matched = (listings ?? []).filter((li) => li.name_match).length;
   return (
     <AuditPage>
       <Pill>Free audit, no account needed</Pill>
@@ -93,43 +133,122 @@ function FindView({ results, typed }: { results: boolean; typed: Typed }) {
           </div>
         </form>
       </Card>
-      {results ? (
-        <div className="mt-6">
-          <p className="text-muted text-[15px] leading-[18px] font-semibold">
-            Three businesses match. Which one is yours?
-          </p>
-          <div className="mt-3 flex flex-col gap-3">
-            <Result
-              selected
-              name="Alpha Plumbing"
-              meta="1420 Dundas Street East, Mississauga · Plumber · Open now"
-              chip="4.6 · 87 reviews"
-            />
-            <Result
-              name="Alpha Plumbing & Drains"
-              meta="Etobicoke, Toronto · Plumber"
-              chip="3.9 · 12 reviews"
-            />
-            <Result
-              name="Alpha Plumbing Services"
-              meta="Brampton · Plumber · No hours listed"
-              chip="No reviews yet"
-            />
-          </div>
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
-            <Link
-              href="/audit?view=not-found"
-              className="text-brand text-[14px] leading-[17px] font-semibold"
-            >
-              None of these are us
+
+      {error ? (
+        <Card className="border-red-line bg-red-pale mt-6 p-5">
+          <p className="text-red text-[15px] leading-5 font-semibold">{error}</p>
+          <p className="text-muted mt-2 text-[14px] leading-[18px]">
+            You can still get the website check.{" "}
+            <Link href="/audit?view=not-found" className="text-brand font-semibold">
+              Tell us the basics instead
             </Link>
-            <LinkButton href={query(typed, "confirm")} size="sm" className="h-[42px]">
-              This one
-            </LinkButton>
-          </div>
-        </div>
+            .
+          </p>
+        </Card>
+      ) : null}
+
+      {results && !error ? (
+        live ? (
+          <LiveMatches listings={listings ?? []} matched={matched} typed={typed} />
+        ) : (
+          <SampleMatches typed={typed} />
+        )
       ) : null}
     </AuditPage>
+  );
+}
+
+function LiveMatches({
+  listings,
+  matched,
+  typed,
+}: {
+  listings: Listing[];
+  matched: number;
+  typed: Typed;
+}) {
+  if (listings.length === 0) {
+    return (
+      <Card className="mt-6 p-5 sm:p-7">
+        <p className="text-[16px] leading-5 font-semibold">
+          Google has no listing under that name near {typed.city || "you"}.
+        </p>
+        <p className="text-muted mt-2 text-[15px] leading-[19px]">
+          That is common for newer businesses, and it is worth fixing on its own. Tell us the basics
+          and we will check your website anyway.
+        </p>
+        <div className="mt-4">
+          <LinkButton href="/audit?view=not-found" size="sm">
+            Check my website instead
+          </LinkButton>
+        </div>
+      </Card>
+    );
+  }
+  const heading =
+    matched === 1
+      ? "One business matches that name. Is it yours?"
+      : matched > 1
+        ? `${matched} businesses match that name. Which one is yours?`
+        : "Nothing matches that name exactly. These are the nearest.";
+  return (
+    <form action="/audit" method="get" className="mt-6">
+      <input type="hidden" name="view" value="confirm" />
+      <input type="hidden" name="name" value={typed.name} />
+      <input type="hidden" name="city" value={typed.city} />
+      {typed.site ? <input type="hidden" name="site" value={typed.site} /> : null}
+      <p className="text-muted text-[15px] leading-[18px] font-semibold">{heading}</p>
+      <div className="mt-3 flex flex-col gap-3">
+        {listings.map((li, i) => (
+          <Result
+            key={li.place_id}
+            value={li.place_id}
+            selected={i === 0}
+            name={li.name}
+            meta={listingMeta(li)}
+            chip={listingRating(li)}
+          />
+        ))}
+      </div>
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
+        <Link
+          href="/audit?view=not-found"
+          className="text-brand text-[14px] leading-[17px] font-semibold"
+        >
+          None of these are us
+        </Link>
+        <Button type="submit" size="sm" className="h-[42px]">
+          This one
+        </Button>
+      </div>
+      <p className="text-faint mt-4 text-[13px] leading-4">Business details from Google Maps.</p>
+    </form>
+  );
+}
+
+function SampleMatches({ typed }: { typed: Typed }) {
+  return (
+    <div className="mt-6">
+      <p className="text-muted text-[15px] leading-[18px] font-semibold">
+        Three businesses match. Which one is yours?
+      </p>
+      <div className="mt-3 flex flex-col gap-3">
+        {SAMPLE_MATCHES.map((m, i) => (
+          <Result key={m.name} value={m.name} selected={i === 0} {...m} />
+        ))}
+      </div>
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
+        <Link
+          href="/audit?view=not-found"
+          className="text-brand text-[14px] leading-[17px] font-semibold"
+        >
+          None of these are us
+        </Link>
+        <LinkButton href={query(typed, "confirm")} size="sm" className="h-[42px]">
+          This one
+        </LinkButton>
+      </div>
+    </div>
   );
 }
 
@@ -138,22 +257,28 @@ function Result({
   meta,
   chip,
   selected,
+  value,
 }: {
   name: string;
   meta: string;
   chip: string;
   selected?: boolean;
+  value: string;
 }) {
   return (
-    <label
-      className={`flex cursor-pointer items-center gap-4 rounded-[12px] border px-4 py-4 ${selected ? "border-brand bg-brand-tint" : "border-line bg-panel hover:bg-line-soft"}`}
-    >
-      <input type="radio" name="listing" defaultChecked={selected} className="peer sr-only" />
+    <label className="group border-line bg-panel hover:bg-line-soft has-checked:border-brand has-checked:bg-brand-tint flex cursor-pointer items-center gap-4 rounded-[12px] border px-4 py-4">
+      <input
+        type="radio"
+        name="place"
+        value={value}
+        defaultChecked={selected}
+        className="peer sr-only"
+      />
       <span
         aria-hidden
-        className={`flex size-[18px] shrink-0 items-center justify-center rounded-full border ${selected ? "border-brand" : "border-line-input"}`}
+        className="border-line-input peer-checked:border-brand flex size-[18px] shrink-0 items-center justify-center rounded-full border"
       >
-        {selected ? <span className="bg-brand size-[9px] rounded-full" /> : null}
+        <span className="bg-brand hidden size-[9px] rounded-full group-has-checked:block" />
       </span>
       <span className="min-w-0 flex-1">
         <span className="text-ink block text-[16px] leading-[19px] font-semibold">{name}</span>
@@ -164,38 +289,42 @@ function Result({
   );
 }
 
-function ConfirmView({ typed }: { typed: Typed }) {
+function ConfirmView({ typed, chosen }: { typed: Typed; chosen?: Listing }) {
+  const name = chosen?.name ?? "Alpha Plumbing";
+  const meta = chosen
+    ? listingMeta(chosen)
+    : "Plumber · 1420 Dundas Street East, Mississauga, Ontario";
+  const rating = chosen ? listingRating(chosen) : "4.6 · 87 reviews";
+  const site = typed.site || chosen?.website?.replace(/^https?:\/\//, "").replace(/\/$/, "") || "";
   return (
     <AuditPage>
       <h1 className="text-[32px] leading-[38px] font-bold sm:text-[42px] sm:leading-[51px]">
         Is this you?
       </h1>
       <p className="text-muted mt-6 max-w-[700px] text-[18px] leading-[22px]">
-        Everything below comes from your Google Business Profile. If something looks wrong here, it
-        looks wrong to your customers too.
+        This is what Google shows about you today. If something looks wrong here, it looks wrong to
+        your customers too.
       </p>
       <Card className="mt-6">
-        <div className="flex flex-col gap-5 p-5 sm:flex-row sm:p-7">
-          <div className="bg-bar-soft flex size-[132px] shrink-0 items-center justify-center rounded-[14px]">
-            <span className="text-faint text-[13px] font-semibold">Photo</span>
-          </div>
+        <div className="flex flex-col gap-5 p-5 sm:p-7">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-[10px]">
-              <span className="text-[24px] leading-[29px] font-bold">Alpha Plumbing</span>
-              <Pill>Verified</Pill>
-            </div>
+            <span className="text-[24px] leading-[29px] font-bold">{name}</span>
+            <p className="text-muted mt-[10px] text-[15px] leading-[18px]">{meta}</p>
             <p className="text-muted mt-[10px] text-[15px] leading-[18px]">
-              Plumber · 1420 Dundas Street East, Mississauga, Ontario
+              {rating}
+              {site ? ` · ${site}` : ""}
+              {chosen?.phone ? ` · ${chosen.phone}` : ""}
             </p>
-            <p className="text-muted mt-[10px] text-[15px] leading-[18px]">
-              4.6 out of 5, from 87 reviews · Open now, closes 9 pm ·{" "}
-              {typed.site || "alphaplumbing.ca"}
-            </p>
-            <div className="mt-[10px] flex flex-wrap gap-2">
-              <Pill tone="grey">Emergency plumbing</Pill>
-              <Pill tone="grey">Drain clearing</Pill>
-              <Pill tone="grey">Water heaters</Pill>
-            </div>
+            {chosen ? (
+              <p className="text-faint mt-[10px] text-[13px] leading-4">
+                From Google Maps.{" "}
+                {chosen.maps_url ? (
+                  <Link href={chosen.maps_url} className="text-brand font-semibold">
+                    See the listing
+                  </Link>
+                ) : null}
+              </p>
+            ) : null}
           </div>
         </div>
         <div className="border-line-soft flex flex-col gap-3 border-t px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
@@ -205,14 +334,29 @@ function ConfirmView({ typed }: { typed: Typed }) {
           >
             Not us. Search again
           </Link>
-          <StartAudit
-            business={typed.name}
-            city={typed.city}
-            site={typed.site}
-            label="Yes, that is us. Check it"
-          />
+          {site ? (
+            <StartAudit
+              business={chosen?.name ?? typed.name}
+              city={typed.city}
+              site={site}
+              placeId={chosen?.place_id ?? ""}
+              label="Yes, that is us. Check it"
+            />
+          ) : (
+            /* Google has no website for them and none was typed, so there is
+               nothing to check yet. The manual form is the one place that asks. */
+            <LinkButton href={query(typed, "not-found")} size="sm" className="h-[42px]">
+              Yes. Add my website
+            </LinkButton>
+          )}
         </div>
       </Card>
+      {site ? null : (
+        <p className="text-muted mt-4 text-[15px] leading-[19px]">
+          Google has no website on this listing. That is worth fixing on its own, and we need the
+          address to check the page your ads would send people to.
+        </p>
+      )}
       <p className="text-faint mt-6 text-[14px] leading-[17px]">
         We only read what is already public. Nothing is posted, changed or contacted.
       </p>

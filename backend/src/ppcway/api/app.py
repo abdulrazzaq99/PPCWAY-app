@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ppcway.audit.models import AuditRequest, AuditRun
+from ppcway.audit.places import Listing, PlacesError, find_businesses, place_details
 from ppcway.audit.runner import normalise_site, run_audit
 from ppcway.config import Settings, load_settings
 from ppcway.db.session import get_session, session_factory
@@ -51,6 +52,9 @@ class AuditRequestIn(BaseModel):
     #: "yes", "no" or "unsure": whether they already run Google Ads.
     advertising: str = Field(default="", pattern="^(yes|no|unsure|)$")
     source: str = Field(default="landing", pattern="^(landing|onboarding)$")
+    #: The Google listing they picked, when they came through Find my business.
+    #: The id is the one part of a listing Google lets us keep.
+    place_id: str = Field(default="", max_length=200)
 
     @field_validator("site")
     @classmethod
@@ -73,6 +77,42 @@ class AuditOut(BaseModel):
     status: str
     report: dict[str, Any] | None = None
     error: str | None = None
+
+
+class ListingOut(BaseModel):
+    """A Google listing as the screens show it. Only `place_id` may be stored."""
+
+    place_id: str
+    name: str
+    address: str
+    category: str
+    rating: float | None
+    reviews: int
+    website: str
+    phone: str
+    open_now: bool | None
+    service_area_only: bool
+    status: str
+    maps_url: str
+    name_match: bool
+
+    @classmethod
+    def of(cls, li: Listing) -> ListingOut:
+        return cls(
+            place_id=li.place_id,
+            name=li.name,
+            address=li.short_address or li.address,
+            category=li.category,
+            rating=li.rating,
+            reviews=li.reviews,
+            website=li.website,
+            phone=li.phone,
+            open_now=li.open_now,
+            service_area_only=li.service_area_only,
+            status=li.status,
+            maps_url=li.maps_url,
+            name_match=li.name_match,
+        )
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -100,6 +140,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             business_name=body.business_name.strip(),
             site=body.site,
             source=body.source,
+            place_id=body.place_id.strip(),
             consent_text=CONSENT_TEXT if body.consent else "",
         )
         run = AuditRun(site=normalise_site(body.site), status="queued")
@@ -126,6 +167,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not path.exists():
             raise HTTPException(404, "No screenshot for this audit.")
         return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+
+    def _maps_key() -> str:
+        if settings.google_maps_api_key is None:
+            raise HTTPException(503, "Business search is not set up yet.")
+        return settings.google_maps_api_key.get_secret_value()
+
+    @app.get("/v1/places/search", response_model=list[ListingOut])
+    def search_businesses(
+        name: Annotated[str, Query(min_length=2, max_length=200)],
+        city: Annotated[str, Query(max_length=200)] = "",
+        region: Annotated[str, Query(min_length=2, max_length=2)] = "ca",
+        limit: Annotated[int, Query(ge=1, le=60)] = 20,
+    ) -> list[ListingOut]:
+        """Every listing of that name, the given town's first. See `audit.places`."""
+        try:
+            found = find_businesses(
+                name.strip(), api_key=_maps_key(), city=city.strip(), region=region, max_results=limit
+            )
+        except PlacesError as exc:
+            log.warning("places search failed: %s", exc)
+            raise HTTPException(502, "Google did not answer the business search.") from None
+        return [ListingOut.of(li) for li in found]
+
+    @app.get("/v1/places/{place_id}", response_model=ListingOut)
+    def read_business(place_id: str) -> ListingOut:
+        try:
+            found = place_details(place_id, api_key=_maps_key())
+        except PlacesError as exc:
+            log.warning("places details failed: %s", exc)
+            raise HTTPException(502, "Google did not answer for that listing.") from None
+        if found is None:
+            raise HTTPException(404, "Google no longer has that listing.")
+        return ListingOut.of(found)
 
     @app.get("/v1/audits", response_model=list[AuditOut])
     def list_audits(session: Annotated[Session, Depends(get_session)], limit: int = 20) -> list[AuditOut]:

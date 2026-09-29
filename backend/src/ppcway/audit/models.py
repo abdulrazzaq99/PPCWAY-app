@@ -29,6 +29,9 @@ class AuditRequest(Base):
     site: Mapped[str] = mapped_column(String(500))
     #: "landing" for the public form, "onboarding" for step 4.
     source: Mapped[str] = mapped_column(String(20), default="landing")
+    #: The Google listing they picked, if any. Google allows keeping the id and
+    #: nothing else, so the rest is read again whenever a screen shows it.
+    place_id: Mapped[str] = mapped_column(String(200), default="")
     consent_text: Mapped[str] = mapped_column(Text)
     consented_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
