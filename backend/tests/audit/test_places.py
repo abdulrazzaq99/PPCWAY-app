@@ -11,6 +11,7 @@ from ppcway.audit.places import (
     details_mask,
     find_businesses,
     names_match,
+    nearby_rivals,
     parse_listing,
     place_details,
     search_body,
@@ -144,3 +145,92 @@ def test_a_refused_town_lookup_never_quotes_the_key() -> None:
     ):
         find_businesses("Alpha Plumbing", city="Mississauga", api_key="secret-key", client=client)
     assert "secret-key" not in str(refused.value)
+
+
+def test_hours_photos_and_the_twenty_four_hour_case_are_read() -> None:
+    li = parse_listing(
+        _place(
+            "p3",
+            "Night Owl Plumbing",
+            photos=[{"name": "a"}, {"name": "b"}],
+            regularOpeningHours={"periods": [{"open": {"day": 1, "hour": 0}}]},
+        )
+    )
+    assert li.photos == 2 and li.hours_set and li.open_24h
+    shut = parse_listing(
+        _place(
+            "p4",
+            "Nine To Five Plumbing",
+            regularOpeningHours={
+                "periods": [{"open": {"day": 1, "hour": 9}, "close": {"day": 1, "hour": 17}}]
+            },
+        )
+    )
+    assert shut.hours_set and not shut.open_24h and shut.photos == 0
+    assert not parse_listing(_place("p5", "No Hours")).hours_set
+
+
+def test_the_nearby_search_asks_for_the_trade_and_drops_the_business_itself() -> None:
+    mine = parse_listing(
+        _place("mine", "Alpha Plumbing", primaryTypeDisplayName={"text": "Plumber"}),
+    )
+    mine = type(mine)(**{**mine.__dict__, "lat": 43.58, "lng": -79.64})
+    sent: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.update(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "places": [
+                    _place("mine", "Alpha Plumbing"),
+                    _place("r1", "Northgate Plumbing"),
+                    _place("r2", "Lakeshore Drain Co"),
+                ]
+            },
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        rivals = nearby_rivals(mine, api_key="k", limit=5, client=client)
+
+    assert [r.place_id for r in rivals] == ["r1", "r2"]
+    assert sent["textQuery"] == "Plumber"
+    assert sent["locationBias"]["circle"]["radius"] == 15000.0
+
+
+def test_nothing_nearby_without_a_point_on_the_map() -> None:
+    bare = parse_listing(_place("x", "Somebody"))
+    assert nearby_rivals(bare, api_key="k") == []
+
+
+def test_a_business_with_no_coordinates_is_anchored_on_the_town() -> None:
+    """Google gives a service-area trade no location, so the town is the only anchor."""
+    mine = parse_listing(
+        _place("mine", "Alpha Plumbing", primaryTypeDisplayName={"text": "Plumber"})
+    )
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url).startswith(GEOCODE_ENDPOINT):
+            return httpx.Response(200, json=MISSISSAUGA)
+        seen.update(json.loads(request.content))
+        return httpx.Response(200, json={"places": [_place("r1", "Northgate Plumbing")]})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        rivals = nearby_rivals(mine, api_key="k", city="Mississauga, Ontario", client=client)
+
+    assert [r.place_id for r in rivals] == ["r1"]
+    assert seen["locationBias"]["circle"]["center"]["latitude"] == 43.589
+
+
+def test_no_anchor_means_no_search_rather_than_a_search_from_nowhere() -> None:
+    """An unanchored text search lands on the server's own address, which is not theirs."""
+    mine = parse_listing(
+        _place("mine", "Alpha Plumbing", primaryTypeDisplayName={"text": "Plumber"})
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("no call should be made without an anchor")
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        assert nearby_rivals(mine, api_key="k", city="", client=client) == []

@@ -51,8 +51,14 @@ FIELDS = (
     "places.websiteUri",
     "places.nationalPhoneNumber",
     "places.currentOpeningHours.openNow",
+    "places.regularOpeningHours",
+    "places.photos",
     "nextPageToken",
 )
+
+#: How far a "nearby" comparison looks, and how many rivals it keeps.
+RIVAL_RADIUS_M = 15_000
+RIVAL_LIMIT = 6
 
 
 class PlacesError(RuntimeError):
@@ -78,6 +84,12 @@ class Listing:
     open_now: bool | None
     lat: float | None
     lng: float | None
+    #: How many photos the listing carries. Google returns at most ten.
+    photos: int = 0
+    #: True when Google holds opening hours at all.
+    hours_set: bool = False
+    #: True when a day is open with no closing time, which is how Google says 24 hours.
+    open_24h: bool = False
     #: Every word of the name typed is in this listing's name.
     name_match: bool = False
 
@@ -97,6 +109,10 @@ def parse_listing(raw: dict[str, Any], typed: str = "") -> Listing:
     loc = raw.get("location") or {}
     rating = raw.get("rating")
     name = (raw.get("displayName") or {}).get("text", "")
+    hours = raw.get("regularOpeningHours") or {}
+    periods = hours.get("periods") or []
+    # Google says "open 24 hours" by giving a period that opens and never closes.
+    always_open = any("close" not in p for p in periods if isinstance(p, dict))
     return Listing(
         place_id=str(raw.get("id", "")),
         name=name,
@@ -113,6 +129,9 @@ def parse_listing(raw: dict[str, Any], typed: str = "") -> Listing:
         open_now=(raw.get("currentOpeningHours") or {}).get("openNow"),
         lat=loc.get("latitude"),
         lng=loc.get("longitude"),
+        photos=len(raw.get("photos") or []),
+        hours_set=bool(periods or hours.get("weekdayDescriptions")),
+        open_24h=always_open,
         name_match=names_match(typed, name) if typed else False,
     )
 
@@ -211,6 +230,59 @@ def place_details(
     finally:
         if own:
             c.close()
+
+
+def nearby_rivals(
+    listing: Listing,
+    *,
+    api_key: str,
+    city: str = "",
+    limit: int = RIVAL_LIMIT,
+    region: str = "ca",
+    client: httpx.Client | None = None,
+) -> list[Listing]:
+    """The same trade within 15 km of this business, itself left out.
+
+    The comparison the report draws is the honest part of "who you are up against":
+    it says who Google shows beside them, never who is advertising, which no public
+    source knows.
+
+    A business that serves an area has no coordinates: Google publishes none for a
+    trade that hides its address, which is most of them. The town they typed is the
+    anchor then. Without either, this returns nothing rather than searching with no
+    anchor at all, which lands on whatever the server's own address is.
+    """
+    if not listing.category:
+        return []
+    own = client is None
+    c = client or httpx.Client(timeout=httpx.Timeout(15))
+    try:
+        near: tuple[float, float] | None = None
+        if listing.lat is not None and listing.lng is not None:
+            near = (listing.lat, listing.lng)
+        elif city.strip():
+            near = geocode(city, api_key=api_key, region=region, client=c)
+        if near is None:
+            return []
+        body = search_body(listing.category, near, region)
+        body["locationBias"] = {
+            "circle": {
+                "center": {"latitude": near[0], "longitude": near[1]},
+                "radius": float(RIVAL_RADIUS_M),
+            }
+        }
+        response = c.post(
+            SEARCH_ENDPOINT,
+            json=body,
+            headers={"X-Goog-Api-Key": api_key, "X-Goog-FieldMask": ",".join(FIELDS)},
+        )
+        if response.status_code != 200:
+            raise _refusal(response)
+        found = [parse_listing(p) for p in response.json().get("places") or []]
+    finally:
+        if own:
+            c.close()
+    return [li for li in found if li.place_id != listing.place_id][:limit]
 
 
 def find_businesses(

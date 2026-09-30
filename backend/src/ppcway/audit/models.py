@@ -32,6 +32,9 @@ class AuditRequest(Base):
     #: The Google listing they picked, if any. Google allows keeping the id and
     #: nothing else, so the rest is read again whenever a screen shows it.
     place_id: Mapped[str] = mapped_column(String(200), default="")
+    #: The town they typed. A trade that hides its address has no coordinates on
+    #: Google, so this is the only anchor the "nearby" comparison has.
+    city: Mapped[str] = mapped_column(String(120), default="")
     consent_text: Mapped[str] = mapped_column(Text)
     consented_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

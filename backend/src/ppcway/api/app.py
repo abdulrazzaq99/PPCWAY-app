@@ -21,7 +21,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ppcway.audit.models import AuditRequest, AuditRun
-from ppcway.audit.places import Listing, PlacesError, find_businesses, place_details
+from ppcway.audit.places import (
+    Listing,
+    PlacesError,
+    find_businesses,
+    nearby_rivals,
+    place_details,
+)
 from ppcway.audit.runner import normalise_site, run_audit
 from ppcway.config import Settings, load_settings
 from ppcway.db.session import get_session, session_factory
@@ -77,6 +83,10 @@ class AuditOut(BaseModel):
     status: str
     report: dict[str, Any] | None = None
     error: str | None = None
+    #: The Google listing they confirmed, so the report can read it again.
+    place_id: str = ""
+    #: The town they typed, the anchor for the businesses nearby.
+    city: str = ""
 
 
 class ListingOut(BaseModel):
@@ -94,6 +104,9 @@ class ListingOut(BaseModel):
     service_area_only: bool
     status: str
     maps_url: str
+    photos: int
+    hours_set: bool
+    open_24h: bool
     name_match: bool
 
     @classmethod
@@ -111,6 +124,9 @@ class ListingOut(BaseModel):
             service_area_only=li.service_area_only,
             status=li.status,
             maps_url=li.maps_url,
+            photos=li.photos,
+            hours_set=li.hours_set,
+            open_24h=li.open_24h,
             name_match=li.name_match,
         )
 
@@ -131,7 +147,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/v1/audits", response_model=AuditOut, status_code=202)
     def request_audit(
-        body: AuditRequestIn, tasks: BackgroundTasks, session: Annotated[Session, Depends(get_session)]
+        body: AuditRequestIn,
+        tasks: BackgroundTasks,
+        session: Annotated[Session, Depends(get_session)],
     ) -> AuditOut:
         req = AuditRequest(
             name=body.name.strip(),
@@ -141,6 +159,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             site=body.site,
             source=body.source,
             place_id=body.place_id.strip(),
+            city=body.city.strip(),
             consent_text=CONSENT_TEXT if body.consent else "",
         )
         run = AuditRun(site=normalise_site(body.site), status="queued")
@@ -157,7 +176,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         run = session.get(AuditRun, run_id)
         if run is None:
             raise HTTPException(404, "No audit with that id.")
-        return AuditOut(id=run.id, site=run.site, status=run.status, report=run.report, error=run.error)
+        asked = session.get(AuditRequest, run.request_id) if run.request_id else None
+        return AuditOut(
+            id=run.id,
+            site=run.site,
+            status=run.status,
+            report=run.report,
+            error=run.error,
+            place_id=asked.place_id if asked else "",
+            city=asked.city if asked else "",
+        )
 
     @app.get("/v1/audits/{run_id}/screenshot/{kind}")
     def screenshot(run_id: UUID, kind: str) -> FileResponse:
@@ -166,7 +194,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         path = Path(settings.audit_shots_dir) / str(run_id) / f"{kind}.jpg"
         if not path.exists():
             raise HTTPException(404, "No screenshot for this audit.")
-        return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+        return FileResponse(
+            path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"}
+        )
 
     def _maps_key() -> str:
         if settings.google_maps_api_key is None:
@@ -183,7 +213,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """Every listing of that name, the given town's first. See `audit.places`."""
         try:
             found = find_businesses(
-                name.strip(), api_key=_maps_key(), city=city.strip(), region=region, max_results=limit
+                name.strip(),
+                api_key=_maps_key(),
+                city=city.strip(),
+                region=region,
+                max_results=limit,
             )
         except PlacesError as exc:
             log.warning("places search failed: %s", exc)
@@ -201,9 +235,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "Google no longer has that listing.")
         return ListingOut.of(found)
 
+    @app.get("/v1/places/{place_id}/nearby", response_model=list[ListingOut])
+    def read_nearby(place_id: str, city: str = "", limit: int = 6) -> list[ListingOut]:
+        """The same trade around that business: the honest half of "who you are up against"."""
+        key = _maps_key()
+        try:
+            listing = place_details(place_id, api_key=key)
+            if listing is None:
+                raise HTTPException(404, "Google no longer has that listing.")
+            rivals = nearby_rivals(listing, api_key=key, city=city, limit=min(max(limit, 1), 20))
+        except PlacesError as exc:
+            log.warning("places nearby failed: %s", exc)
+            raise HTTPException(502, "Google did not answer for the businesses nearby.") from None
+        return [ListingOut.of(li) for li in rivals]
+
     @app.get("/v1/audits", response_model=list[AuditOut])
-    def list_audits(session: Annotated[Session, Depends(get_session)], limit: int = 20) -> list[AuditOut]:
-        rows = session.scalars(select(AuditRun).order_by(AuditRun.created_at.desc()).limit(min(limit, 100))).all()
+    def list_audits(
+        session: Annotated[Session, Depends(get_session)], limit: int = 20
+    ) -> list[AuditOut]:
+        rows = session.scalars(
+            select(AuditRun).order_by(AuditRun.created_at.desc()).limit(min(limit, 100))
+        ).all()
         return [AuditOut(id=r.id, site=r.site, status=r.status, error=r.error) for r in rows]
 
     return app

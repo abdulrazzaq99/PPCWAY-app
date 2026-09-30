@@ -16,6 +16,10 @@ export type Listing = {
   service_area_only: boolean;
   status: string;
   maps_url: string;
+  /** Photos on the listing. Google returns at most ten. */
+  photos: number;
+  hours_set: boolean;
+  open_24h: boolean;
   name_match: boolean;
 };
 

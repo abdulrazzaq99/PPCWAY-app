@@ -34,9 +34,10 @@ type Sample = {
   panels: Panel[];
   /** The fourth card. Only the account owner can open it, which is the point. */
   ads: { title: string; note: string; rows: string[]; button: string };
-  cost: { title: string; body: string; daily: string; basis: string };
+  /** Left out when a real run has no money line it can stand behind. */
+  cost?: { title: string; body: string; daily: string; basis: string };
   /** A list the audit found, two rows shown and the rest with a free account. */
-  locked: { title: string; note: string; shown: string[]; total: number };
+  locked?: { title: string; note: string; shown: string[]; total: number };
   /** The sentence on the bar that follows the reader. */
   bar: string;
   fixes: { when: string; title: string; body: string }[];
@@ -422,30 +423,32 @@ export function AuditReport({ sample }: { sample: Sample }) {
         </div>
       </section>
 
-      <section className="mt-8 grid gap-5 lg:grid-cols-2">
+      <section className="mt-8 grid gap-5 lg:grid-cols-2 lg:items-start">
         {sample.panels.map((p) => (
           <PanelCard key={p.title} panel={p} />
         ))}
         <AdsCard ads={sample.ads} />
       </section>
 
-      <section className="bg-amber-tint border-amber-line mt-8 rounded-[16px] border p-6 sm:p-8">
-        <span className="flex flex-wrap items-center gap-2">
-          <Pill tone="amber">What this is likely costing you</Pill>
-          <Pill tone="grey">{sample.cost.basis}</Pill>
-        </span>
-        <p className="mt-3 text-[19px] leading-6 font-bold sm:text-[26px] sm:leading-8">
-          {sample.cost.title}
-        </p>
-        <p className="text-red mt-2 text-[15px] leading-5 font-bold sm:text-[18px] sm:leading-6">
-          {sample.cost.daily}
-        </p>
-        <p className="text-amber-dark mt-3 max-w-[1100px] text-[13px] leading-4 sm:text-[16px] sm:leading-[22px]">
-          {sample.cost.body}
-        </p>
-      </section>
+      {sample.cost ? (
+        <section className="bg-amber-tint border-amber-line mt-8 rounded-[16px] border p-6 sm:p-8">
+          <span className="flex flex-wrap items-center gap-2">
+            <Pill tone="amber">What this is likely costing you</Pill>
+            <Pill tone="grey">{sample.cost.basis}</Pill>
+          </span>
+          <p className="mt-3 text-[19px] leading-6 font-bold sm:text-[26px] sm:leading-8">
+            {sample.cost.title}
+          </p>
+          <p className="text-red mt-2 text-[15px] leading-5 font-bold sm:text-[18px] sm:leading-6">
+            {sample.cost.daily}
+          </p>
+          <p className="text-amber-dark mt-3 max-w-[1100px] text-[13px] leading-4 sm:text-[16px] sm:leading-[22px]">
+            {sample.cost.body}
+          </p>
+        </section>
+      ) : null}
 
-      <LockedList locked={sample.locked} />
+      {sample.locked ? <LockedList locked={sample.locked} /> : null}
 
       <section className="mt-10">
         <h2 className="text-[20px] leading-6 font-bold sm:text-[30px] sm:leading-9">
@@ -715,7 +718,7 @@ function WhoChip({ who }: { who: Who }) {
   are drawn as blurred bars, not blurred text, so nothing is sent that the page does
   not show.
 */
-function LockedList({ locked }: { locked: Sample["locked"] }) {
+function LockedList({ locked }: { locked: NonNullable<Sample["locked"]> }) {
   const more = locked.total - locked.shown.length;
   return (
     <section className="mt-8">
