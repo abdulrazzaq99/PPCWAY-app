@@ -423,12 +423,7 @@ export function AuditReport({ sample }: { sample: Sample }) {
         </div>
       </section>
 
-      <section className="mt-8 grid gap-5 lg:grid-cols-2 lg:items-start">
-        {sample.panels.map((p) => (
-          <PanelCard key={p.title} panel={p} />
-        ))}
-        <AdsCard ads={sample.ads} />
-      </section>
+      <Cards panels={sample.panels} ads={sample.ads} />
 
       {sample.cost ? (
         <section className="bg-amber-tint border-amber-line mt-8 rounded-[16px] border p-6 sm:p-8">
@@ -511,6 +506,56 @@ const BAND = {
   fix: { fill: "bg-amber", text: "text-amber-dark" },
   cost: { fill: "bg-red", text: "text-red" },
 } as const;
+
+/** Roughly how tall a card will stand, in the units that matter: rows of text. */
+function weigh(panel: Panel): number {
+  const problems = panel.lines.filter((l) => l.verdict !== "good").length;
+  const good = panel.lines.length - problems;
+  return 3 + problems * 4 + good * 2;
+}
+
+/**
+  Two columns filled by height rather than by row. A short card beside a tall one
+  leaves a hole the length of the difference, and on this page the website card
+  runs three times the listing card. Each new card joins whichever column is
+  shorter; on a phone there is one column and the original order is kept.
+*/
+function Cards({ panels, ads }: { panels: Panel[]; ads: Sample["ads"] }) {
+  const cards = [
+    ...panels.map((p) => ({ key: p.title, weight: weigh(p), node: <PanelCard panel={p} /> })),
+    { key: "ads", weight: 9, node: <AdsCard ads={ads} /> },
+  ];
+  const columns: { weight: number; items: typeof cards }[] = [
+    { weight: 0, items: [] },
+    { weight: 0, items: [] },
+  ];
+  cards.forEach((card) => {
+    const into = columns[0].weight <= columns[1].weight ? columns[0] : columns[1];
+    into.items.push(card);
+    into.weight += card.weight;
+  });
+  const order = new Map(cards.map((c, i) => [c.key, i]));
+
+  return (
+    <section className="mt-8 flex flex-col gap-5 lg:grid lg:grid-cols-2 lg:items-start">
+      {columns.map((column, i) => (
+        <div key={i} className="contents lg:flex lg:flex-col lg:gap-5">
+          {column.items.map((card) => (
+            <div
+              key={card.key}
+              /* On a phone every card is a child of the one flex column, so this
+                 restores the order they were written in. Within a column the same
+                 numbers only ever ascend, so it changes nothing on a laptop. */
+              style={{ order: order.get(card.key) }}
+            >
+              {card.node}
+            </div>
+          ))}
+        </div>
+      ))}
+    </section>
+  );
+}
 
 /** Ten steps, filled to the score, in the colour of its band. */
 function Meter({ score }: { score: number }) {
