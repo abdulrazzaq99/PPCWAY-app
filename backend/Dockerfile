@@ -10,4 +10,5 @@ COPY migrations ./migrations
 RUN uv pip install --system -e .
 ENV PYTHONPATH=/app/src PYTHONUNBUFFERED=1
 EXPOSE 8300
-CMD ["sh", "-c", "alembic upgrade head && uvicorn ppcway.api.app:app --host 0.0.0.0 --port 8300"]
+# Locally the port is 8300; Cloud Run hands the container its own in PORT.
+CMD ["sh", "-c", "alembic upgrade head && uvicorn ppcway.api.app:app --host 0.0.0.0 --port ${PORT:-8300}"]

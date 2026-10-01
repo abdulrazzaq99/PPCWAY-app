@@ -15,7 +15,10 @@ dependencies = [
     "httpx>=0.28",
     "cryptography>=44.0",
     "selectolax>=0.3.21",
-    "playwright>=1.49",
+    # Pinned, not a floor: the Docker image carries the Chromium that belongs to
+    # this exact version, and a newer Playwright looks for a browser that is not
+    # in the image. Raise this and the FROM line in the Dockerfile together.
+    "playwright==1.62.0",
 ]
 
 [project.optional-dependencies]

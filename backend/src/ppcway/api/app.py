@@ -142,7 +142,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     @app.get("/healthz")
+    @app.get("/v1/healthz")
     def healthz() -> dict[str, str]:
+        """Two paths for one answer: Google's front end swallows /healthz on Cloud Run."""
         return {"status": "ok", "environment": settings.environment}
 
     @app.post("/v1/audits", response_model=AuditOut, status_code=202)

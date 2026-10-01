@@ -1,0 +1,8 @@
+# Never bake secrets or local build state into the image.
+.env
+.env.*
+node_modules
+.next
+.vercel
+.git
+tsconfig.tsbuildinfo
