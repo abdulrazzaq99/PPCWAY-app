@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import type { Listing } from "@/lib/listing";
 import type { Run } from "@/lib/report-from-run";
 import { reportFromRun } from "@/lib/report-from-run";
-import { CheckingRows } from "./find-views";
+import { Checking } from "./checking";
 import { AuditReport } from "./report-views";
-import { AuditPage, Card } from "./shell";
+import { AuditPage } from "./shell";
 
 /*
   One real run, drawn as the report's cards. It polls until the run is done, then
@@ -99,34 +99,11 @@ export function LiveReport({ id }: { id: string }) {
     const site = (run?.site ?? "").replace(/^https?:\/\//, "").replace(/\/$/, "");
     return (
       <AuditPage>
-        <h1 className="text-[32px] leading-[38px] font-bold text-balance sm:text-[42px] sm:leading-[51px]">
-          {site ? `Checking ${site}.` : "Checking your business."}
-        </h1>
-        <p className="text-muted mt-6 max-w-[700px] text-[18px] leading-[22px]">
-          About a minute. You can stay on this page. We read your pages, load the home page on a
-          phone, ask Google how fast it is, and look up your listing. We change nothing.
-        </p>
-        <Card className="mt-6 px-5 py-1 sm:px-7">
-          <CheckingRows
-            steps={[
-              {
-                title: "Your website",
-                meta: "Reading up to 25 pages: services, areas, phone numbers and tracking tags",
-                state: "running",
-              },
-              {
-                title: "Your Google listing",
-                meta: "Category, hours, photos and reviews, as Google shows them today",
-                state: "todo",
-              },
-              {
-                title: "The businesses beside you",
-                meta: "How your listing compares with the same trade nearby",
-                state: "todo",
-              },
-            ]}
-          />
-        </Card>
+        <Checking
+          site={site || "your website"}
+          stage={(run?.stage ?? "") as "crawling" | "rendering" | "speed" | "checks" | "done" | ""}
+          pagesRead={run?.pages_read ?? 0}
+        />
       </AuditPage>
     );
   }

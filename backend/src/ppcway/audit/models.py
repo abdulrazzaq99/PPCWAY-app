@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, Uuid, func
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, Uuid, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -36,7 +36,9 @@ class AuditRequest(Base):
     #: Google, so this is the only anchor the "nearby" comparison has.
     city: Mapped[str] = mapped_column(String(120), default="")
     consent_text: Mapped[str] = mapped_column(Text)
-    consented_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    consented_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -45,9 +47,15 @@ class AuditRun(Base):
 
     __tablename__ = "audit_run"
     id: Mapped[uuid.UUID] = _pk()
-    request_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("audit_request.id"), index=True, nullable=True)
+    request_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("audit_request.id"), index=True, nullable=True
+    )
     site: Mapped[str] = mapped_column(String(500), index=True)
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    #: Which stage is running, so the waiting screen can say what is happening.
+    stage: Mapped[str] = mapped_column(String(20), default="")
+    #: Pages read so far, which climbs while the crawl runs.
+    pages_read: Mapped[int] = mapped_column(Integer, default=0)
     report: Mapped[dict[str, Any] | None] = mapped_column(
         JSON().with_variant(JSONB(), "postgresql"), nullable=True
     )

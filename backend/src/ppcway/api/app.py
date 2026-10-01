@@ -83,6 +83,10 @@ class AuditOut(BaseModel):
     status: str
     report: dict[str, Any] | None = None
     error: str | None = None
+    #: What the run is doing now: crawling, rendering, speed, checks, done.
+    stage: str = ""
+    #: Pages read so far, which climbs while the crawl runs.
+    pages_read: int = 0
     #: The Google listing they confirmed, so the report can read it again.
     place_id: str = ""
     #: The town they typed, the anchor for the businesses nearby.
@@ -185,6 +189,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             status=run.status,
             report=run.report,
             error=run.error,
+            stage=run.stage,
+            pages_read=run.pages_read,
             place_id=asked.place_id if asked else "",
             city=asked.city if asked else "",
         )
@@ -295,11 +301,22 @@ def _run(run_id: UUID, settings: Settings) -> None:
         if run is None:
             return
         run.status = "running"
+        run.stage = "crawling"
         run.started_at = datetime.now(UTC)
         session.commit()
         site = run.site
+
+    def say(stage: str, pages_read: int) -> None:
+        """Write where the run has got to, so the waiting screen can show it."""
+        with factory() as session:
+            now = session.get(AuditRun, run_id)
+            if now is not None:
+                now.stage = stage
+                now.pages_read = pages_read
+                session.commit()
+
     try:
-        report = run_audit(site, settings)
+        report = run_audit(site, settings, on_stage=say)
         folder = Path(settings.audit_shots_dir) / str(run_id)
         for kind, data in report.screenshots.items():
             folder.mkdir(parents=True, exist_ok=True)
@@ -311,6 +328,8 @@ def _run(run_id: UUID, settings: Settings) -> None:
                 return
             run.report = report.as_dict()
             run.status = "done"
+            run.stage = "done"
+            run.pages_read = report.pages_read
             run.finished_at = datetime.now(UTC)
             session.commit()
     except Exception as exc:

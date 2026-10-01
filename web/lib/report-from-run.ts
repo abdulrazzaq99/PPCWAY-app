@@ -24,6 +24,9 @@ export type Run = {
   site: string;
   place_id?: string;
   city?: string;
+  /** What the run is doing now, while it runs. */
+  stage?: string;
+  pages_read?: number;
   report: {
     site: string;
     business_name: string;
