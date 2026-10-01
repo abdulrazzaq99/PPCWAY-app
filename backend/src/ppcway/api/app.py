@@ -205,6 +205,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(503, "Business search is not set up yet.")
         return settings.google_maps_api_key.get_secret_value()
 
+    @app.get("/v1/places/suggest", response_model=list[ListingOut])
+    def suggest_businesses(
+        q: Annotated[str, Query(min_length=2, max_length=200)],
+        city: Annotated[str, Query(max_length=200)] = "",
+        region: Annotated[str, Query(min_length=2, max_length=2)] = "ca",
+        limit: Annotated[int, Query(ge=1, le=10)] = 6,
+    ) -> list[ListingOut]:
+        """What to offer while someone is still typing.
+
+        The same search as the button, not Autocomplete. Autocomplete is cheaper and
+        built for a key at a time, but it only offers prominent listings: measured
+        against this project's own test business, a service-area plumber with seven
+        reviews, it never returned it at any radius, while this search returns it
+        first. A list that cannot find the person typing is not worth its discount.
+        """
+        try:
+            found = find_businesses(
+                q.strip(), api_key=_maps_key(), city=city.strip(), region=region, max_results=limit
+            )
+        except PlacesError as exc:
+            log.warning("places suggest failed: %s", exc)
+            # A dead list must not stop someone typing: the button still works.
+            return []
+        return [ListingOut.of(li) for li in found]
+
     @app.get("/v1/places/search", response_model=list[ListingOut])
     def search_businesses(
         name: Annotated[str, Query(min_length=2, max_length=200)],

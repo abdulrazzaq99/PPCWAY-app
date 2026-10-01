@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { Button, LinkButton } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import type { Listing } from "@/lib/listing";
 import { listingMeta, listingRating } from "@/lib/listing";
 import { ManualForm } from "./manual-form";
+import { NameField } from "./name-field";
 import { AuditPage, Card, Pill } from "./shell";
 import { StartAudit } from "./start-audit";
 
@@ -53,10 +55,17 @@ export function AuditFindView({
   error?: string;
 }) {
   const t: Typed = { ...SAMPLE, ...typed };
+  // The form starts empty: the sample business belongs to the drawn states, and a
+  // visitor should never find somebody else's name already in the box.
+  const given: Typed = {
+    name: typed?.name ?? "",
+    city: typed?.city ?? "",
+    site: typed?.site ?? "",
+  };
   if (view === "confirm") return <ConfirmView typed={t} chosen={chosen} />;
   if (view === "checking") return <CheckingView />;
   if (view === "not-found") return <NotFoundView />;
-  return <FindView results={view === "results"} typed={t} listings={listings} error={error} />;
+  return <FindView results={view === "results"} typed={given} listings={listings} error={error} />;
 }
 
 function query(t: Typed, view: string): string {
@@ -78,6 +87,9 @@ function FindView({
 }) {
   const live = listings !== undefined;
   const matched = (listings ?? []).filter((li) => li.name_match).length;
+  // The town steers the suggestions, so the field holding it is the one asked.
+  const [city, setCity] = useState(typed.city);
+  const [site, setSite] = useState(typed.site);
   return (
     <AuditPage>
       <Pill>Free audit, no account needed</Pill>
@@ -92,17 +104,14 @@ function FindView({
         <form action="/audit" method="get" className="flex flex-col gap-4">
           <input type="hidden" name="view" value="results" />
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Business name">
-              {(id) => (
-                <Input id={id} name="name" defaultValue={typed.name} autoComplete="organization" />
-              )}
-            </Field>
+            <NameField defaultValue={typed.name} city={city} site={site} />
             <Field label="City or town">
               {(id) => (
                 <Input
                   id={id}
                   name="city"
-                  defaultValue={typed.city}
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
                   autoComplete="address-level2"
                 />
               )}
@@ -116,7 +125,8 @@ function FindView({
               <Input
                 id={id}
                 name="site"
-                defaultValue={typed.site}
+                value={site}
+                onChange={(e) => setSite(e.target.value)}
                 placeholder="alphaplumbing.ca"
                 inputMode="url"
                 autoComplete="url"
@@ -151,7 +161,7 @@ function FindView({
         live ? (
           <LiveMatches listings={listings ?? []} matched={matched} typed={typed} />
         ) : (
-          <SampleMatches typed={typed} />
+          <SampleMatches typed={SAMPLE} />
         )
       ) : null}
     </AuditPage>

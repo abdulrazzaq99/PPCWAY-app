@@ -65,6 +65,12 @@ class PlacesError(RuntimeError):
     """Google refused the call. Carries Google's reason, never the key."""
 
 
+#: Towns already looked up, so typing ten letters geocodes the town once rather
+#: than ten times. Small and per process: it is a convenience, not a store.
+_TOWNS: dict[str, tuple[float, float] | None] = {}
+_TOWNS_MAX = 256
+
+
 @dataclass(frozen=True)
 class Listing:
     place_id: str
@@ -200,6 +206,21 @@ def search_body(
     return body
 
 
+def town_centre(
+    city: str, *, api_key: str, region: str, client: httpx.Client
+) -> tuple[float, float] | None:
+    """The town's centre, remembered for the life of the process.
+
+    Every keystroke would otherwise geocode the same town again.
+    """
+    key = f"{region}:{city.strip().lower()}"
+    if key not in _TOWNS:
+        if len(_TOWNS) >= _TOWNS_MAX:
+            _TOWNS.clear()
+        _TOWNS[key] = geocode(city, api_key=api_key, region=region, client=client)
+    return _TOWNS[key]
+
+
 def details_mask() -> str:
     """The same fields, named as one place rather than a page of them."""
     return ",".join(f[len("places.") :] for f in FIELDS if f.startswith("places."))
@@ -261,7 +282,7 @@ def nearby_rivals(
         if listing.lat is not None and listing.lng is not None:
             near = (listing.lat, listing.lng)
         elif city.strip():
-            near = geocode(city, api_key=api_key, region=region, client=c)
+            near = town_centre(city, api_key=api_key, region=region, client=c)
         if near is None:
             return []
         body = search_body(listing.category, near, region)
@@ -298,7 +319,7 @@ def find_businesses(
     own = client is None
     c = client or httpx.Client(timeout=httpx.Timeout(15))
     try:
-        near = geocode(city, api_key=api_key, region=region, client=c) if city.strip() else None
+        near = town_centre(city, api_key=api_key, region=region, client=c) if city.strip() else None
         headers = {"X-Goog-Api-Key": api_key, "X-Goog-FieldMask": ",".join(FIELDS)}
         found: list[Listing] = []
         token: str | None = None

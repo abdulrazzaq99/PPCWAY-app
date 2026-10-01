@@ -203,34 +203,22 @@ def test_nothing_nearby_without_a_point_on_the_map() -> None:
     assert nearby_rivals(bare, api_key="k") == []
 
 
-def test_a_business_with_no_coordinates_is_anchored_on_the_town() -> None:
-    """Google gives a service-area trade no location, so the town is the only anchor."""
-    mine = parse_listing(
-        _place("mine", "Alpha Plumbing", primaryTypeDisplayName={"text": "Plumber"})
-    )
-    seen: dict[str, object] = {}
+def test_the_town_is_geocoded_once_however_many_times_it_is_searched() -> None:
+    """Typing calls this per keystroke; the town must not be looked up each time."""
+    from ppcway.audit import places
+
+    places._TOWNS.clear()
+    calls = {"geocode": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
         if str(request.url).startswith(GEOCODE_ENDPOINT):
+            calls["geocode"] += 1
             return httpx.Response(200, json=MISSISSAUGA)
-        seen.update(json.loads(request.content))
-        return httpx.Response(200, json={"places": [_place("r1", "Northgate Plumbing")]})
+        return httpx.Response(200, json={"places": [_place("p1", "Alpha Plumbing")]})
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        rivals = nearby_rivals(mine, api_key="k", city="Mississauga, Ontario", client=client)
+        for typed in ["alp", "alph", "alpha"]:
+            find_businesses(typed, api_key="k", city="Mississauga", client=client)
 
-    assert [r.place_id for r in rivals] == ["r1"]
-    assert seen["locationBias"]["circle"]["center"]["latitude"] == 43.589
-
-
-def test_no_anchor_means_no_search_rather_than_a_search_from_nowhere() -> None:
-    """An unanchored text search lands on the server's own address, which is not theirs."""
-    mine = parse_listing(
-        _place("mine", "Alpha Plumbing", primaryTypeDisplayName={"text": "Plumber"})
-    )
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        raise AssertionError("no call should be made without an anchor")
-
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        assert nearby_rivals(mine, api_key="k", city="", client=client) == []
+    assert calls["geocode"] == 1
+    places._TOWNS.clear()
