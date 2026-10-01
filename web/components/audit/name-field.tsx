@@ -19,10 +19,12 @@ export function NameField({
   defaultValue,
   city,
   site,
+  placeholder,
 }: {
   defaultValue: string;
   city: string;
   site: string;
+  placeholder?: string;
 }) {
   const router = useRouter();
   const listId = useId();
@@ -103,6 +105,7 @@ export function NameField({
             id={id}
             name="name"
             value={typed}
+            placeholder={placeholder}
             autoComplete="off"
             role="combobox"
             aria-expanded={open}

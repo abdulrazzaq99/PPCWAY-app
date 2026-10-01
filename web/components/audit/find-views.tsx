@@ -104,7 +104,14 @@ function FindView({
         <form action="/audit" method="get" className="flex flex-col gap-4">
           <input type="hidden" name="view" value="results" />
           <div className="grid gap-4 sm:grid-cols-2">
-            <NameField defaultValue={typed.name} city={city} site={site} />
+            <NameField
+              defaultValue={typed.name}
+              city={city}
+              site={site}
+              /* Examples only, and only before a search: once the button has been
+                 pressed, an empty field stays plainly empty. */
+              placeholder={results ? "" : "Alpha Plumbing"}
+            />
             <Field label="City or town">
               {(id) => (
                 <Input
@@ -112,6 +119,7 @@ function FindView({
                   name="city"
                   value={city}
                   onChange={(e) => setCity(e.target.value)}
+                  placeholder={results ? "" : "Mississauga, Ontario"}
                   autoComplete="address-level2"
                 />
               )}
@@ -127,7 +135,7 @@ function FindView({
                 name="site"
                 value={site}
                 onChange={(e) => setSite(e.target.value)}
-                placeholder="alphaplumbing.ca"
+                placeholder={results ? "" : "alphaplumbing.ca"}
                 inputMode="url"
                 autoComplete="url"
               />
