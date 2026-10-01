@@ -37,7 +37,7 @@ const STEPS: { key: Stage; title: string; meta: string; seconds: number }[] = [
   {
     key: "checks",
     title: "Writing your report",
-    meta: "Your Google listing, the businesses beside you, and what to fix first",
+    meta: "Your Google listing, your competitors, and what to fix first",
     seconds: 15,
   },
 ];

@@ -89,8 +89,8 @@ function listingPanel(mine: Listing, rivals: Listing[]): AuditPanel {
       meta: !rivals.length
         ? "That is the expensive thing to build, and you already have it."
         : ahead === 0
-          ? `Every one of the ${say(rivals.length)} nearest has more, and reviews are the slowest thing to build.`
-          : `Ahead of ${plural(ahead, "business", "businesses")} of the ${say(rivals.length)} nearest.`,
+          ? `Every one of your ${say(rivals.length)} competitors has more, and reviews are the slowest thing to build.`
+          : `Ahead of ${say(ahead)} of your ${say(rivals.length)} competitors.`,
       verdict: "good",
     });
   }
@@ -99,7 +99,7 @@ function listingPanel(mine: Listing, rivals: Listing[]): AuditPanel {
     lines.push({
       title: "No photos on your listing",
       meta: photoAverage
-        ? `The businesses beside you carry about ${photoAverage}. Photos cost nothing and they move the Maps ranking.`
+        ? `Your competitors carry about ${photoAverage}. Photos cost nothing and they move the Maps ranking.`
         : "Photos cost nothing and they move the Maps ranking.",
       verdict: "cost",
       who: "you",
@@ -108,7 +108,7 @@ function listingPanel(mine: Listing, rivals: Listing[]): AuditPanel {
     lines.push({
       title: `${mine.photos} ${mine.photos === 1 ? "photo" : "photos"} on your listing`,
       meta: photoAverage
-        ? `The businesses beside you carry about ${photoAverage}.`
+        ? `Your competitors carry about ${photoAverage}.`
         : "Listings with more photos are picked more often.",
       verdict: "fix",
       who: "you",
@@ -199,7 +199,7 @@ function comparePanel(mine: Listing, rivals: Listing[]): AuditPanel {
     });
   } else {
     lines.push({
-      title: `You have more reviews than every ${trade} nearby`,
+      title: `You have more reviews than every competitor nearby`,
       meta: "That is the expensive thing to build, and you already have it.",
       verdict: "good",
     });
@@ -227,7 +227,7 @@ function comparePanel(mine: Listing, rivals: Listing[]): AuditPanel {
       verdict: "good",
     });
   }
-  return { title: "How you compare nearby", score: "For information", lines };
+  return { title: "Your competitors", score: "For information", lines };
 }
 
 function costOf(lines: AuditLine[], site: string): AuditSample["cost"] {
@@ -261,7 +261,6 @@ export function reportFromRun(run: Run, mine: Listing | null, rivals: Listing[])
       Number(b.verdict === "cost") - Number(a.verdict === "cost") ||
       Number(b.who === "us") - Number(a.who === "us"),
   );
-  const trade = (mine?.category ?? "business").toLowerCase();
 
   return {
     date: `Audit, ${new Date().toLocaleDateString("en-CA", { day: "numeric", month: "long", year: "numeric" })}`,
@@ -281,7 +280,7 @@ export function reportFromRun(run: Run, mine: Listing | null, rivals: Listing[])
         "Money spent on people who cannot buy",
         rivals.length
           ? `Where your ad sat against the ${say(rivals.length)} nearby`
-          : "Where your ad sat against the businesses nearby",
+          : "Where your ad sat against your competitors",
       ],
       button: "Connect Google Ads, read only",
     },
@@ -289,7 +288,7 @@ export function reportFromRun(run: Run, mine: Listing | null, rivals: Listing[])
     locked:
       rivals.length > 2
         ? {
-            title: `How you stand against the ${say(rivals.length)} ${trade}s nearby`,
+            title: `How you stand against your ${say(rivals.length)} competitors`,
             note: "Rating, reviews, photos and hours, side by side, from Google Maps. Two are shown here.",
             shown: rivals.slice(0, 2).map((r) => {
               const bits = [r.name];

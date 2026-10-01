@@ -116,7 +116,7 @@ const ADVERTISING: Sample = {
       ],
     },
     {
-      title: "How you compare nearby",
+      title: "Your competitors",
       score: "For information",
       lines: [
         {
@@ -259,7 +259,7 @@ const FRESH: Sample = {
       ],
     },
     {
-      title: "How you compare nearby",
+      title: "Your competitors",
       score: "For information",
       lines: [
         {

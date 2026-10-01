@@ -10,7 +10,7 @@ import { AuditPage } from "./shell";
 
 /*
   One real run, drawn as the report's cards. It polls until the run is done, then
-  reads the Google listing and the businesses nearby and hands all three to the
+  reads the Google listing and the competitors nearby and hands all three to the
   same component the sample report uses, so the design has one home.
 
   The listing is read here rather than stored, which is what Google's terms
