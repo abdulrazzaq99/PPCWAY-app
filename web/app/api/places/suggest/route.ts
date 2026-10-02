@@ -11,6 +11,7 @@ export async function GET(request: Request) {
   const query = new URLSearchParams({ q: asked.get("q") ?? "", city: asked.get("city") ?? "" });
   try {
     const res = await fetch(`${BACKEND}/v1/places/suggest?${query}`, { cache: "no-store" });
+    // A spent allowance or a refusal both mean: offer nothing, block nothing.
     if (!res.ok) return NextResponse.json([]);
     return NextResponse.json(await res.json());
   } catch {

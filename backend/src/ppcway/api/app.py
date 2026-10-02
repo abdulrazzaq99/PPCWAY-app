@@ -254,6 +254,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         except PlacesError as exc:
             log.warning("places search failed: %s", exc)
+            if exc.out_of_quota:
+                raise HTTPException(
+                    429, "The day's allowance for business lookups is used up."
+                ) from None
             raise HTTPException(502, "Google did not answer the business search.") from None
         return [ListingOut.of(li) for li in found]
 

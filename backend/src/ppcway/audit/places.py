@@ -64,6 +64,11 @@ RIVAL_LIMIT = 6
 class PlacesError(RuntimeError):
     """Google refused the call. Carries Google's reason, never the key."""
 
+    def __init__(self, message: str, *, out_of_quota: bool = False) -> None:
+        super().__init__(message)
+        #: True when the day's allowance is spent, which is our limit and not a fault.
+        self.out_of_quota = out_of_quota
+
 
 #: Towns already looked up, so typing ten letters geocodes the town once rather
 #: than ten times. Small and per process: it is a convenience, not a store.
@@ -153,7 +158,9 @@ def _refusal(response: httpx.Response) -> PlacesError:
         reason = err.get("message") or err.get("status") or response.reason_phrase
     except ValueError:
         reason = response.reason_phrase
-    return PlacesError(f"Places {response.status_code}: {reason}")
+    return PlacesError(
+        f"Places {response.status_code}: {reason}", out_of_quota=response.status_code == 429
+    )
 
 
 def geocode(

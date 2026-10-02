@@ -35,22 +35,36 @@ export function NameField({
   const box = useRef<HTMLDivElement>(null);
   // What the person last chose or typed, so a stale reply cannot reopen the list.
   const settled = useRef(false);
+  // Answers already paid for, so backspacing costs nothing.
+  const answered = useRef(new Map<string, Listing[]>());
 
   useEffect(() => {
-    if (settled.current || typed.trim().length < 2) {
+    const ask = typed.trim();
+    // Three letters, not two: two matches half the businesses in a town and costs
+    // a search either way. Each search is a paid call, so they are not spent on
+    // a query nobody could answer usefully.
+    if (settled.current || ask.length < 3) {
       setList([]);
+      return;
+    }
+    const remembered = answered.current.get(`${ask}|${city}`);
+    if (remembered) {
+      setList(remembered);
+      setOpen(remembered.length > 0);
+      setActive(-1);
       return;
     }
     const stop = new AbortController();
     const wait = window.setTimeout(async () => {
       try {
-        const query = new URLSearchParams({ q: typed, city });
+        const query = new URLSearchParams({ q: ask, city });
         const res = await fetch(`/api/places/suggest?${query}`, {
           signal: stop.signal,
           cache: "no-store",
         });
         const found = (await res.json()) as Listing[];
         if (Array.isArray(found)) {
+          answered.current.set(`${ask}|${city}`, found);
           setList(found);
           setOpen(found.length > 0);
           setActive(-1);
@@ -58,7 +72,9 @@ export function NameField({
       } catch {
         /* a missing suggestion list is not an error worth showing */
       }
-    }, 180);
+      // Longer than it feels: a pause of this length turns a typed name into two or
+      // three searches rather than one per letter.
+    }, 420);
     return () => {
       window.clearTimeout(wait);
       stop.abort();

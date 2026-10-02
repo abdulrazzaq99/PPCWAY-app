@@ -8,6 +8,8 @@ import type { Listing } from "./listing";
 
 const BACKEND = process.env.BACKEND_URL ?? "http://localhost:8300";
 const UNREACHABLE = "We could not reach the business search just now. Try again in a minute.";
+const SPENT =
+  "The day's allowance for looking businesses up on Google is used up. The website check still works.";
 
 export async function searchListings(
   name: string,
@@ -19,7 +21,12 @@ export async function searchListings(
     if (!res.ok) {
       return {
         listings: [],
-        error: res.status === 503 ? "Business search is not switched on yet." : UNREACHABLE,
+        error:
+          res.status === 429
+            ? SPENT
+            : res.status === 503
+              ? "Business search is not switched on yet."
+              : UNREACHABLE,
       };
     }
     return { listings: (await res.json()) as Listing[] };
