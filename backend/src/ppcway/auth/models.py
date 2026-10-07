@@ -12,9 +12,13 @@ from ppcway.db.base import Base
 
 
 class UserAccount(Base):
-    """One person, known by the Google account they signed in with."""
+    """One person, known by the Google account they signed in with.
 
-    __tablename__ = "user_account"
+    Named `account`, not `user_account`: the proof of concept's own tables share
+    this database, and `user_account` is one of them.
+    """
+
+    __tablename__ = "account"
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
     #: Google's own id for the person. Stable even if they change their address.
     google_sub: Mapped[str] = mapped_column(String(64), unique=True, index=True)
@@ -30,10 +34,10 @@ class UserAccount(Base):
 class Session(Base):
     """A signed-in browser. The cookie holds the token; this holds only its hash."""
 
-    __tablename__ = "user_session"
+    __tablename__ = "account_session"
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_account.id"), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("account.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     #: Set when they sign out, so the row stays as a record of the session.

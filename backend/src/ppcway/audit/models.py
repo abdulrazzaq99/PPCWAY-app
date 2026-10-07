@@ -37,7 +37,7 @@ class AuditRequest(Base):
     city: Mapped[str] = mapped_column(String(120), default="")
     #: Set when they were signed in, so their past audits can be listed again.
     user_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("user_account.id"), index=True, nullable=True
+        ForeignKey("account.id"), index=True, nullable=True
     )
     consent_text: Mapped[str] = mapped_column(Text)
     consented_at: Mapped[datetime] = mapped_column(

@@ -38,8 +38,8 @@ export function GoogleButton({
   label?: string;
   next?: string;
 }) {
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
   const router = useRouter();
+  const [clientId, setClientId] = useState<string | null>(null);
   const holder = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +69,17 @@ export function GoogleButton({
   );
 
   useEffect(() => {
+    let stop = false;
+    fetch("/api/auth/config", { cache: "no-store" })
+      .then((r) => r.json() as Promise<{ clientId: string }>)
+      .then((said) => !stop && setClientId(said.clientId))
+      .catch(() => !stop && setClientId(""));
+    return () => {
+      stop = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!ready || !clientId || !holder.current || !window.google) return;
     window.google.accounts.id.initialize({ client_id: clientId, callback: signIn });
     window.google.accounts.id.renderButton(holder.current, {
@@ -81,6 +92,10 @@ export function GoogleButton({
       width: 360,
     });
   }, [ready, clientId, signIn]);
+
+  if (clientId === null) {
+    return <div className="min-h-[50px]" aria-hidden />;
+  }
 
   if (!clientId) {
     return (
