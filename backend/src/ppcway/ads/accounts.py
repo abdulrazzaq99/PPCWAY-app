@@ -8,11 +8,14 @@ accounts only, which is the state the client's token is in today.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 import httpx
 
 from ppcway.ads.oauth import AdsConnectionRefused
+
+log = logging.getLogger(__name__)
 
 API = "https://googleads.googleapis.com"
 
@@ -24,6 +27,35 @@ class AdsAccount:
     is_manager: bool
     currency: str
     time_zone: str
+    #: False when Google refused to read it, with `trouble` saying why in plain words.
+    readable: bool = True
+    trouble: str = ""
+
+
+#: Google's error codes, in words a plumber can act on. Anything unlisted is passed
+#: through as Google wrote it, which is better than a shrug.
+TROUBLE = {
+    "CUSTOMER_NOT_ENABLED": "Google says this account is not switched on yet. Finish setting it up in Google Ads.",
+    "CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION": "We are waiting on Google's approval to read live accounts. Test accounts work today.",
+    "DEVELOPER_TOKEN_NOT_APPROVED": "We are waiting on Google's approval to read live accounts. Test accounts work today.",
+    "USER_PERMISSION_DENIED": "This account is managed by somebody else. Its manager has to allow the connection.",
+    "CUSTOMER_NOT_FOUND": "Google no longer has this account.",
+}
+
+
+def _plain(reply: httpx.Response) -> str:
+    """What went wrong, said once, in the words the screen will show."""
+    try:
+        errors = (reply.json().get("error", {}).get("details") or [{}])[0].get("errors", [])
+        for error in errors:
+            for code in (error.get("errorCode") or {}).values():
+                if code in TROUBLE:
+                    return TROUBLE[code]
+            if error.get("message"):
+                return str(error["message"])
+    except (ValueError, AttributeError, IndexError):
+        pass
+    return "Google would not let us read this account."
 
 
 def _headers(
@@ -37,6 +69,20 @@ def _headers(
     if login_customer_id:
         headers["login-customer-id"] = login_customer_id.replace("-", "")
     return headers
+
+
+def _why(response: httpx.Response) -> str:
+    """Google's own words for a refusal, which name the real problem."""
+    try:
+        body = response.json()
+        error = body.get("error", {})
+        detail = error.get("message", "")
+        inner = error.get("details", [])
+        if inner:
+            detail += " | " + str(inner)[:300]
+        return f"{response.status_code}: {detail or str(body)[:200]}"
+    except ValueError:
+        return f"{response.status_code}: {response.reason_phrase}"
 
 
 def _refusal(response: httpx.Response) -> AdsConnectionRefused:
@@ -62,8 +108,11 @@ def accessible_accounts(
     own = client is None
     c = client or httpx.Client(timeout=httpx.Timeout(30))
     try:
-        headers = _headers(access_token, developer_token, login_customer_id)
-        listed = c.get(f"{API}/{api_version}/customers:listAccessibleCustomers", headers=headers)
+        # Listing is about the person, not about any manager, so it is asked plainly.
+        listed = c.get(
+            f"{API}/{api_version}/customers:listAccessibleCustomers",
+            headers=_headers(access_token, developer_token, None),
+        )
         if listed.status_code != 200:
             raise _refusal(listed)
         names: list[AdsAccount] = []
@@ -72,7 +121,9 @@ def accessible_accounts(
             names.append(
                 _describe(
                     customer_id,
-                    headers=headers,
+                    access_token=access_token,
+                    developer_token=developer_token,
+                    login_customer_id=login_customer_id,
                     api_version=api_version,
                     client=c,
                 )
@@ -84,12 +135,20 @@ def accessible_accounts(
 
 
 def _describe(
-    customer_id: str, *, headers: dict[str, str], api_version: str, client: httpx.Client
+    customer_id: str,
+    *,
+    access_token: str,
+    developer_token: str,
+    login_customer_id: str | None,
+    api_version: str,
+    client: httpx.Client,
 ) -> AdsAccount:
     """The account's own description, or just its number when Google will not say.
 
-    A manager account cannot always read its own siblings, so one refusal here is
-    not a reason to fail the whole list.
+    A manager account cannot always read its own siblings, and a developer token
+    at test tier cannot read a production account at all, so one refusal here is
+    not a reason to fail the whole list. It is written to the log, though: a row
+    of bare numbers with no explanation is the kind of silence that wastes a day.
     """
     query = {
         "query": (
@@ -97,14 +156,30 @@ def _describe(
             "customer.time_zone, customer.manager FROM customer LIMIT 1"
         )
     }
-    reply = client.post(
-        f"{API}/{api_version}/customers/{customer_id}/googleAds:search",
-        headers=headers,
-        json=query,
-    )
+
+    def ask(manager: str | None) -> httpx.Response:
+        return client.post(
+            f"{API}/{api_version}/customers/{customer_id}/googleAds:search",
+            headers=_headers(access_token, developer_token, manager),
+            json=query,
+        )
+
+    # An account somebody owns outright is asked for plainly. Only if Google says
+    # the permission is missing is it asked again under the manager, which is what
+    # a client account under a manager needs and what an owned one must not have.
+    reply = ask(None)
+    if reply.status_code != 200 and login_customer_id and "USER_PERMISSION_DENIED" in reply.text:
+        reply = ask(login_customer_id)
     if reply.status_code != 200:
+        log.warning("Google would not describe customer %s: %s", customer_id, _why(reply))
         return AdsAccount(
-            customer_id=customer_id, name="", is_manager=False, currency="", time_zone=""
+            customer_id=customer_id,
+            name="",
+            is_manager=False,
+            currency="",
+            time_zone="",
+            readable=False,
+            trouble=_plain(reply),
         )
     rows = reply.json().get("results", [])
     if not rows:

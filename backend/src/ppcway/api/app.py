@@ -150,6 +150,15 @@ class AdsAccountOut(BaseModel):
     is_manager: bool
     currency: str
     time_zone: str
+    #: False when Google refused to read it; `trouble` says why, in plain words.
+    readable: bool = True
+    trouble: str = ""
+
+
+class ChooseAccountIn(BaseModel):
+    """Which of their accounts we should read on the next audit."""
+
+    customer_id: str = Field(min_length=5, max_length=20, pattern=r"^[0-9-]+$")
 
 
 class AdsStatusOut(BaseModel):
@@ -519,9 +528,62 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 is_manager=a.is_manager,
                 currency=a.currency,
                 time_zone=a.time_zone,
+                readable=a.readable,
+                trouble=a.trouble,
             )
             for a in found
         ]
+
+    @app.post("/v1/ads/choose", response_model=AdsStatusOut)
+    def choose_account(
+        body: ChooseAccountIn,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> AdsStatusOut:
+        """Remember which account to read.
+
+        The id is checked against what Google says this permission reaches, so a
+        number typed by hand cannot be stored as though it were theirs.
+        """
+        account = _signed_in(session, x_session_token)
+        connection = _connection(session, account)
+        if connection is None:
+            raise HTTPException(404, "No Google Ads account is connected.")
+        if not settings.google_ads_developer_token:
+            raise HTTPException(503, "Reading Google Ads is not set up yet.")
+        client_id, secret = _ads_ready()
+        wanted = body.customer_id.replace("-", "")
+        try:
+            vault = TokenVault(
+                settings.google_oauth_token_key.get_secret_value()
+                if settings.google_oauth_token_key
+                else None
+            )
+            access = fresh_access_token(
+                vault.unlock(connection.ciphertext), client_id=client_id, client_secret=secret
+            )
+            theirs = accessible_accounts(
+                access_token=access,
+                developer_token=settings.google_ads_developer_token.get_secret_value(),
+                api_version=settings.google_ads_api_version,
+                login_customer_id=settings.google_ads_login_customer_id,
+            )
+        except (AdsConnectionRefused, VaultUnavailable) as exc:
+            log.warning("choosing a Google Ads account failed: %s", exc)
+            raise HTTPException(502, str(exc)) from None
+
+        picked = next((a for a in theirs if a.customer_id == wanted), None)
+        if picked is None:
+            raise HTTPException(404, "That account is not one Google says you can reach.")
+        connection.customer_id = picked.customer_id
+        connection.customer_name = picked.name
+        session.commit()
+        return AdsStatusOut(
+            connected=True,
+            customer_id=picked.customer_id,
+            customer_name=picked.name,
+            trouble=picked.trouble,
+        )
 
     @app.get("/v1/places/suggest", response_model=list[ListingOut])
     def suggest_businesses(

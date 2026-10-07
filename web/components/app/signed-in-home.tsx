@@ -3,6 +3,7 @@
 import { ArrowRight, LockSimple } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { AdsAccounts } from "@/components/app/ads-accounts";
 import { AuditPage, Card } from "@/components/audit/shell";
 import { Button, LinkButton } from "@/components/ui/button";
 
@@ -25,6 +26,10 @@ const LOCKED = [
   "Budget lost to impression share",
   "Ad disapprovals and policy issues",
 ];
+
+function pretty(id: string): string {
+  return id.length === 10 ? `${id.slice(0, 3)}-${id.slice(3, 6)}-${id.slice(6)}` : id;
+}
 
 export function SignedInHome({ person }: { person: Person }) {
   const [runs, setRuns] = useState<Run[] | null>(null);
@@ -120,20 +125,28 @@ export function SignedInHome({ person }: { person: Person }) {
           </div>
         </section>
       ) : (
-        <Card className="mt-7 flex flex-wrap items-center justify-between gap-4 p-5 sm:p-7">
-          <div>
-            <p className="text-[17px] leading-[22px] font-semibold">Google Ads connected</p>
-            <p className="text-muted mt-1 text-[15px] leading-[21px]">
-              {ads.customer_name || ads.customer_id
-                ? `${ads.customer_name || "Account"} ${ads.customer_id}`
-                : "Pick which account to read on your next audit."}
-            </p>
-          </div>
-          <LinkButton href="/audit" size="sm">
-            Run the audit again
-            <ArrowRight aria-hidden size={15} weight="bold" />
-          </LinkButton>
-        </Card>
+        <>
+          <Card className="mt-7 flex flex-wrap items-center justify-between gap-4 p-5 sm:p-7">
+            <div>
+              <p className="text-[17px] leading-[22px] font-semibold">Google Ads connected</p>
+              <p className="text-muted mt-1 text-[15px] leading-[21px]">
+                {ads.customer_id
+                  ? `We read ${ads.customer_name || "account"} ${pretty(ads.customer_id)} on your next audit.`
+                  : "Choose below which account we read on your next audit."}
+              </p>
+            </div>
+            <LinkButton href="/audit" size="sm">
+              Run the audit again
+              <ArrowRight aria-hidden size={15} weight="bold" />
+            </LinkButton>
+          </Card>
+          <AdsAccounts
+            chosen={ads.customer_id ?? ""}
+            onChosen={(customerId, name) =>
+              setAds({ connected: true, customer_id: customerId, customer_name: name })
+            }
+          />
+        </>
       )}
 
       <section className="mt-8">
