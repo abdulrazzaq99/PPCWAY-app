@@ -60,7 +60,8 @@ function AuditLink({
 
 export function Landing() {
   return (
-    <div className="bg-canvas text-ink">
+    /* `site` wears the client's palette and typefaces; see globals.css. */
+    <div className="site bg-canvas text-ink">
       <Nav />
       <main>
         <Hero />

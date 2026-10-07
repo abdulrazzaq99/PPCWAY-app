@@ -104,12 +104,98 @@
   --color-ad-bg: var(--ad-bg);
   --color-ad-link: var(--ad-link);
   --color-bar-soft: var(--bar-soft);
+  --color-panel-alt: var(--panel-alt);
+  --color-night: var(--night);
+  --color-night-panel: var(--night-panel);
+  --color-night-raised: var(--night-raised);
+  --color-night-line: var(--night-line);
+  --color-night-text: var(--night-text);
+  --color-night-faint: var(--night-faint);
+  --color-pass: var(--pass);
+  --color-pass-bright: var(--pass-bright);
+  --color-pass-tint: var(--pass-tint);
+  --color-purple: var(--purple);
+  --color-brand-sky: var(--brand-sky);
+  --color-brand-ink: var(--brand-ink);
 
   --radius-shell: var(--radius-shell);
   --radius-control: var(--radius-control);
   --radius-pill: var(--radius-pill);
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+/*
+  The client's website design, from their handoff package (design-system/tokens.json).
+  Everything public wears it: the landing page and the whole audit flow. The
+  signed-in app keeps the Version 2 tokens above, so the two can live side by side
+  until the app is moved across too.
+
+  These override the same variable names, so every existing component follows
+  without being touched; what is new here are the night panels, the warm ground and
+  the larger radii their cards use.
+*/
+.site {
+  --canvas: #f6f4f0;
+  --panel: #ffffff;
+  --panel-alt: #fbfaf8;
+
+  --ink: #15112a;
+  --muted: #4a4560;
+  --faint: #6b6680;
+
+  --line: #e6e1d8;
+  --line-soft: #eeeae3;
+  --line-input: #d5d0df;
+
+  --brand: #2f5bea;
+  --brand-dark: #1e44c7;
+  --brand-pale: #eef2fe;
+  --brand-bar: #bfd0ff;
+  --brand-line: #bfd0ff;
+  --brand-tint: #f3f6ff;
+  --brand-ink: #1e3a8a;
+  --brand-sky: #8faeff;
+  --purple: #7138e2;
+
+  /* Night: the score panel and the closing band */
+  --night: #120e24;
+  --night-panel: #17122c;
+  --night-raised: #1c1734;
+  --night-line: #2c2645;
+  --night-text: #e4e0ee;
+  --night-faint: #c9c4d9;
+
+  /* Status, as their checks badge them */
+  --pass: #16a34a;
+  --pass-bright: #22c55e;
+  --pass-tint: #dcfce7;
+  --amber: #d97706;
+  --amber-dark: #713f12;
+  --amber-pale: #fef3c7;
+  --amber-tint: #fffbeb;
+  --amber-line: #fde6a8;
+  --red: #dc2626;
+  --red-strong: #b91c1c;
+  --red-pale: #fee2e2;
+  --red-line: #fbc9c9;
+  --track: #e6e1d8;
+
+  --radius-shell: 22px;
+  --radius-control: 14px;
+
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Headings on the public pages are set in their display face. */
+.site h1,
+.site h2,
+.site h3,
+.site .display {
+  font-family: var(--font-outfit), var(--font-dm-sans), ui-sans-serif, sans-serif;
+  letter-spacing: -0.01em;
 }
 
 html {

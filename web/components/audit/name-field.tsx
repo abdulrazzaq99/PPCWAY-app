@@ -34,7 +34,9 @@ export function NameField({
   const [active, setActive] = useState(-1);
   const box = useRef<HTMLDivElement>(null);
   // What the person last chose or typed, so a stale reply cannot reopen the list.
-  const settled = useRef(false);
+  // A name already in the field was chosen on the way here, so it starts settled:
+  // landing on the matches screen should not drop a list over it.
+  const settled = useRef(defaultValue.trim().length > 0);
   // Answers already paid for, so backspacing costs nothing.
   const answered = useRef(new Map<string, Listing[]>());
 

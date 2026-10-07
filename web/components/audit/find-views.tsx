@@ -1,5 +1,6 @@
 "use client";
 
+import { Check, MagnifyingGlass } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { useState } from "react";
 import { Button, LinkButton } from "@/components/ui/button";
@@ -91,19 +92,32 @@ function FindView({
   const [city, setCity] = useState(typed.city);
   const [site, setSite] = useState(typed.site);
   return (
-    <AuditPage>
-      <Pill>Free audit, no account needed</Pill>
-      <h1 className="mt-6 text-[32px] leading-[38px] font-bold text-balance sm:text-[42px] sm:leading-[51px]">
-        Let us look at your business the way Google sees it.
+    <AuditPage wide>
+      <Pill>Free tool · About a minute</Pill>
+      <h1 className="mt-5 max-w-[780px] text-[36px] leading-[42px] font-semibold text-balance sm:text-[48px] sm:leading-[56px]">
+        See your business the way Google sees it.
       </h1>
-      <p className="text-muted mt-6 max-w-[700px] text-[18px] leading-[22px]">
-        Start with your name. We check your Google listing, your website and whether your ads are
-        showing today, then tell you what is worth fixing first.
+      <p className="text-muted mt-5 max-w-[720px] text-[17px] leading-[27px]">
+        Type your business name. We check your Google listing, your website and the searches near
+        you, then show you what is helping and what is costing you.
       </p>
-      <Card className="mt-6 p-5 sm:p-7">
-        <form action="/audit" method="get" className="flex flex-col gap-4">
-          <input type="hidden" name="view" value="results" />
-          <div className="grid gap-4 sm:grid-cols-2">
+      <ul className="text-muted mt-5 flex flex-wrap gap-x-7 gap-y-2 text-[14px] leading-[20px] font-semibold">
+        {["Free results", "No sign-up", "Nothing changed on your site"].map((claim) => (
+          <li key={claim} className="flex items-center gap-2">
+            <Check aria-hidden size={16} weight="bold" className="text-pass" />
+            {claim}
+          </li>
+        ))}
+      </ul>
+
+      <Card className="mt-7 overflow-hidden">
+        <div className="grid gap-0 lg:grid-cols-[minmax(0,380px)_1fr]">
+          <form
+            action="/audit"
+            method="get"
+            className="border-line-soft flex flex-col gap-4 p-5 sm:p-7 lg:border-r"
+          >
+            <input type="hidden" name="view" value="results" />
             <NameField
               defaultValue={typed.name}
               city={city}
@@ -124,54 +138,89 @@ function FindView({
                 />
               )}
             </Field>
-          </div>
-          <Field
-            label="Website"
-            hint="The page your ads would send people to. We read it and change nothing."
-          >
-            {(id) => (
-              <Input
-                id={id}
-                name="site"
-                value={site}
-                onChange={(e) => setSite(e.target.value)}
-                placeholder={results ? "" : "alphaplumbing.ca"}
-                inputMode="url"
-                autoComplete="url"
-              />
-            )}
-          </Field>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-faint text-[14px] leading-[17px]">
-              No card, no login. It takes about a minute.
-            </p>
-            <Button type="submit" size="sm" className="h-[42px]">
-              Find my business
+            <Field
+              label="Website (optional)"
+              hint="The page your ads would send people to. We read it and change nothing."
+            >
+              {(id) => (
+                <Input
+                  id={id}
+                  name="site"
+                  value={site}
+                  onChange={(e) => setSite(e.target.value)}
+                  placeholder={results ? "" : "alphaplumbing.ca"}
+                  inputMode="url"
+                  autoComplete="url"
+                />
+              )}
+            </Field>
+            <Button type="submit" full className="h-[46px]">
+              Run my free audit
             </Button>
+            <div className="bg-panel-alt border-line-soft rounded-[14px] border p-4">
+              <p className="text-faint text-[12px] leading-4 font-semibold tracking-[0.06em] uppercase">
+                What we check
+              </p>
+              <ul className="mt-3 flex flex-col gap-2">
+                {[
+                  "Google Business Profile",
+                  "Mobile page speed",
+                  "Conversion tracking",
+                  "The businesses you compete with",
+                ].map((what) => (
+                  <li
+                    key={what}
+                    className="flex items-center justify-between gap-3 text-[14px] leading-[18px]"
+                  >
+                    <span className="text-ink font-medium">{what}</span>
+                    <span className="text-pass shrink-0 text-[13px] font-semibold">Ready</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <p className="text-faint text-[13px] leading-[18px]">
+              Results are free. No sign-up, no card.
+            </p>
+          </form>
+
+          <div className="bg-panel-alt p-5 sm:p-7">
+            {error ? (
+              <div className="border-red-line bg-red-pale rounded-[16px] border p-5">
+                <p className="text-red text-[15px] leading-5 font-semibold">{error}</p>
+                <p className="text-muted mt-2 text-[14px] leading-[20px]">
+                  You can still get the website check.{" "}
+                  <Link href="/audit?view=not-found" className="text-brand font-semibold">
+                    Tell us the basics instead
+                  </Link>
+                  .
+                </p>
+              </div>
+            ) : results ? (
+              live ? (
+                <LiveMatches listings={listings ?? []} matched={matched} typed={typed} />
+              ) : (
+                <SampleMatches typed={SAMPLE} />
+              )
+            ) : (
+              <div className="border-line-input flex h-full min-h-[280px] flex-col items-center justify-center rounded-[18px] border border-dashed px-6 py-10 text-center">
+                <span
+                  aria-hidden
+                  className="bg-brand-pale text-brand flex size-12 items-center justify-center rounded-[14px] text-[22px]"
+                >
+                  <MagnifyingGlass size={24} weight="bold" />
+                </span>
+                <p className="mt-4 text-[17px] leading-[22px] font-semibold">
+                  Type your business name to start
+                </p>
+                <p className="text-muted mt-2 max-w-[360px] text-[15px] leading-[22px]">
+                  We show the businesses Google knows as you type. Pick yours, and the checks run in
+                  about a minute.
+                </p>
+              </div>
+            )}
           </div>
-        </form>
+        </div>
       </Card>
-
-      {error ? (
-        <Card className="border-red-line bg-red-pale mt-6 p-5">
-          <p className="text-red text-[15px] leading-5 font-semibold">{error}</p>
-          <p className="text-muted mt-2 text-[14px] leading-[18px]">
-            You can still get the website check.{" "}
-            <Link href="/audit?view=not-found" className="text-brand font-semibold">
-              Tell us the basics instead
-            </Link>
-            .
-          </p>
-        </Card>
-      ) : null}
-
-      {results && !error ? (
-        live ? (
-          <LiveMatches listings={listings ?? []} matched={matched} typed={typed} />
-        ) : (
-          <SampleMatches typed={SAMPLE} />
-        )
-      ) : null}
     </AuditPage>
   );
 }

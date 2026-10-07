@@ -5,7 +5,7 @@ import type { Listing } from "@/lib/listing";
 import type { Run } from "@/lib/report-from-run";
 import { reportFromRun } from "@/lib/report-from-run";
 import { Checking } from "./checking";
-import { AuditReport } from "./report-views";
+import { ScoreReport } from "./score-report";
 import { AuditPage } from "./shell";
 
 /*
@@ -108,5 +108,5 @@ export function LiveReport({ id }: { id: string }) {
     );
   }
 
-  return <AuditReport sample={reportFromRun(run, listing, rivals)} />;
+  return <ScoreReport sample={reportFromRun(run, listing, rivals)} />;
 }

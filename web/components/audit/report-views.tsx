@@ -5,6 +5,7 @@ import type { ChipTone } from "@/components/app/blocks";
 import { LinkButton } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { FixBar } from "./fix-bar";
+import { ScoreReport } from "./score-report";
 import { AuditPage, Card, Pill } from "./shell";
 
 /*
@@ -358,7 +359,7 @@ function band(score: number): "good" | "fix" | "cost" {
 }
 
 export function AuditReportSample({ view }: { view: "advertising" | "fresh" }) {
-  return <AuditReport sample={view === "fresh" ? FRESH : ADVERTISING} />;
+  return <ScoreReport sample={view === "fresh" ? FRESH : ADVERTISING} />;
 }
 
 export function AuditReport({ sample }: { sample: Sample }) {

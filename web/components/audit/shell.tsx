@@ -4,14 +4,14 @@ import { Brand } from "@/components/ui/brand";
 import { cn } from "@/lib/cn";
 
 /*
-  The public audit screens, from the "V2 · Audit" frames: a white 87px bar with the
-  wordmark, Log in and a Start free pill, then a 760px column on the canvas.
-  The frames are drawn in emerald; the app is blue, so these use the brand tokens.
+  The public audit screens, now in the client's website design: their warm ground,
+  their blue, Outfit over DM Sans, and the deeper radii their cards use. The `site`
+  class carries that palette (see globals.css); the signed-in app keeps Version 2.
 */
 export function AuditNav({ left }: { left?: ReactNode }) {
   return (
     <header className="bg-panel">
-      <div className="border-line-soft mx-auto flex h-[87px] max-w-[1296px] items-center justify-between border-b px-5 sm:px-0">
+      <div className="border-line-soft mx-auto flex h-[76px] max-w-[1200px] items-center justify-between border-b px-5">
         <Brand tone="light" size={26} href="/" />
         <div className="flex items-center gap-4">
           {left ?? (
@@ -21,9 +21,9 @@ export function AuditNav({ left }: { left?: ReactNode }) {
           )}
           <Link
             href="/signup"
-            className="bg-brand hover:bg-brand-dark inline-flex h-[42px] items-center rounded-full px-5 text-[15px] font-semibold text-white"
+            className="bg-brand hover:bg-brand-dark inline-flex h-[42px] items-center rounded-[12px] px-5 text-[15px] font-semibold text-white"
           >
-            Start free
+            Free instant audit
           </Link>
         </div>
       </div>
@@ -41,12 +41,12 @@ export function AuditPage({
   navLeft?: ReactNode;
 }) {
   return (
-    <div className="bg-canvas text-ink min-h-dvh">
+    <div className="site bg-canvas text-ink min-h-dvh">
       <AuditNav left={navLeft} />
       <main
         className={cn(
           "mx-auto px-5 pt-12 pb-20 sm:px-8 lg:pt-16",
-          wide ? "max-w-[1296px]" : "max-w-[760px]",
+          wide ? "max-w-[1200px]" : "max-w-[860px]",
         )}
       >
         {children}
@@ -57,7 +57,14 @@ export function AuditPage({
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn("bg-panel border-line rounded-[16px] border", className)}>{children}</div>
+    <div
+      className={cn(
+        "bg-panel border-line rounded-[22px] border shadow-[0_30px_60px_-40px_rgba(43,31,102,0.22)]",
+        className,
+      )}
+    >
+      {children}
+    </div>
   );
 }
 
