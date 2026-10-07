@@ -80,7 +80,7 @@ function LoginPageInner() {
       brand={agency ? "brightpath" : "ppcway"}
     >
       <AuthCard title={shell.title} onSubmit={submit} intro={null}>
-        <GoogleButton />
+        <GoogleButton next={params.get("next") ?? "/overview"} />
         <p className="text-faint text-[13px] leading-4 font-medium">or use your email</p>
         <Field label="Email">
           {(id) => (

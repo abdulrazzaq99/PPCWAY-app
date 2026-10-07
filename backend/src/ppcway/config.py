@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     google_oauth_client_secret: SecretStr | None = None
     google_oauth_redirect_uri: str = "http://localhost:3000/api/oauth/google/callback"
     google_oauth_token_key: SecretStr | None = None
+    #: Where Google sends a merchant back after they agree. Must match, byte for
+    #: byte, a redirect URI registered on the OAuth client.
+    google_ads_redirect_uri: str = "http://localhost:3001/ads/callback"
 
     #: The Google sign-in button's client id. Public by construction: it travels in
     #: the browser. The backend needs it too, to check a token was issued for us.

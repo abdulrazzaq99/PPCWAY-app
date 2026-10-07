@@ -20,6 +20,17 @@ from pydantic import BaseModel, EmailStr, Field, field_validator, model_validato
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ppcway.ads.accounts import accessible_accounts
+from ppcway.ads.models import AdsConnection, ConsentTrip
+from ppcway.ads.oauth import (
+    AdsConnectionRefused,
+    TokenVault,
+    VaultUnavailable,
+    consent_url,
+    exchange_code,
+    fresh_access_token,
+    new_state,
+)
 from ppcway.audit.models import AuditRequest, AuditRun
 from ppcway.audit.places import (
     Listing,
@@ -115,6 +126,35 @@ class SignedInOut(BaseModel):
     #: The session token. The web app puts this in an httpOnly cookie and the
     #: browser never reads it; it is returned once, here, and nowhere else.
     token: str
+
+
+class ConnectStartOut(BaseModel):
+    """Where to send the merchant, and the state that ties the trip to them."""
+
+    url: str
+
+
+class AdsAccountOut(BaseModel):
+    customer_id: str
+    name: str
+    is_manager: bool
+    currency: str
+    time_zone: str
+
+
+class AdsStatusOut(BaseModel):
+    """What the signed-in home needs to know about their Google Ads."""
+
+    connected: bool
+    customer_id: str = ""
+    customer_name: str = ""
+    #: Set when Google refused to say what the connection can reach.
+    trouble: str = ""
+
+
+class ConnectFinishIn(BaseModel):
+    code: str = Field(min_length=10, max_length=2000)
+    state: str = Field(min_length=10, max_length=64)
 
 
 class ListingOut(BaseModel):
@@ -298,6 +338,153 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         x_session_token: Annotated[str | None, Header()] = None,
     ) -> None:
         sign_out(session, x_session_token)
+
+    def _ads_ready() -> tuple[str, str]:
+        """The two credentials the trip needs, or a refusal naming what is missing."""
+        client_id = settings.google_oauth_client_id
+        secret = settings.google_oauth_client_secret
+        if not client_id or not secret:
+            raise HTTPException(503, "Connecting Google Ads is not set up yet.")
+        return client_id, secret.get_secret_value()
+
+    def _signed_in(session: Session, token: str | None) -> UserAccount:
+        account = _person(session, token)
+        if account is None:
+            raise HTTPException(401, "Sign in first.")
+        return account
+
+    def _connection(session: Session, account: UserAccount) -> AdsConnection | None:
+        return session.scalar(
+            select(AdsConnection)
+            .where(AdsConnection.account_id == account.id, AdsConnection.revoked_at.is_(None))
+            .order_by(AdsConnection.created_at.desc())
+        )
+
+    @app.post("/v1/ads/connect", response_model=ConnectStartOut)
+    def start_connecting(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> ConnectStartOut:
+        """Where to send the merchant, with a state only this server could have made."""
+        account = _signed_in(session, x_session_token)
+        client_id, _ = _ads_ready()
+        try:  # refuse before Google is involved, not after they have agreed
+            TokenVault(
+                settings.google_oauth_token_key.get_secret_value()
+                if settings.google_oauth_token_key
+                else None
+            )
+        except VaultUnavailable as exc:
+            log.error("%s", exc)
+            raise HTTPException(503, "Connecting Google Ads is not set up yet.") from None
+
+        state = new_state()
+        session.add(ConsentTrip(state=state, account_id=account.id))
+        session.commit()
+        return ConnectStartOut(
+            url=consent_url(
+                client_id=client_id,
+                redirect_uri=settings.google_ads_redirect_uri,
+                state=state,
+            )
+        )
+
+    @app.post("/v1/ads/finish", response_model=AdsStatusOut)
+    def finish_connecting(
+        body: ConnectFinishIn,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> AdsStatusOut:
+        """The code Google sent them back with, for a permission stored encrypted."""
+        account = _signed_in(session, x_session_token)
+        client_id, secret = _ads_ready()
+
+        trip = session.scalar(select(ConsentTrip).where(ConsentTrip.state == body.state))
+        if trip is None or trip.used_at is not None or trip.account_id != account.id:
+            # A state that was never issued, already spent, or belongs to somebody
+            # else: all three mean this reply is not the one we sent them on.
+            raise HTTPException(400, "That sign-in link has already been used. Start again.")
+
+        try:
+            grant = exchange_code(
+                body.code,
+                client_id=client_id,
+                client_secret=secret,
+                redirect_uri=settings.google_ads_redirect_uri,
+            )
+            vault = TokenVault(
+                settings.google_oauth_token_key.get_secret_value()
+                if settings.google_oauth_token_key
+                else None
+            )
+        except (AdsConnectionRefused, VaultUnavailable) as exc:
+            log.warning("connecting Google Ads failed: %s", exc)
+            raise HTTPException(502, str(exc)) from None
+
+        trip.used_at = datetime.now(UTC)
+        connection = AdsConnection(
+            account_id=account.id, ciphertext=vault.lock(grant.refresh_token)
+        )
+        session.add(connection)
+        session.commit()
+        return AdsStatusOut(connected=True)
+
+    @app.get("/v1/ads/status", response_model=AdsStatusOut)
+    def ads_status(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> AdsStatusOut:
+        account = _signed_in(session, x_session_token)
+        connection = _connection(session, account)
+        if connection is None:
+            return AdsStatusOut(connected=False)
+        return AdsStatusOut(
+            connected=True,
+            customer_id=connection.customer_id,
+            customer_name=connection.customer_name,
+        )
+
+    @app.get("/v1/ads/accounts", response_model=list[AdsAccountOut])
+    def ads_accounts(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> list[AdsAccountOut]:
+        """Which advertising accounts their permission reaches. See `ads.accounts`."""
+        account = _signed_in(session, x_session_token)
+        connection = _connection(session, account)
+        if connection is None:
+            raise HTTPException(404, "No Google Ads account is connected.")
+        if not settings.google_ads_developer_token:
+            raise HTTPException(503, "Reading Google Ads is not set up yet.")
+        client_id, secret = _ads_ready()
+        try:
+            vault = TokenVault(
+                settings.google_oauth_token_key.get_secret_value()
+                if settings.google_oauth_token_key
+                else None
+            )
+            access = fresh_access_token(
+                vault.unlock(connection.ciphertext), client_id=client_id, client_secret=secret
+            )
+            found = accessible_accounts(
+                access_token=access,
+                developer_token=settings.google_ads_developer_token.get_secret_value(),
+                api_version=settings.google_ads_api_version,
+                login_customer_id=settings.google_ads_login_customer_id,
+            )
+        except (AdsConnectionRefused, VaultUnavailable) as exc:
+            log.warning("reading Google Ads accounts failed: %s", exc)
+            raise HTTPException(502, str(exc)) from None
+        return [
+            AdsAccountOut(
+                customer_id=a.customer_id,
+                name=a.name,
+                is_manager=a.is_manager,
+                currency=a.currency,
+                time_zone=a.time_zone,
+            )
+            for a in found
+        ]
 
     @app.get("/v1/places/suggest", response_model=list[ListingOut])
     def suggest_businesses(

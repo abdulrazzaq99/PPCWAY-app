@@ -9,6 +9,31 @@ import { NextResponse, type NextRequest } from "next/server";
 */
 const OPEN = ["/gate", "/api/gate"];
 
+/*
+  The signed-in screens. Without a session they send people to sign in rather than
+  showing the sample data they were drawn with. `?view=` is the exception: it is
+  how the Figma states are reviewed, and it says plainly that it is a drawing.
+*/
+const SIGNED_IN_ONLY = [
+  "/overview",
+  "/activity",
+  "/approvals",
+  "/campaigns",
+  "/searches",
+  "/settings",
+  "/agency",
+  "/admin",
+  "/audit/mine",
+];
+const SESSION_COOKIE = "ppcway_session";
+
+function needsSignIn(request: NextRequest): boolean {
+  const { pathname, searchParams } = request.nextUrl;
+  if (searchParams.has("view")) return false;
+  if (!SIGNED_IN_ONLY.some((p) => pathname === p || pathname.startsWith(p + "/"))) return false;
+  return !request.cookies.get(SESSION_COOKIE)?.value;
+}
+
 async function expectedToken(password: string): Promise<string> {
   const bytes = new TextEncoder().encode(`ppcway-gate:${password}`);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
@@ -16,6 +41,15 @@ async function expectedToken(password: string): Promise<string> {
 }
 
 export async function proxy(request: NextRequest) {
+  if (needsSignIn(request)) {
+    const url = request.nextUrl.clone();
+    const asked = url.pathname + url.search;
+    url.pathname = "/login";
+    url.search = "";
+    url.searchParams.set("next", asked);
+    return NextResponse.redirect(url);
+  }
+
   const password = process.env.SITE_PASSWORD;
   if (!password) return NextResponse.next();
   const { pathname, search } = request.nextUrl;
