@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { SESSION_COOKIE } from "@/lib/session";
+import { RAN_HERE_COOKIE, RAN_HERE_KEEP, SESSION_COOKIE, cookieOptions } from "@/lib/session";
 
 /*
   The public audit form posts here; this forwards to the backend so its address
@@ -23,8 +23,16 @@ export async function POST(request: Request) {
       body: JSON.stringify(body),
       cache: "no-store",
     });
-    const data = await res.json().catch(() => ({}));
-    return NextResponse.json(data, { status: res.status });
+    const data = (await res.json().catch(() => ({}))) as { id?: string };
+    const reply = NextResponse.json(data, { status: res.status });
+    if (res.ok && data.id && !token) {
+      // Signed out: remember it here so it can follow them into an account later.
+      const jar = await cookies();
+      const ran = (jar.get(RAN_HERE_COOKIE)?.value ?? "").split(",").filter(Boolean);
+      const kept = [data.id, ...ran.filter((id) => id !== data.id)].slice(0, RAN_HERE_KEEP);
+      reply.cookies.set(RAN_HERE_COOKIE, kept.join(","), { ...cookieOptions, httpOnly: true });
+    }
+    return reply;
   } catch {
     return NextResponse.json(
       { error: "The audit service is not reachable right now. Try again in a minute." },

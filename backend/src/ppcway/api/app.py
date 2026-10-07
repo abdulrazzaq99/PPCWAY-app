@@ -128,6 +128,16 @@ class SignedInOut(BaseModel):
     token: str
 
 
+class ClaimIn(BaseModel):
+    """Audits run in this browser before anybody signed in."""
+
+    ids: list[UUID] = Field(default_factory=list, max_length=20)
+
+
+class ClaimedOut(BaseModel):
+    claimed: int
+
+
 class ConnectStartOut(BaseModel):
     """Where to send the merchant, and the state that ties the trip to them."""
 
@@ -244,6 +254,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session.commit()
         tasks.add_task(_run, run.id, settings)
         return AuditOut(id=run.id, site=run.site, status=run.status)
+
+    @app.post("/v1/audits/claim", response_model=ClaimedOut)
+    def claim_audits(
+        body: ClaimIn,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> ClaimedOut:
+        """Attach audits run before signing in to the account that just signed in.
+
+        Somebody runs the free audit, likes what it says, and makes an account:
+        the report they were reading should be waiting for them, not an empty page.
+        Only an audit nobody owns can be claimed, and only by a browser that knows
+        its id, which is the same secret as the link to the report itself.
+        """
+        account = _signed_in(session, x_session_token)
+        if not body.ids:
+            return ClaimedOut(claimed=0)
+        runs = session.scalars(select(AuditRun).where(AuditRun.id.in_(body.ids))).all()
+        claimed = 0
+        for run in runs:
+            asked = session.get(AuditRequest, run.request_id) if run.request_id else None
+            if asked is not None and asked.user_id is None:
+                asked.user_id = account.id
+                claimed += 1
+        if claimed:
+            session.commit()
+        return ClaimedOut(claimed=claimed)
 
     @app.get("/v1/audits/mine", response_model=list[AuditOut])
     def my_audits(

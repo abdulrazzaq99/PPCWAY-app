@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { SESSION_COOKIE, cookieOptions } from "@/lib/session";
+import { cookies } from "next/headers";
+import { RAN_HERE_COOKIE, SESSION_COOKIE, cookieOptions } from "@/lib/session";
 
 /*
   Google's token in, a session cookie out. The token is checked by the backend
@@ -31,6 +32,18 @@ export async function POST(request: Request) {
     }
     const reply = NextResponse.json({ person: said.person });
     reply.cookies.set(SESSION_COOKIE, said.token, cookieOptions);
+
+    // The audits they ran here before signing in become theirs.
+    const ran = ((await cookies()).get(RAN_HERE_COOKIE)?.value ?? "").split(",").filter(Boolean);
+    if (ran.length) {
+      await fetch(`${BACKEND}/v1/audits/claim`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-session-token": said.token },
+        body: JSON.stringify({ ids: ran }),
+        cache: "no-store",
+      }).catch(() => undefined);
+      reply.cookies.delete(RAN_HERE_COOKIE);
+    }
     return reply;
   } catch {
     return NextResponse.json({ error: "The sign-in service is not reachable." }, { status: 503 });
