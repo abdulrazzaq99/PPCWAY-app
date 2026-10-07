@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from ppcway.ads.accounts import accessible_accounts
 from ppcway.ads.models import AdsConnection, ConsentTrip
@@ -31,6 +31,7 @@ from ppcway.ads.oauth import (
     fresh_access_token,
     new_state,
 )
+from ppcway.ads.stats import read_account
 from ppcway.audit.models import AuditRequest, AuditRun
 from ppcway.audit.places import (
     Listing,
@@ -672,6 +673,61 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
+def _their_ads(
+    run_id: UUID, settings: Settings, factory: sessionmaker[Session]
+) -> dict[str, Any] | None:
+    """Their Google Ads account, if they connected one and said which.
+
+    None means there is nothing to read, which is the ordinary case: not signed
+    in, not connected, or connected without choosing an account yet. A refusal
+    from Google is also None here; the report still goes out, and the reason is
+    in the log rather than in a failed audit.
+    """
+    with factory() as session:
+        run = session.get(AuditRun, run_id)
+        if run is None or run.request_id is None:
+            return None
+        asked = session.get(AuditRequest, run.request_id)
+        if asked is None or asked.user_id is None:
+            return None
+        connection = session.scalars(
+            select(AdsConnection).where(
+                AdsConnection.account_id == asked.user_id,
+                AdsConnection.revoked_at.is_(None),
+            )
+        ).first()
+        if connection is None or not connection.customer_id:
+            return None
+        customer_id, ciphertext = connection.customer_id, connection.ciphertext
+
+    if not (settings.google_oauth_client_id and settings.google_oauth_client_secret):
+        return None
+    if settings.google_ads_developer_token is None:
+        return None
+    try:
+        vault = TokenVault(
+            settings.google_oauth_token_key.get_secret_value()
+            if settings.google_oauth_token_key
+            else None
+        )
+        access = fresh_access_token(
+            vault.unlock(ciphertext),
+            client_id=settings.google_oauth_client_id,
+            client_secret=settings.google_oauth_client_secret.get_secret_value(),
+        )
+        reading = read_account(
+            customer_id,
+            access_token=access,
+            developer_token=settings.google_ads_developer_token.get_secret_value(),
+            api_version=settings.google_ads_api_version,
+            login_customer_id=settings.google_ads_login_customer_id,
+        )
+    except (AdsConnectionRefused, VaultUnavailable) as exc:
+        log.warning("audit %s could not read the connected Google Ads account: %s", run_id, exc)
+        return None
+    return reading.as_dict()
+
+
 def _run(run_id: UUID, settings: Settings) -> None:
     factory = session_factory()
     with factory() as session:
@@ -700,11 +756,17 @@ def _run(run_id: UUID, settings: Settings) -> None:
             folder.mkdir(parents=True, exist_ok=True)
             (folder / f"{kind}.jpg").write_bytes(data)
             report.screenshot_urls[kind] = f"/v1/audits/{run_id}/screenshot/{kind}"
+        written = report.as_dict()
+        theirs = _their_ads(run_id, settings, factory)
+        if theirs is not None:
+            # Their own account, read with the permission they gave, beside what
+            # the public checks found. Four locked cards open when this is here.
+            written["ads"] = theirs
         with factory() as session:
             run = session.get(AuditRun, run_id)
             if run is None:
                 return
-            run.report = report.as_dict()
+            run.report = written
             run.status = "done"
             run.stage = "done"
             run.pages_read = report.pages_read

@@ -1,3 +1,4 @@
+import type { AdsReading } from "@/components/audit/ads-findings";
 import type { AuditLine, AuditPanel, AuditSample } from "@/components/audit/report-views";
 import type { Listing } from "./listing";
 
@@ -7,8 +8,9 @@ import type { Listing } from "./listing";
   from Google Maps. Nothing is estimated, so a run with no listing simply shows
   fewer cards rather than inventing one.
 
-  What is deliberately missing: their ads. That card stays locked, because only
-  the account owner can open it.
+  Their ads are the exception, and only because they opened them: when the person
+  has connected their Google Ads account and said which one to read, the run
+  carries what it found there and the four locked cards open with real figures.
 */
 export type RunFinding = {
   key: string;
@@ -33,6 +35,8 @@ export type Run = {
     pages_read: number;
     findings: RunFinding[];
     headline: string;
+    /** Present only when they connected an account and chose which to read. */
+    ads?: AdsReading;
   } | null;
 };
 
@@ -300,6 +304,9 @@ export function reportFromRun(run: Run, mine: Listing | null, rivals: Listing[])
             total: rivals.length,
           }
         : undefined,
+    // Their own account, when they connected one. Absent otherwise, which is
+    // what keeps the four cards honestly locked for everybody else.
+    fromAds: run.report?.ads,
     bar:
       problems.length === 0
         ? "Nothing here needs fixing first. We keep watching it every morning."

@@ -2,6 +2,7 @@ import { ArrowRight, LockSimple } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { LinkButton } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
+import { AdsFindings } from "./ads-findings";
 import type { AuditLine, AuditPanel, AuditSample } from "./report-views";
 import { FixBar } from "./fix-bar";
 import { AuditPage, Card } from "./shell";
@@ -165,38 +166,42 @@ export function ScoreReport({ sample }: { sample: AuditSample }) {
         </Card>
       </section>
 
-      <section className="mt-8">
-        <Card className="overflow-hidden">
-          <div className="border-line-soft flex flex-wrap items-center justify-between gap-3 border-b px-5 py-5 sm:px-7">
-            <div>
-              <h2 className="text-[20px] leading-[26px] font-semibold">
-                Four more, locked to your account
-              </h2>
-              <p className="text-muted mt-1 max-w-[620px] text-[15px] leading-[23px]">
-                These read your own Google Ads account. Google shows them to the account owner and
-                to nobody else, so we cannot see them and neither can your competitors.
-              </p>
+      {sample.fromAds ? (
+        <AdsFindings ads={sample.fromAds} />
+      ) : (
+        <section className="mt-8">
+          <Card className="overflow-hidden">
+            <div className="border-line-soft flex flex-wrap items-center justify-between gap-3 border-b px-5 py-5 sm:px-7">
+              <div>
+                <h2 className="text-[20px] leading-[26px] font-semibold">
+                  Four more, locked to your account
+                </h2>
+                <p className="text-muted mt-1 max-w-[620px] text-[15px] leading-[23px]">
+                  These read your own Google Ads account. Google shows them to the account owner and
+                  to nobody else, so we cannot see them and neither can your competitors.
+                </p>
+              </div>
+              <LinkButton href="/signup" size="sm">
+                Connect Google Ads, read only
+                <ArrowRight aria-hidden size={15} weight="bold" />
+              </LinkButton>
             </div>
-            <LinkButton href="/signup" size="sm">
-              Connect Google Ads, read only
-              <ArrowRight aria-hidden size={15} weight="bold" />
-            </LinkButton>
-          </div>
-          <ul className="divide-line-soft divide-y">
-            {LOCKED.map((row) => (
-              <li key={row} className="flex items-center gap-4 px-5 py-4 sm:px-7">
-                <span
-                  aria-hidden
-                  className="bg-red flex size-[26px] shrink-0 items-center justify-center rounded-full text-white"
-                >
-                  <LockSimple size={14} weight="bold" />
-                </span>
-                <span className="text-[16px] leading-[21px] font-bold">{row}</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      </section>
+            <ul className="divide-line-soft divide-y">
+              {LOCKED.map((row) => (
+                <li key={row} className="flex items-center gap-4 px-5 py-4 sm:px-7">
+                  <span
+                    aria-hidden
+                    className="bg-red flex size-[26px] shrink-0 items-center justify-center rounded-full text-white"
+                  >
+                    <LockSimple size={14} weight="bold" />
+                  </span>
+                  <span className="text-[16px] leading-[21px] font-bold">{row}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </section>
+      )}
 
       {sample.locked ? (
         <section className="mt-8">

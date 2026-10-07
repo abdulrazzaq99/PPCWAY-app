@@ -4,6 +4,7 @@ import { StatusPill } from "@/components/app/blocks";
 import type { ChipTone } from "@/components/app/blocks";
 import { LinkButton } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
+import type { AdsReading } from "./ads-findings";
 import { FixBar } from "./fix-bar";
 import { ScoreReport } from "./score-report";
 import { AuditPage, Card, Pill } from "./shell";
@@ -39,6 +40,8 @@ type Sample = {
   cost?: { title: string; body: string; daily: string; basis: string };
   /** A list the audit found, two rows shown and the rest with a free account. */
   locked?: { title: string; note: string; shown: string[]; total: number };
+  /** Their own Google Ads account, read with their permission. Opens the four. */
+  fromAds?: AdsReading;
   /** The sentence on the bar that follows the reader. */
   bar: string;
   fixes: { when: string; title: string; body: string }[];
