@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { SignedIn } from "@/components/auth/signed-in";
 import { Brand } from "@/components/ui/brand";
 import { cn } from "@/lib/cn";
 
@@ -14,11 +15,7 @@ export function AuditNav({ left }: { left?: ReactNode }) {
       <div className="border-line-soft mx-auto flex h-[76px] max-w-[1200px] items-center justify-between border-b px-5">
         <Brand tone="light" size={26} href="/" />
         <div className="flex items-center gap-4">
-          {left ?? (
-            <Link href="/login" className="text-ink text-[15px] leading-[18px] font-semibold">
-              Log in
-            </Link>
-          )}
+          {left ?? <SignedIn />}
           <Link
             href="/signup"
             className="bg-brand hover:bg-brand-dark inline-flex h-[42px] items-center rounded-[12px] px-5 text-[15px] font-semibold text-white"

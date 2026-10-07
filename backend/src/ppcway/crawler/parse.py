@@ -43,6 +43,7 @@ judgements, written as literals, and `tests/crawler/test_parse.py` pins them as
 literals for the reason the whole project now writes down: a judgement
 re-derived from the code it judges records nothing.
 """
+
 from __future__ import annotations
 
 import json
@@ -282,7 +283,7 @@ def _microdata(tree: HTMLParser, prop: str) -> str:
             return _clean(content)
         href = node.attributes.get("href")
         if href and href.strip().startswith("tel:"):
-            return _clean(href.strip()[len("tel:"):])
+            return _clean(href.strip()[len("tel:") :])
         text = node.text(strip=True)
         if text:
             return _clean(text)
@@ -303,7 +304,7 @@ def _tel_link(tree: HTMLParser) -> str:
     for node in tree.css("a[href]"):
         href = (node.attributes.get("href") or "").strip()
         if href.lower().startswith("tel:"):
-            number = _clean(href[len("tel:"):])
+            number = _clean(href[len("tel:") :])
             if number:
                 return number
     return ""

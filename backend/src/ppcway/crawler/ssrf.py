@@ -102,6 +102,7 @@ which re-runs the whole check on each hop's resolved `Location`. A guard that
 walk - a guard written here today would walk one file and find nothing, which is
 the permanently-green no-op this project has met three times.
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -145,7 +146,7 @@ DEFAULT_PORTS: Final = {"http": 80, "https": 443}
 #: quietly become the mechanism.
 CLOUD_METADATA_ADDRESSES: Final = {
     "169.254.169.254": "the cloud instance metadata service (AWS, Azure, GCP, Oracle, "
-                       "DigitalOcean and Hetzner all serve credentials here)",
+    "DigitalOcean and Hetzner all serve credentials here)",
     "fd00:ec2::254": "the AWS instance metadata service over IPv6",
     "100.100.100.200": "the Alibaba Cloud instance metadata service",
     "192.0.0.192": "the Oracle Cloud legacy instance metadata service",

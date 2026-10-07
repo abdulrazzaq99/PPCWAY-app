@@ -8,14 +8,27 @@ from datetime import UTC, datetime
 
 TOOLS = {
     "chat": (
-        ("Tawk.to", "tawk.to"), ("Intercom", "intercom.io"), ("Drift", "drift.com"), ("Tidio", "tidio.co"),
-        ("LiveChat", "livechatinc.com"), ("Crisp", "crisp.chat"), ("HubSpot chat", "hs-scripts.com"),
-        ("Podium", "podium.com"), ("Birdeye", "birdeye.com"), ("Zendesk", "zdassets.com"),
+        ("Tawk.to", "tawk.to"),
+        ("Intercom", "intercom.io"),
+        ("Drift", "drift.com"),
+        ("Tidio", "tidio.co"),
+        ("LiveChat", "livechatinc.com"),
+        ("Crisp", "crisp.chat"),
+        ("HubSpot chat", "hs-scripts.com"),
+        ("Podium", "podium.com"),
+        ("Birdeye", "birdeye.com"),
+        ("Zendesk", "zdassets.com"),
     ),
     "booking": (
-        ("Housecall Pro", "housecallpro.com"), ("Jobber", "getjobber.com"), ("ServiceTitan", "servicetitan.com"),
-        ("Calendly", "calendly.com"), ("Acuity", "acuityscheduling.com"), ("Square Appointments", "squareup.com/appointments"),
-        ("Setmore", "setmore.com"), ("Booksy", "booksy.com"), ("Mindbody", "mindbodyonline.com"),
+        ("Housecall Pro", "housecallpro.com"),
+        ("Jobber", "getjobber.com"),
+        ("ServiceTitan", "servicetitan.com"),
+        ("Calendly", "calendly.com"),
+        ("Acuity", "acuityscheduling.com"),
+        ("Square Appointments", "squareup.com/appointments"),
+        ("Setmore", "setmore.com"),
+        ("Booksy", "booksy.com"),
+        ("Mindbody", "mindbodyonline.com"),
     ),
 }
 
@@ -37,9 +50,20 @@ class ConversionSignals:
     problems: list[str] = field(default_factory=list)
 
 
-def detect_conversion(*, html: str, scripts: list[str], requests: list[str], headline: str, has_h1: bool,
-                      ctas: list[str], phone_above_fold: bool, tel_links: list[str], overlay: str | None,
-                      copyright_year: int | None, form_fields: int | None) -> ConversionSignals:
+def detect_conversion(
+    *,
+    html: str,
+    scripts: list[str],
+    requests: list[str],
+    headline: str,
+    has_h1: bool,
+    ctas: list[str],
+    phone_above_fold: bool,
+    tel_links: list[str],
+    overlay: str | None,
+    copyright_year: int | None,
+    form_fields: int | None,
+) -> ConversionSignals:
     everything = (html + "\n".join(scripts) + "\n".join(requests)).lower()
     found: dict[str, str | None] = {"chat": None, "booking": None}
     for kind, tools in TOOLS.items():
@@ -51,18 +75,34 @@ def detect_conversion(*, html: str, scripts: list[str], requests: list[str], hea
     if copyright_year:
         stale = max(0, datetime.now(UTC).year - copyright_year)
     out = ConversionSignals(
-        headline=headline, has_h1=has_h1, ctas_above_fold=ctas, phone_above_fold=phone_above_fold,
-        tel_link=bool(tel_links), overlay=overlay, chat_tool=found["chat"], booking_tool=found["booking"],
-        copyright_year=copyright_year, years_stale=stale, form_fields=form_fields,
+        headline=headline,
+        has_h1=has_h1,
+        ctas_above_fold=ctas,
+        phone_above_fold=phone_above_fold,
+        tel_link=bool(tel_links),
+        overlay=overlay,
+        chat_tool=found["chat"],
+        booking_tool=found["booking"],
+        copyright_year=copyright_year,
+        years_stale=stale,
+        form_fields=form_fields,
     )
     if overlay:
         out.problems.append(f"A pop-up covers the page on arrival ({overlay[:60]}).")
     if not ctas and not phone_above_fold:
-        out.problems.append("Nothing to do in the first screen: no call button, quote button or phone number before scrolling.")
+        out.problems.append(
+            "Nothing to do in the first screen: no call button, quote button or phone number before scrolling."
+        )
     if not has_h1:
-        out.problems.append("The page has no headline (no h1), so the first thing a visitor reads is not chosen.")
+        out.problems.append(
+            "The page has no headline (no h1), so the first thing a visitor reads is not chosen."
+        )
     if form_fields is not None and form_fields > 6:
-        out.problems.append(f"The contact form asks {form_fields} questions. Four or fewer gets more sends.")
+        out.problems.append(
+            f"The contact form asks {form_fields} questions. Four or fewer gets more sends."
+        )
     if stale >= 2:
-        out.problems.append(f"The footer says {copyright_year}. A stale year reads as a closed business.")
+        out.problems.append(
+            f"The footer says {copyright_year}. A stale year reads as a closed business."
+        )
     return out

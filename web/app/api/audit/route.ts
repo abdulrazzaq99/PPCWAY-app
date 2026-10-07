@@ -1,4 +1,6 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { SESSION_COOKIE } from "@/lib/session";
 
 /*
   The public audit form posts here; this forwards to the backend so its address
@@ -10,9 +12,14 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Send the form as JSON." }, { status: 400 });
   try {
+    // Signed in, the run is kept against the account; signed out, the header is absent.
+    const token = (await cookies()).get(SESSION_COOKIE)?.value;
     const res = await fetch(`${BACKEND}/v1/audits`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { "x-session-token": token } : {}),
+      },
       body: JSON.stringify(body),
       cache: "no-store",
     });

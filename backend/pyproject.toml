@@ -14,6 +14,8 @@ dependencies = [
     "redis>=5.2",
     "httpx>=0.28",
     "cryptography>=44.0",
+    # Verifies the signed token Google's sign-in button hands the browser.
+    "google-auth>=2.37",
     "selectolax>=0.3.21",
     # Pinned, not a floor: the Docker image carries the Chromium that belongs to
     # this exact version, and a newer Playwright looks for a browser that is not

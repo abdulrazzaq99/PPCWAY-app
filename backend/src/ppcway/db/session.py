@@ -18,7 +18,9 @@ def engine() -> Engine:
         if path and not path.startswith(":memory:"):
             Path(path).parent.mkdir(parents=True, exist_ok=True)
         # FastAPI runs handlers and background tasks on worker threads.
-        return create_engine(settings.database_url, connect_args={"check_same_thread": False}, future=True)
+        return create_engine(
+            settings.database_url, connect_args={"check_same_thread": False}, future=True
+        )
     return create_engine(settings.database_url, pool_pre_ping=True, future=True)
 
 

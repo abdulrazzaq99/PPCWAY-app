@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
@@ -29,6 +29,9 @@ from ppcway.audit.places import (
     place_details,
 )
 from ppcway.audit.runner import normalise_site, run_audit
+from ppcway.auth.google import SignInRefused, verify_google_token
+from ppcway.auth.models import UserAccount
+from ppcway.auth.sessions import sign_in, sign_out, whoever_holds
 from ppcway.config import Settings, load_settings
 from ppcway.db.session import get_session, session_factory
 
@@ -91,6 +94,27 @@ class AuditOut(BaseModel):
     place_id: str = ""
     #: The town they typed, the anchor for the businesses nearby.
     city: str = ""
+
+
+class SignInIn(BaseModel):
+    """What Google's button hands the browser, passed straight through once."""
+
+    credential: str = Field(min_length=20, max_length=4000)
+
+
+class PersonOut(BaseModel):
+    """Who is signed in, as a screen needs to greet them."""
+
+    email: str
+    name: str
+    picture: str
+
+
+class SignedInOut(BaseModel):
+    person: PersonOut
+    #: The session token. The web app puts this in an httpOnly cookie and the
+    #: browser never reads it; it is returned once, here, and nowhere else.
+    token: str
 
 
 class ListingOut(BaseModel):
@@ -156,7 +180,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         body: AuditRequestIn,
         tasks: BackgroundTasks,
         session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
     ) -> AuditOut:
+        # Signed in, the audit is kept against the account; signed out, it is not.
+        asked_by = _person(session, x_session_token)
         req = AuditRequest(
             name=body.name.strip(),
             email=str(body.email).lower() if body.email else "",
@@ -166,6 +193,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             source=body.source,
             place_id=body.place_id.strip(),
             city=body.city.strip(),
+            user_id=asked_by.id if asked_by else None,
             consent_text=CONSENT_TEXT if body.consent else "",
         )
         run = AuditRun(site=normalise_site(body.site), status="queued")
@@ -176,6 +204,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session.commit()
         tasks.add_task(_run, run.id, settings)
         return AuditOut(id=run.id, site=run.site, status=run.status)
+
+    @app.get("/v1/audits/mine", response_model=list[AuditOut])
+    def my_audits(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+        limit: int = 20,
+    ) -> list[AuditOut]:
+        """Every audit this person ran while signed in, newest first."""
+        account = _person(session, x_session_token)
+        if account is None:
+            raise HTTPException(401, "Nobody is signed in.")
+        rows = session.scalars(
+            select(AuditRun)
+            .join(AuditRequest, AuditRun.request_id == AuditRequest.id)
+            .where(AuditRequest.user_id == account.id)
+            .order_by(AuditRun.created_at.desc())
+            .limit(min(limit, 100))
+        ).all()
+        return [
+            AuditOut(id=r.id, site=r.site, status=r.status, error=r.error, stage=r.stage)
+            for r in rows
+        ]
 
     @app.get("/v1/audits/{run_id}", response_model=AuditOut)
     def read_audit(run_id: UUID, session: Annotated[Session, Depends(get_session)]) -> AuditOut:
@@ -210,6 +260,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if settings.google_maps_api_key is None:
             raise HTTPException(503, "Business search is not set up yet.")
         return settings.google_maps_api_key.get_secret_value()
+
+    def _person(session: Session, token: str | None) -> UserAccount | None:
+        return whoever_holds(session, token)
+
+    @app.post("/v1/auth/google", response_model=SignedInOut)
+    def sign_in_with_google(
+        body: SignInIn, session: Annotated[Session, Depends(get_session)]
+    ) -> SignedInOut:
+        """Check Google's token, then start a session. See `auth.google`."""
+        if not settings.google_signin_client_id:
+            raise HTTPException(503, "Signing in with Google is not set up yet.")
+        try:
+            who = verify_google_token(body.credential, client_id=settings.google_signin_client_id)
+        except SignInRefused as exc:
+            log.warning("sign-in refused: %s", exc)
+            raise HTTPException(401, str(exc)) from None
+        account, token = sign_in(session, who)
+        return SignedInOut(
+            person=PersonOut(email=account.email, name=account.name, picture=account.picture),
+            token=token,
+        )
+
+    @app.get("/v1/auth/me", response_model=PersonOut)
+    def who_am_i(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> PersonOut:
+        account = _person(session, x_session_token)
+        if account is None:
+            raise HTTPException(401, "Nobody is signed in.")
+        return PersonOut(email=account.email, name=account.name, picture=account.picture)
+
+    @app.post("/v1/auth/signout", status_code=204)
+    def sign_out_here(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> None:
+        sign_out(session, x_session_token)
 
     @app.get("/v1/places/suggest", response_model=list[ListingOut])
     def suggest_businesses(

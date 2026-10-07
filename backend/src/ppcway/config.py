@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     google_oauth_redirect_uri: str = "http://localhost:3000/api/oauth/google/callback"
     google_oauth_token_key: SecretStr | None = None
 
+    #: The Google sign-in button's client id. Public by construction: it travels in
+    #: the browser. The backend needs it too, to check a token was issued for us.
+    google_signin_client_id: str | None = None
+
     #: Where the Next.js app lives, for links in emails and redirects.
     web_url: str = "http://localhost:3000"
 

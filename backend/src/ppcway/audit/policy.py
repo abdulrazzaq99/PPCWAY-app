@@ -12,13 +12,29 @@ from dataclasses import dataclass
 
 # Kept in step with the validator's lexicons; the validator is the owner.
 SUPERLATIVES = frozenset(
-    {"best", "#1", "number one", "cheapest", "lowest price", "top rated", "unbeatable",
-     "guaranteed", "fastest", "most trusted"}
+    {
+        "best",
+        "#1",
+        "number one",
+        "cheapest",
+        "lowest price",
+        "top rated",
+        "unbeatable",
+        "guaranteed",
+        "fastest",
+        "most trusted",
+    }
 )
 RESTRICTED_CLAIMS = {
-    "promises a medical result": frozenset({"cure", "cures", "clinically proven", "pain free", "miracle"}),
-    "promises a lending outcome": frozenset({"loan approval", "no credit check", "instant approval", "debt free"}),
-    "promises a legal outcome": frozenset({"win your case", "no win no fee", "settlement guaranteed"}),
+    "promises a medical result": frozenset(
+        {"cure", "cures", "clinically proven", "pain free", "miracle"}
+    ),
+    "promises a lending outcome": frozenset(
+        {"loan approval", "no credit check", "instant approval", "debt free"}
+    ),
+    "promises a legal outcome": frozenset(
+        {"win your case", "no win no fee", "settlement guaranteed"}
+    ),
 }
 
 
@@ -47,5 +63,11 @@ def scan_policy(page_text: str) -> list[PolicyHit]:
             m = re.search(pattern, lowered)
             if m and phrase not in seen:
                 seen.add(phrase)
-                hits.append(PolicyHit(phrase=phrase, family=family, context=_context(page_text, m.start(), m.end())))
+                hits.append(
+                    PolicyHit(
+                        phrase=phrase,
+                        family=family,
+                        context=_context(page_text, m.start(), m.end()),
+                    )
+                )
     return hits

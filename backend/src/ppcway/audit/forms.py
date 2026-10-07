@@ -28,7 +28,9 @@ PROVIDERS = (
     ("Netlify Forms", ("data-netlify",)),
 )
 
-THANK_YOU_PATH = re.compile(r"/(thank[-_]?you|thanks|merci|confirmation|success|submitted)\b", re.IGNORECASE)
+THANK_YOU_PATH = re.compile(
+    r"/(thank[-_]?you|thanks|merci|confirmation|success|submitted)\b", re.IGNORECASE
+)
 SEARCH_HINT = re.compile(r"search|newsletter|subscribe", re.IGNORECASE)
 CONTACT_FIELD = re.compile(r"phone|tel|email|name|message", re.IGNORECASE)
 
@@ -64,7 +66,11 @@ def _looks_like_contact(form) -> bool:  # type: ignore[no-untyped-def]
         return False
     fields = form.css("input, textarea, select")
     named = [
-        (f.attributes.get("name") or "") + " " + (f.attributes.get("type") or "") + " " + (f.attributes.get("placeholder") or "")
+        (f.attributes.get("name") or "")
+        + " "
+        + (f.attributes.get("type") or "")
+        + " "
+        + (f.attributes.get("placeholder") or "")
         for f in fields
     ]
     if any(SEARCH_HINT.search(n) for n in named):

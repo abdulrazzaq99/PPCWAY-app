@@ -77,6 +77,7 @@ it from us - see `BlockedAddress`'s own docstring. This module LOGS `.address`
 and renders `str(exception)`, and nothing here ever puts an address into a value
 a merchant sees.
 """
+
 from __future__ import annotations
 
 import logging
@@ -851,9 +852,7 @@ def _follow(
         status, headers, body, text = _send(client, target, timeout=timeout, pace=pace)
         if status not in REDIRECT_STATUSES:
             return target, status, headers, body, text
-        target = assert_safe_redirect(
-            target.url, headers.get("location", ""), resolver=resolver
-        )
+        target = assert_safe_redirect(target.url, headers.get("location", ""), resolver=resolver)
     _LOG.info("the crawler stopped following redirects after %d hops", MAX_REDIRECTS)
     return None
 
@@ -890,7 +889,11 @@ def _fetch(
     first version.
     """
     followed = _follow(
-        client, target, resolver=resolver, timeout=timeout, pace=pace,
+        client,
+        target,
+        resolver=resolver,
+        timeout=timeout,
+        pace=pace,
         permitted=lambda hop: hop.url not in landed and robots.allows(hop, timeout=timeout),
     )
     if followed is None:
@@ -952,9 +955,7 @@ class _RobotsRules:
     origin costs one more rather than none.
     """
 
-    def __init__(
-        self, client: httpx.Client, *, resolver: Resolver | None, pace: _Pace
-    ) -> None:
+    def __init__(self, client: httpx.Client, *, resolver: Resolver | None, pace: _Pace) -> None:
         self._client = client
         self._resolver = resolver
         self._pace = pace
@@ -964,7 +965,10 @@ class _RobotsRules:
         origin = (target.scheme, target.host, target.port)
         if origin not in self._known:
             self._known[origin] = _robots_for(
-                self._client, target, resolver=self._resolver, timeout=timeout,
+                self._client,
+                target,
+                resolver=self._resolver,
+                timeout=timeout,
                 pace=self._pace,
             )
         allowed = self._known[origin].allows(_path_of(target.url))
@@ -1127,8 +1131,13 @@ def crawl(
                         else assert_safe_url(page_url, resolver=resolver)
                     )
                     fetched = _fetch(
-                        http, target, resolver=resolver, timeout=remaining, pace=pace,
-                        robots=robots, landed=landed,
+                        http,
+                        target,
+                        resolver=resolver,
+                        timeout=remaining,
+                        pace=pace,
+                        robots=robots,
+                        landed=landed,
                     )
                 except BlockedAddress as refused:
                     if page_url == entry.url:

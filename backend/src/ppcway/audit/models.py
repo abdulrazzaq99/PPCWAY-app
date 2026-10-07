@@ -35,6 +35,10 @@ class AuditRequest(Base):
     #: The town they typed. A trade that hides its address has no coordinates on
     #: Google, so this is the only anchor the "nearby" comparison has.
     city: Mapped[str] = mapped_column(String(120), default="")
+    #: Set when they were signed in, so their past audits can be listed again.
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_account.id"), index=True, nullable=True
+    )
     consent_text: Mapped[str] = mapped_column(Text)
     consented_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

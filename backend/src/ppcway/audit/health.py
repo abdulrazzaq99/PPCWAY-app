@@ -41,7 +41,10 @@ class HealthSignals:
 
 def _certificate(host: str, port: int = 443, timeout: float = 8) -> tuple[int | None, str]:
     ctx = ssl.create_default_context()
-    with socket.create_connection((host, port), timeout=timeout) as raw, ctx.wrap_socket(raw, server_hostname=host) as tls:
+    with (
+        socket.create_connection((host, port), timeout=timeout) as raw,
+        ctx.wrap_socket(raw, server_hostname=host) as tls,
+    ):
         cert = tls.getpeercert()
     not_after = cert.get("notAfter")
     issuer = ""
@@ -68,10 +71,18 @@ def _head(client: httpx.Client, url: str) -> httpx.Response | None:
         return None
 
 
-def check_health(url: str, internal_links: list[str], *, timeout_seconds: float = 10) -> HealthSignals:
+def check_health(
+    url: str, internal_links: list[str], *, timeout_seconds: float = 10
+) -> HealthSignals:
     parts = urlsplit(url)
     host = parts.hostname or ""
-    out = HealthSignals(https=parts.scheme == "https", cert_days_left=None, cert_issuer="", http_redirects=None, www_redirects=None)
+    out = HealthSignals(
+        https=parts.scheme == "https",
+        cert_days_left=None,
+        cert_issuer="",
+        http_redirects=None,
+        www_redirects=None,
+    )
 
     if out.https:
         try:
@@ -83,7 +94,11 @@ def check_health(url: str, internal_links: list[str], *, timeout_seconds: float 
         # http:// should send people to https://
         if out.https:
             r = _head(client, f"http://{host}/")
-            out.http_redirects = bool(r is not None and 300 <= r.status_code < 400 and str(r.headers.get("location", "")).startswith("https://"))
+            out.http_redirects = bool(
+                r is not None
+                and 300 <= r.status_code < 400
+                and str(r.headers.get("location", "")).startswith("https://")
+            )
             if r is not None:
                 r.close()
         # the other host spelling should redirect to this one

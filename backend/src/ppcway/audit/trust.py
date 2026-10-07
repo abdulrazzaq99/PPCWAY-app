@@ -21,8 +21,20 @@ HOURS = re.compile(
     re.IGNORECASE,
 )
 OPEN_24 = re.compile(r"\b(24/7|24 hours|open 24)\b", re.IGNORECASE)
-REVIEW_WORDS = re.compile(r"\b(\d+(\.\d)?)\s*(stars?|/5|out of 5)\b|\b(\d{2,5})\+?\s*reviews\b|google reviews", re.IGNORECASE)
-REVIEW_WIDGETS = ("trustindex", "birdeye", "reviewsonmywebsite", "elfsight", "trustpilot", "homestars", "nicejob", "podium")
+REVIEW_WORDS = re.compile(
+    r"\b(\d+(\.\d)?)\s*(stars?|/5|out of 5)\b|\b(\d{2,5})\+?\s*reviews\b|google reviews",
+    re.IGNORECASE,
+)
+REVIEW_WIDGETS = (
+    "trustindex",
+    "birdeye",
+    "reviewsonmywebsite",
+    "elfsight",
+    "trustpilot",
+    "homestars",
+    "nicejob",
+    "podium",
+)
 PRIVACY = re.compile(r"privacy", re.IGNORECASE)
 
 
@@ -56,7 +68,9 @@ def _json_ld(tree: HTMLParser) -> list[dict]:  # type: ignore[type-arg]
     return out
 
 
-def detect_trust(pages: list[tuple[str, str]], *, address: str, page_text: str, links: list[str]) -> TrustSignals:
+def detect_trust(
+    pages: list[tuple[str, str]], *, address: str, page_text: str, links: list[str]
+) -> TrustSignals:
     hours = bool(HOURS.search(page_text) or OPEN_24.search(page_text))
     licence_match = LICENCE.search(page_text)
     licence = licence_match.group(0).strip() if licence_match else ""
@@ -69,7 +83,27 @@ def detect_trust(pages: list[tuple[str, str]], *, address: str, page_text: str, 
         for obj in _json_ld(tree):
             t = obj.get("@type")
             types = t if isinstance(t, list) else [t]
-            if any(isinstance(x, str) and ("LocalBusiness" in x or x in ("Plumber", "Dentist", "HVACBusiness", "Electrician", "RoofingContractor", "HomeAndConstructionBusiness", "Locksmith", "MovingCompany", "AutoRepair", "LegalService", "Attorney")) for x in types):
+            if any(
+                isinstance(x, str)
+                and (
+                    "LocalBusiness" in x
+                    or x
+                    in (
+                        "Plumber",
+                        "Dentist",
+                        "HVACBusiness",
+                        "Electrician",
+                        "RoofingContractor",
+                        "HomeAndConstructionBusiness",
+                        "Locksmith",
+                        "MovingCompany",
+                        "AutoRepair",
+                        "LegalService",
+                        "Attorney",
+                    )
+                )
+                for x in types
+            ):
                 structured = True
             if "openingHours" in obj or "openingHoursSpecification" in obj:
                 hours = True
@@ -84,7 +118,9 @@ def detect_trust(pages: list[tuple[str, str]], *, address: str, page_text: str, 
         m = REVIEW_WORDS.search(page_text)
         if m:
             reviews = m.group(0)
-    privacy = any(PRIVACY.search(l) for l in links) or bool(re.search(r"privacy policy", page_text, re.IGNORECASE))
+    privacy = any(PRIVACY.search(l) for l in links) or bool(
+        re.search(r"privacy policy", page_text, re.IGNORECASE)
+    )
     return TrustSignals(
         address=address,
         hours=hours,

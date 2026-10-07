@@ -72,7 +72,10 @@ def classify_tags(
     joined_scripts = "\n".join(scripts)
     everything = joined_requests + "\n" + joined_scripts + "\n" + html
 
-    ga4_fired = any("google-analytics.com/g/collect" in r or "analytics.google.com/g/collect" in r for r in requests)
+    ga4_fired = any(
+        "google-analytics.com/g/collect" in r or "analytics.google.com/g/collect" in r
+        for r in requests
+    )
     ads_fired = any(
         "googleads.g.doubleclick.net/pagead/" in r
         or "google.com/pagead/1p-conversion" in r

@@ -131,19 +131,42 @@ def render(url: str, *, timeout_seconds: float = 45, laptop: bool = True) -> Ren
     with sync_playwright() as p:
         browser = p.chromium.launch(args=["--disable-dev-shm-usage"])
         try:
-            _load(browser, result, PHONE, PHONE_UA, mobile=True, timeout=timeout_seconds, probe=True)
+            _load(
+                browser, result, PHONE, PHONE_UA, mobile=True, timeout=timeout_seconds, probe=True
+            )
             if laptop:
-                shot = _load(browser, Rendering(url=url, final_url=url, title="", html=""), LAPTOP, LAPTOP_UA, mobile=False, timeout=timeout_seconds, probe=False)
+                shot = _load(
+                    browser,
+                    Rendering(url=url, final_url=url, title="", html=""),
+                    LAPTOP,
+                    LAPTOP_UA,
+                    mobile=False,
+                    timeout=timeout_seconds,
+                    probe=False,
+                )
                 result.screenshot_laptop = shot.screenshot_phone
         finally:
             browser.close()
     return result
 
 
-def _load(browser, result: Rendering, viewport: dict[str, int], ua: str, *, mobile: bool, timeout: float, probe: bool) -> Rendering:  # type: ignore[no-untyped-def]
+def _load(
+    browser,
+    result: Rendering,
+    viewport: dict[str, int],
+    ua: str,
+    *,
+    mobile: bool,
+    timeout: float,
+    probe: bool,
+) -> Rendering:  # type: ignore[no-untyped-def]
     context = browser.new_context(
-        viewport=viewport, user_agent=ua, is_mobile=mobile, has_touch=mobile,
-        device_scale_factor=2 if mobile else 1, locale="en-CA",
+        viewport=viewport,
+        user_agent=ua,
+        is_mobile=mobile,
+        has_touch=mobile,
+        device_scale_factor=2 if mobile else 1,
+        locale="en-CA",
     )
     page = context.new_page()
     page_is_https = urlsplit(result.url).scheme == "https"
@@ -157,9 +180,14 @@ def _load(browser, result: Rendering, viewport: dict[str, int], ua: str, *, mobi
 
     page.route("**/*", gate)
     page.on("request", lambda r: result.requests.append(r.url))
-    page.on("response", lambda r: result.failed.append((r.url, r.status)) if r.status >= 400 else None)
+    page.on(
+        "response", lambda r: result.failed.append((r.url, r.status)) if r.status >= 400 else None
+    )
     page.on("requestfailed", lambda r: result.errored.append(r.url))
-    page.on("console", lambda m: result.console_errors.append(m.text[:300]) if m.type == "error" else None)
+    page.on(
+        "console",
+        lambda m: result.console_errors.append(m.text[:300]) if m.type == "error" else None,
+    )
     page.on("pageerror", lambda e: result.console_errors.append(str(e)[:300]))
     try:
         page.goto(result.url, wait_until="networkidle", timeout=timeout * 1000)
