@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PPCWay — What the Google Ads API lets us do</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 16mm; }
+  :root {
+    --brand: #2F5BEA; --ink: #120E24; --muted: #5A5670; --faint: #8B87A0;
+    --line: #E4E1EE; --soft: #F6F4F0; --view: #0F7B55; --change: #B4420F;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink); font-size: 9.6pt; line-height: 1.5; margin: 0;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  h1, h2, h3, h4 { font-family: "Outfit", "DM Sans", sans-serif; margin: 0; }
+  h1 { font-size: 26pt; line-height: 1.12; letter-spacing: -0.4pt; }
+  h2 {
+    font-size: 15pt; margin: 20pt 0 7pt; padding-top: 9pt;
+    border-top: 2px solid var(--ink); break-after: avoid;
+  }
+  h3 { font-size: 11pt; margin: 14pt 0 4pt; break-after: avoid; }
+  h4 { font-size: 9.6pt; margin: 10pt 0 3pt; color: var(--muted); break-after: avoid; }
+  p { margin: 0 0 7pt; }
+  .lede { font-size: 11pt; line-height: 1.55; color: var(--muted); max-width: 150mm; }
+  .cover { padding: 26mm 0 0; break-after: page; }
+  .eyebrow {
+    font-size: 8pt; font-weight: 700; letter-spacing: 1.1pt; text-transform: uppercase;
+    color: var(--brand); margin-bottom: 8pt;
+  }
+  .meta { margin-top: 14mm; font-size: 9pt; color: var(--faint); border-top: 1px solid var(--line); padding-top: 7pt; }
+  table { width: 100%; border-collapse: collapse; margin: 8pt 0 12pt; font-size: 8.8pt; }
+  th {
+    text-align: left; font-weight: 700; font-size: 7.6pt; letter-spacing: 0.5pt;
+    text-transform: uppercase; color: var(--faint); border-bottom: 1.5px solid var(--line);
+    padding: 5pt 7pt 4pt; vertical-align: bottom;
+  }
+  td { padding: 6pt 7pt; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr { break-inside: avoid; }
+  code, .ep {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8.2pt;
+    background: var(--soft); padding: 1pt 3.5pt; border-radius: 3pt; white-space: nowrap;
+  }
+  .tag {
+    display: inline-block; font-size: 7.4pt; font-weight: 700; letter-spacing: 0.5pt;
+    text-transform: uppercase; padding: 2pt 6pt; border-radius: 20pt; color: #fff; white-space: nowrap;
+  }
+  .tag.view { background: var(--view); }
+  .tag.change { background: var(--change); }
+  .tag.plan { background: var(--brand); }
+  .note {
+    background: var(--soft); border-left: 3px solid var(--brand);
+    padding: 9pt 11pt; margin: 10pt 0 12pt; break-inside: avoid;
+  }
+  .note p:last-child { margin-bottom: 0; }
+  .note strong { color: var(--ink); }
+  .section-intro { color: var(--muted); max-width: 150mm; margin-bottom: 10pt; }
+  .band {
+    padding: 8pt 11pt; margin: 0 0 12pt; break-inside: avoid; border-radius: 5pt;
+  }
+  .band.view { background: #ECF8F2; border: 1px solid #BFE4D4; }
+  .band.change { background: #FDF1EA; border: 1px solid #F3D3C0; }
+  .band p { margin: 0; font-size: 9pt; }
+  ul { margin: 4pt 0 8pt; padding-left: 14pt; }
+  li { margin-bottom: 3pt; }
+  .pagebreak { break-before: page; }
+  .small { font-size: 8.4pt; color: var(--muted); }
+  .footer-note { margin-top: 16pt; padding-top: 8pt; border-top: 1px solid var(--line); font-size: 8.2pt; color: var(--faint); }
+  td strong { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <p class="eyebrow">Prepared for the client &middot; 8 October 2026</p>
+  <h1>What the Google&nbsp;Ads&nbsp;API<br>lets PPCWay do</h1>
+  <p class="lede" style="margin-top:12pt">
+    Every part of the Google Ads API that becomes available once the developer token is
+    raised to <strong>Basic</strong> or <strong>Standard</strong> access, written out in full and
+    sorted into two plain groups: the calls that only <strong>look</strong> at an account, and the
+    calls that <strong>change</strong> something in it.
+  </p>
+  <p class="lede">
+    The distinction matters more than any technical detail in this document. Reading an
+    account is how an audit is produced. Changing one is how money gets spent. PPCWay does
+    the first today, and will only ever do the second with the account owner's explicit
+    approval of the specific change, recorded before it is applied.
+  </p>
+
+  <table style="margin-top:14mm">
+    <tr>
+      <td style="width:38%"><strong>Google Cloud project</strong></td>
+      <td><code>ppcway-509313</code> &middot; number <code>734687676224</code></td>
+    </tr>
+    <tr>
+      <td><strong>API version in use</strong></td>
+      <td>v25, the current release</td>
+    </tr>
+    <tr>
+      <td><strong>Permission requested</strong></td>
+      <td><code>https://www.googleapis.com/auth/adwords</code>, granted by the account owner</td>
+    </tr>
+    <tr>
+      <td><strong>What PPCWay calls today</strong></td>
+      <td>Five read queries. Nothing that changes an account.</td>
+    </tr>
+  </table>
+
+  <p class="meta">
+    Every endpoint, limit and restriction in this document is taken from Google's own
+    published reference for the Google Ads API, October 2026. Where a number is quoted,
+    it is Google's number.
+  </p>
+</section>
+
+<h2>How to read this document</h2>
+
+<p class="section-intro">
+  The Google Ads API is not a long list of web addresses, the way most APIs are. It has a
+  very small number of addresses and a very large number of things you can ask for at each
+  one. Three facts make the rest of this document straightforward.
+</p>
+
+<h3>1. There is one address for reading, and it answers hundreds of questions</h3>
+<p>
+  Everything an account can tell you &mdash; spend, clicks, keywords, search terms, ads,
+  policy decisions, settings, history &mdash; comes back from a single endpoint:
+</p>
+<p><span class="ep">POST /v25/customers/{customerId}/googleAds:search</span></p>
+<p>
+  You send it a query written in Google Ads Query Language, naming which <em>resource</em>
+  you want (for example <code>search_term_view</code>) and which fields of it. So the list of
+  "read endpoints" in this document is really a list of resources you can ask that one
+  endpoint about. None of them can alter anything; a query is a question.
+</p>
+
+<h3>2. Changing something is a different kind of call, and is named plainly</h3>
+<p>
+  Each kind of thing you can change has its own address ending in <code>:mutate</code>, and
+  each one accepts exactly three operations: <strong>create</strong>, <strong>update</strong> and
+  <strong>remove</strong>.
+</p>
+<p><span class="ep">POST /v25/customers/{customerId}/campaignBudgets:mutate</span></p>
+<p>
+  There is no way to change an account by accident through a read call, and no way to read
+  through a mutate call. The two are separate by design, which is what makes the promise in
+  this document checkable rather than rhetorical.
+</p>
+
+<h3>3. The access level decides which services are allowed, not which reports</h3>
+<p>
+  Raising the token to Basic does not unlock extra reports. Every report listed in the next
+  section is available at any level &mdash; against test accounts at Test level, and against
+  real accounts from Explorer upwards. What the level governs is the daily volume, and
+  whether a handful of sensitive services may be called at all.
+</p>
+
+<h3 style="margin-top:14pt">The four access levels, in Google's own numbers</h3>
+<table>
+  <thead>
+    <tr><th style="width:17%">Level</th><th style="width:25%">Accounts it may read</th><th style="width:25%">Daily limit</th><th>What is held back</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Test</strong><br><span class="small">where the token is today</span></td>
+      <td>Test accounts only. Real accounts are refused outright.</td>
+      <td>15,000 operations a day</td>
+      <td>All production data. This is why PPCWay cannot read a live account yet.</td>
+    </tr>
+    <tr>
+      <td><strong>Explorer</strong></td>
+      <td>Test and real accounts</td>
+      <td>2,880 a day on real accounts; 15,000 on test accounts</td>
+      <td>Account creation, user management, the planning tools, and billing services</td>
+    </tr>
+    <tr>
+      <td><strong>Basic</strong><br><span class="small">what we are asking for</span></td>
+      <td>Test and real accounts</td>
+      <td>15,000 a day on both</td>
+      <td>Nothing from the list above. Brand verification is required to be granted it.</td>
+    </tr>
+    <tr>
+      <td><strong>Standard</strong></td>
+      <td>Test and real accounts</td>
+      <td>Unlimited</td>
+      <td>Nothing, though individual services keep their own rate limits. Granted after a manual audit, for larger tools.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="note">
+  <p>
+    <strong>What one "operation" means.</strong> A whole report counts as one operation, however
+    many rows come back: Google states that a <code>Search</code> or <code>SearchStream</code>
+    request "counts as one operation&hellip; irrespective of the number of batches". Changes are
+    counted one by one instead &mdash; editing forty keywords is forty operations.
+  </p>
+  <p style="margin-top:6pt">
+    So a PPCWay audit, which runs five reports, spends five of the day's allowance per
+    merchant. At Basic access that is roughly three thousand audits a day before the limit is
+    anywhere in sight.
+  </p>
+</div>
+
+<h2>Part one &mdash; <span class="tag view">View only</span> reading an account</h2>
+
+<div class="band view">
+  <p>
+    <strong>Nothing in this part can alter an account.</strong> Every item below is a report
+    requested through <span class="ep">googleAds:search</span>. They are the same reports the
+    account owner sees in the Google Ads interface, read programmatically instead of by eye.
+  </p>
+</div>
+
+<h3>The reading endpoints themselves</h3>
+<table>
+  <thead><tr><th style="width:34%">Endpoint</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><span class="ep">googleAds:search</span></td>
+      <td>Runs one query and returns the matching rows, a page at a time. This is the endpoint behind every report in this section. <strong>PPCWay uses this one.</strong></td>
+    </tr>
+    <tr>
+      <td><span class="ep">googleAds:searchStream</span></td>
+      <td>The same thing, streamed in one continuous response rather than paged. Faster for large reports; identical data.</td>
+    </tr>
+    <tr>
+      <td><span class="ep">customers:listAccessibleCustomers</span></td>
+      <td>Lists which accounts the granted permission reaches. No account data, just the numbers. <strong>PPCWay uses this</strong> so the owner can choose which account we read.</td>
+    </tr>
+    <tr>
+      <td><span class="ep">googleAdsFields:search</span></td>
+      <td>Asks the API to describe itself: which fields exist on which report. Documentation, not account data.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Account, structure and settings</h3>
+<p class="small">How the account is put together. No performance figures, just what exists and how it is configured.</p>
+<table>
+  <thead><tr><th style="width:30%">Report</th><th>What it answers</th></tr></thead>
+  <tbody>
+    <tr><td><code>customer</code></td><td>The account itself: its name, currency, time zone, whether it is a manager account, and whether auto-tagging is on. <strong>PPCWay reads this</strong> to label the report with the right currency.</td></tr>
+    <tr><td><code>customer_client</code></td><td>Every account sitting beneath a manager account, and the hierarchy between them.</td></tr>
+    <tr><td><code>campaign</code></td><td>Each campaign: its name, type, status, start and end dates, networks, bidding strategy and budget.</td></tr>
+    <tr><td><code>campaign_budget</code></td><td>The daily budget behind each campaign, whether it is shared, and how it is delivered.</td></tr>
+    <tr><td><code>campaign_group</code></td><td>Campaigns grouped together for shared budgeting and reporting.</td></tr>
+    <tr><td><code>ad_group</code></td><td>Each ad group inside a campaign, with its status and default bid.</td></tr>
+    <tr><td><code>bidding_strategy</code> &middot; <code>accessible_bidding_strategy</code></td><td>Portfolio bidding strategies and their targets, including ones shared from a manager account.</td></tr>
+    <tr><td><code>campaign_criterion</code> &middot; <code>ad_group_criterion</code></td><td>Everything being targeted or excluded: keywords, negative keywords, locations, languages, devices, audiences, schedules.</td></tr>
+    <tr><td><code>shared_set</code> &middot; <code>shared_criterion</code> &middot; <code>campaign_shared_set</code></td><td>Shared negative keyword and placement lists, and which campaigns use them.</td></tr>
+    <tr><td><code>label</code> &middot; <code>campaign_label</code> &middot; <code>ad_group_label</code></td><td>The labels an account uses to organise itself.</td></tr>
+    <tr><td><code>experiment</code> &middot; <code>experiment_arm</code></td><td>Campaign experiments and A/B tests, and how each arm is performing.</td></tr>
+    <tr><td><code>campaign_bid_modifier</code> &middot; <code>ad_group_bid_modifier</code></td><td>Bid adjustments by device, location, schedule or audience.</td></tr>
+  </tbody>
+</table>
+
+<h3>Money and performance</h3>
+<p class="small">Spend and what it bought. These figures are available on almost every report above, segmented by date, device, network and more.</p>
+<table>
+  <thead><tr><th style="width:30%">Report</th><th>What it answers</th></tr></thead>
+  <tbody>
+    <tr><td><code>customer</code> with metrics</td><td>The account's cost, clicks, impressions and conversions over any date range. <strong>PPCWay reads this</strong> for "you spent X in the last thirty days".</td></tr>
+    <tr><td><code>campaign</code> with metrics</td><td>The same, per campaign, plus impression share: the proportion of available searches the ads actually appeared on, and how much was lost to a small budget as opposed to a low ad rank. <strong>PPCWay reads this</strong> for the budget check.</td></tr>
+    <tr><td><code>ad_group</code> with metrics</td><td>Spend and results one level down, which is usually where waste is visible.</td></tr>
+    <tr><td><code>click_view</code></td><td>Individual clicks, with their Google Click ID, for the last ninety days.</td></tr>
+    <tr><td><code>shopping_performance_view</code> &middot; <code>shopping_product</code> &middot; <code>product_group_view</code></td><td>Retail performance by product, brand, category and custom label.</td></tr>
+    <tr><td><code>video</code> &middot; <code>video_enhancement</code></td><td>Video ad performance: views, view rate, watch-through quartiles.</td></tr>
+    <tr><td><code>hotel_performance_view</code> &middot; <code>hotel_group_view</code> &middot; <code>travel_activity_performance_view</code></td><td>Travel and hospitality reporting, for accounts that run those campaign types.</td></tr>
+    <tr><td><code>per_store_view</code> &middot; <code>distance_view</code></td><td>Performance by shop location, and by how far the searcher was from it.</td></tr>
+    <tr><td><code>cart_data_sales_view</code></td><td>Sales figures sent back from a shop's basket, where that is connected.</td></tr>
+  </tbody>
+</table>
+
+<h3 class="pagebreak">What people actually typed into Google</h3>
+<p class="small">The most valuable reading in the whole API for a small business, and the one an owner almost never looks at.</p>
+<table>
+  <thead><tr><th style="width:30%">Report</th><th>What it answers</th></tr></thead>
+  <tbody>
+    <tr><td><code>search_term_view</code></td><td>Every real search that triggered an ad, with what it cost and whether it led to an enquiry. <strong>PPCWay reads this</strong> to show the searches that took money and brought nothing back.</td></tr>
+    <tr><td><code>campaign_search_term_view</code></td><td>The same at campaign level, including campaign types where terms are not tied to a keyword.</td></tr>
+    <tr><td><code>customer_search_term_insight</code> &middot; <code>campaign_search_term_insight</code></td><td>Google's own grouping of searches into themes, which is useful when the raw list runs to thousands of rows.</td></tr>
+    <tr><td><code>dynamic_search_ads_search_term_view</code></td><td>Searches matched by dynamic ads, where Google chose the landing page itself.</td></tr>
+    <tr><td><code>smart_campaign_search_term_view</code></td><td>The equivalent for Smart campaigns, which is what many small businesses are sold first.</td></tr>
+    <tr><td><code>paid_organic_search_term_view</code></td><td>Paid and unpaid results for the same search side by side &mdash; whether you are paying for clicks you were already getting free.</td></tr>
+    <tr><td><code>ai_max_search_term_ad_combination_view</code></td><td>Search terms matched to automatically generated ad combinations.</td></tr>
+  </tbody>
+</table>
+
+<h3>Keywords and quality</h3>
+<table>
+  <thead><tr><th style="width:30%">Report</th><th>What it answers</th></tr></thead>
+  <tbody>
+    <tr><td><code>keyword_view</code></td><td>Each keyword with its spend, its results and its <strong>Quality Score</strong> out of ten, plus Google's judgement of the expected click rate, ad relevance and landing page experience behind that score. <strong>PPCWay reads this</strong>: a low score means paying more than a competitor for the identical click.</td></tr>
+    <tr><td><code>display_keyword_view</code> &middot; <code>topic_view</code> &middot; <code>content_criterion_view</code></td><td>What display ads were shown against: keywords, topics and content categories.</td></tr>
+    <tr><td><code>webpage_view</code></td><td>Which pages of the website dynamic ads sent people to.</td></tr>
+    <tr><td><code>managed_placement_view</code> &middot; <code>detail_placement_view</code> &middot; <code>group_placement_view</code></td><td>The specific websites, apps and videos ads appeared on.</td></tr>
+    <tr><td><code>performance_max_placement_view</code></td><td>Where Performance Max placed the ads, which is otherwise invisible.</td></tr>
+  </tbody>
+</table>
+
+<h3>Ads, assets and policy</h3>
+<table>
+  <thead><tr><th style="width:30%">Report</th><th>What it answers</th></tr></thead>
+  <tbody>
+    <tr><td><code>ad_group_ad</code></td><td>Every ad, its text, its status and &mdash; the part that matters &mdash; its <strong>policy summary</strong>: whether Google has approved it, approved it with limits, or disapproved it entirely. <strong>PPCWay reads this</strong>, because a disapproved ad spends nothing and is rarely noticed.</td></tr>
+    <tr><td><code>ad_group_ad_asset_view</code> &middot; <code>ad_group_ad_asset_combination_view</code></td><td>Which headlines and descriptions Google is actually choosing to show, and how each performs.</td></tr>
+    <tr><td><code>asset</code> &middot; <code>asset_field_type_view</code> &middot; <code>asset_set_asset</code></td><td>Images, logos, videos, sitelinks, callouts, call and location extensions, with performance for each.</td></tr>
+    <tr><td><code>asset_group</code> &middot; <code>asset_group_asset</code> &middot; <code>asset_group_product_group_view</code></td><td>The structure of Performance Max campaigns.</td></tr>
+    <tr><td><code>campaign_asset</code> &middot; <code>ad_group_asset</code> &middot; <code>customer_asset</code></td><td>Which extensions are attached at which level.</td></tr>
+    <tr><td><code>final_url_expansion_asset_view</code></td><td>Pages Google chose to advertise on its own initiative.</td></tr>
+  </tbody>
+</table>
+
+<h3>Who saw the ads, and where</h3>
+<table>
+  <thead><tr><th style="width:30%">Report</th><th>What it answers</th></tr></thead>
+  <tbody>
+    <tr><td><code>geographic_view</code> &middot; <code>user_location_view</code></td><td>Where the people searching actually were, as against where the campaign thought it was targeting.</td></tr>
+    <tr><td><code>location_view</code> &middot; <code>location_interest_view</code> &middot; <code>matched_location_interest_view</code></td><td>Targeted locations, and places people were merely interested in.</td></tr>
+    <tr><td><code>age_range_view</code> &middot; <code>gender_view</code> &middot; <code>parental_status_view</code> &middot; <code>income_range_view</code></td><td>Performance by demographic, where Google can determine it.</td></tr>
+    <tr><td><code>campaign_audience_view</code> &middot; <code>ad_group_audience_view</code> &middot; <code>audience</code></td><td>Audience segments in use and how each performs.</td></tr>
+    <tr><td><code>user_list</code> &middot; <code>custom_audience</code> &middot; <code>combined_audience</code></td><td>Remarketing lists and custom audiences defined in the account.</td></tr>
+    <tr><td><code>ad_schedule_view</code></td><td>Performance by day of the week and hour of the day.</td></tr>
+  </tbody>
+</table>
+
+<h3 class="pagebreak">Conversions and tracking</h3>
+<table>
+  <thead><tr><th style="width:30%">Report</th><th>What it answers</th></tr></thead>
+  <tbody>
+    <tr><td><code>conversion_action</code></td><td>What the account counts as a result &mdash; a call, a form, a purchase &mdash; how each is counted and what it is valued at. Often the first thing an audit finds missing.</td></tr>
+    <tr><td><code>conversion_value_rule</code> &middot; <code>conversion_custom_variable</code></td><td>Rules that adjust the value of a conversion, and any custom data attached to it.</td></tr>
+    <tr><td><code>campaign_conversion_goal</code> &middot; <code>customer_conversion_goal</code></td><td>Which conversions each campaign is actually optimising towards.</td></tr>
+    <tr><td><code>call_view</code></td><td>Calls from call-only ads and call extensions: duration, status, and whether each was counted.</td></tr>
+    <tr><td><code>landing_page_view</code> &middot; <code>expanded_landing_page_view</code></td><td>Performance by landing page, including Google's mobile-friendliness judgement.</td></tr>
+  </tbody>
+</table>
+
+<h3>Account health and history</h3>
+<table>
+  <thead><tr><th style="width:30%">Report</th><th>What it answers</th></tr></thead>
+  <tbody>
+    <tr><td><code>recommendation</code></td><td>Google's own suggestions for the account, and the optimisation score attached to them. Reading them is not the same as applying them; applying is in part two.</td></tr>
+    <tr><td><code>change_event</code> &middot; <code>change_status</code></td><td>Who changed what, and when, for the last thirty days. This is also how an owner can audit anything PPCWay ever does.</td></tr>
+    <tr><td><code>billing_setup</code> &middot; <code>account_budget</code> &middot; <code>invoice</code></td><td>Billing arrangements, account-level budgets and invoices. <em>Restricted below Basic access.</em></td></tr>
+    <tr><td><code>customer_user_access</code> &middot; <code>customer_user_access_invitation</code></td><td>Who has access to the account and at what level. <em>Restricted below Basic access.</em></td></tr>
+    <tr><td><code>customer_client_link</code> &middot; <code>customer_manager_link</code></td><td>Links between manager and client accounts.</td></tr>
+    <tr><td><code>product_link</code> &middot; <code>data_link</code> &middot; <code>third_party_app_analytics_link</code></td><td>Connections to Merchant Center, YouTube, Google Analytics and similar.</td></tr>
+    <tr><td><code>local_services_lead</code> &middot; <code>local_services_verification_artifact</code></td><td>Leads and verification state for Local Services Ads.</td></tr>
+  </tbody>
+</table>
+
+<div class="note">
+  <p>
+    <strong>This is not quite the complete list.</strong> Google publishes more than a hundred and
+    seventy reportable resources, including several for campaign types a small business will
+    never run. Everything above covers what an audit or an optimisation service would ever
+    sensibly read; the full reference is published at
+    <code>developers.google.com/google-ads/api/fields/v25/overview</code>.
+  </p>
+</div>
+
+<h2 class="pagebreak">Part two &mdash; <span class="tag change">Changes the account</span> writing to it</h2>
+
+<div class="band change">
+  <p>
+    <strong>Everything in this part alters a live advertising account, and most of it can
+    affect spending within minutes.</strong> PPCWay calls none of it today. When that changes, no
+    call in this part will ever be made without the account owner approving that specific
+    change first, and every one of them will be written to an append-only record before it is
+    applied, so that what was changed, when, and on whose authority can always be answered.
+  </p>
+</div>
+
+<h3>How a change is made</h3>
+<p>
+  Each address below accepts a list of operations, and each operation is one of three things:
+  <strong>create</strong> something new, <strong>update</strong> something that exists (naming exactly
+  which fields may change), or <strong>remove</strong> it. Google permits up to 10,000 operations in
+  a single request, or 20,000 for ad group criteria, and offers a "partial failure" mode in
+  which valid operations proceed and invalid ones are reported back rather than taking the
+  whole request down.
+</p>
+
+<h3>Budgets and bidding &mdash; the controls that move money fastest</h3>
+<table>
+  <thead><tr><th style="width:38%">Endpoint</th><th>What it changes</th></tr></thead>
+  <tbody>
+    <tr><td><span class="ep">campaignBudgets:mutate</span></td><td>The daily budget of a campaign. The single most consequential call in the API: raise it and spending rises the same day.</td></tr>
+    <tr><td><span class="ep">biddingStrategies:mutate</span></td><td>How Google bids &mdash; manual, maximise clicks, target cost per action, target return on spend &mdash; and the targets set for each.</td></tr>
+    <tr><td><span class="ep">campaignBidModifiers:mutate</span> &middot; <span class="ep">adGroupBidModifiers:mutate</span></td><td>Bid adjustments by device, location, time of day or audience, such as bidding less on desktops.</td></tr>
+    <tr><td><span class="ep">biddingSeasonalityAdjustments:mutate</span> &middot; <span class="ep">biddingDataExclusions:mutate</span></td><td>Tells the bidding system to expect an unusual period, or to disregard one it has already seen.</td></tr>
+  </tbody>
+</table>
+
+<h3>Campaigns</h3>
+<table>
+  <thead><tr><th style="width:38%">Endpoint</th><th>What it changes</th></tr></thead>
+  <tbody>
+    <tr><td><span class="ep">campaigns:mutate</span></td><td>Creates, pauses, resumes, renames or removes a campaign, and sets its dates, networks and targeting expansion.</td></tr>
+    <tr><td><span class="ep">campaignCriteria:mutate</span></td><td>What a campaign targets or excludes: locations, languages, devices, audiences, negative keywords, schedules.</td></tr>
+    <tr><td><span class="ep">campaignAssets:mutate</span> &middot; <span class="ep">campaignAssetSets:mutate</span></td><td>Attaches or removes sitelinks, callouts, call buttons and similar at campaign level.</td></tr>
+    <tr><td><span class="ep">campaignGroups:mutate</span> &middot; <span class="ep">campaignLabels:mutate</span></td><td>Grouping and labelling, which change organisation rather than delivery.</td></tr>
+    <tr><td><span class="ep">campaignConversionGoals:mutate</span> &middot; <span class="ep">customerConversionGoals:mutate</span></td><td>Which conversions a campaign is told to optimise towards.</td></tr>
+    <tr><td><span class="ep">campaignSharedSets:mutate</span></td><td>Applies or detaches a shared negative keyword list.</td></tr>
+  </tbody>
+</table>
+
+<h3>Ad groups and keywords</h3>
+<table>
+  <thead><tr><th style="width:38%">Endpoint</th><th>What it changes</th></tr></thead>
+  <tbody>
+    <tr><td><span class="ep">adGroups:mutate</span></td><td>Creates, pauses or removes ad groups and sets their default bids.</td></tr>
+    <tr><td><span class="ep">adGroupCriteria:mutate</span></td><td>The workhorse: adds keywords, changes match types, sets individual bids, and &mdash; most usefully for an audit &mdash; <strong>adds negative keywords</strong> so that wasteful searches stop costing money.</td></tr>
+    <tr><td><span class="ep">adGroupCriterionCustomizers:mutate</span> &middot; <span class="ep">adGroupCriterionLabels:mutate</span></td><td>Customised ad text per keyword, and labelling.</td></tr>
+    <tr><td><span class="ep">sharedSets:mutate</span> &middot; <span class="ep">sharedCriteria:mutate</span></td><td>Builds negative keyword and placement lists that several campaigns can share.</td></tr>
+  </tbody>
+</table>
+
+<h3>Ads and creative</h3>
+<table>
+  <thead><tr><th style="width:38%">Endpoint</th><th>What it changes</th></tr></thead>
+  <tbody>
+    <tr><td><span class="ep">adGroupAds:mutate</span></td><td>Creates, pauses or removes ads, and is how a disapproved ad is replaced.</td></tr>
+    <tr><td><span class="ep">ads:mutate</span></td><td>Edits the text or final URL of an existing ad.</td></tr>
+    <tr><td><span class="ep">assets:mutate</span> &middot; <span class="ep">assetSets:mutate</span> &middot; <span class="ep">assetSetAssets:mutate</span></td><td>Uploads and organises images, logos, videos, sitelinks and callouts.</td></tr>
+    <tr><td><span class="ep">assetGroups:mutate</span> &middot; <span class="ep">assetGroupAssets:mutate</span></td><td>Builds and edits Performance Max campaigns.</td></tr>
+    <tr><td><span class="ep">customerAssets:mutate</span> &middot; <span class="ep">adGroupAssets:mutate</span></td><td>Attaches extensions at account or ad group level.</td></tr>
+  </tbody>
+</table>
+
+<h3 class="pagebreak">Conversions and measurement</h3>
+<table>
+  <thead><tr><th style="width:38%">Endpoint</th><th>What it changes</th></tr></thead>
+  <tbody>
+    <tr><td><span class="ep">conversionActions:mutate</span></td><td>Creates and configures what counts as a result, and what it is worth. This is how an account with no tracking is given some.</td></tr>
+    <tr><td><span class="ep">conversionValueRules:mutate</span> &middot; <span class="ep">conversionCustomVariables:mutate</span></td><td>Adjusts conversion values by location, device or audience.</td></tr>
+    <tr><td><span class="ep">conversionUploads:uploadClickConversions</span> &middot; <span class="ep">:uploadCallConversions</span></td><td>Sends offline results back to Google &mdash; a job won weeks after the click &mdash; so bidding learns from what actually happened.</td></tr>
+    <tr><td><span class="ep">conversionAdjustmentUploads:uploadConversionAdjustments</span></td><td>Corrects or retracts a conversion already reported.</td></tr>
+    <tr><td><span class="ep">customerConversionGoals:mutate</span></td><td>Sets which conversions matter account-wide.</td></tr>
+  </tbody>
+</table>
+
+<h3>Audiences and customer data</h3>
+<table>
+  <thead><tr><th style="width:38%">Endpoint</th><th>What it changes</th></tr></thead>
+  <tbody>
+    <tr><td><span class="ep">userLists:mutate</span> &middot; <span class="ep">audiences:mutate</span> &middot; <span class="ep">customAudiences:mutate</span></td><td>Creates remarketing lists and audience definitions.</td></tr>
+    <tr><td><span class="ep">offlineUserDataJobs:create</span> &middot; <span class="ep">:addOperations</span> &middot; <span class="ep">:run</span></td><td>Uploads customer lists for matching. Handled carefully: it carries personal data and has its own consent requirements.</td></tr>
+    <tr><td><span class="ep">userDataService:uploadUserData</span></td><td>The same for smaller, immediate uploads.</td></tr>
+  </tbody>
+</table>
+
+<h3>Experiments and recommendations</h3>
+<table>
+  <thead><tr><th style="width:38%">Endpoint</th><th>What it changes</th></tr></thead>
+  <tbody>
+    <tr><td><span class="ep">experiments:mutate</span> &middot; <span class="ep">experimentArms:mutate</span> &middot; <span class="ep">experiments:scheduleExperiment</span></td><td>Sets up a controlled test of a change against the existing setup, and promotes the winner. The safest way to make a significant change.</td></tr>
+    <tr><td><span class="ep">recommendations:apply</span></td><td>Applies one of Google's own suggestions. Powerful and blunt: several of its suggestions raise spending, which is why it is never applied automatically.</td></tr>
+    <tr><td><span class="ep">recommendations:dismiss</span> &middot; <span class="ep">recommendationSubscriptions:mutate</span></td><td>Dismisses a suggestion, or subscribes the account to apply a category of them automatically.</td></tr>
+  </tbody>
+</table>
+
+<h3>Account administration <span class="small">&mdash; restricted below Basic access</span></h3>
+<table>
+  <thead><tr><th style="width:38%">Endpoint</th><th>What it changes</th></tr></thead>
+  <tbody>
+    <tr><td><span class="ep">customers:createCustomerClient</span></td><td>Creates a brand new Google Ads account under a manager account. Useful for onboarding a business that has none.</td></tr>
+    <tr><td><span class="ep">customers:mutate</span></td><td>Account-level settings: name, auto-tagging, call reporting, conversion tracking arrangements.</td></tr>
+    <tr><td><span class="ep">customerUserAccess:mutate</span> &middot; <span class="ep">customerUserAccessInvitations:mutate</span></td><td>Grants or revokes a person's access to an account.</td></tr>
+    <tr><td><span class="ep">customerClientLinks:mutate</span> &middot; <span class="ep">customerManagerLinks:mutate</span></td><td>Links an account to a manager account, or unlinks it.</td></tr>
+    <tr><td><span class="ep">billingSetups:mutate</span> &middot; <span class="ep">accountBudgetProposals:mutate</span></td><td>Payment arrangements and account-level budgets.</td></tr>
+    <tr><td><span class="ep">batchJobs:mutate</span> &middot; <span class="ep">:addOperations</span> &middot; <span class="ep">:run</span></td><td>Runs very large sets of changes in the background rather than all at once.</td></tr>
+  </tbody>
+</table>
+
+<h2 class="pagebreak">Part three &mdash; <span class="tag plan">Planning</span> estimates and forecasts</h2>
+
+<p class="section-intro">
+  These answer "what would happen if", using Google's own market data. They change nothing,
+  but Google classes them separately because they expose commercially valuable data: they are
+  <strong>blocked below Basic access</strong>, and rate limited even above it.
+</p>
+
+<table>
+  <thead><tr><th style="width:38%">Endpoint</th><th>What it answers</th></tr></thead>
+  <tbody>
+    <tr><td><span class="ep">keywordPlanIdeas:generateKeywordIdeas</span></td><td>Keyword suggestions from a word, a website or a page, each with search volume, competition and what the top of the page costs. <strong>This is what turns "you are missing searches" into "about 1,900 people a month search for this here".</strong></td></tr>
+    <tr><td><span class="ep">keywordPlanIdeas:generateKeywordHistoricalMetrics</span></td><td>Monthly search volume and bid ranges for up to 10,000 keywords you already have.</td></tr>
+    <tr><td><span class="ep">keywordPlanIdeas:generateKeywordForecastMetrics</span></td><td>Projected clicks, cost and conversions for a proposed setup, up to a year ahead.</td></tr>
+    <tr><td><span class="ep">keywordPlanIdeas:generateAdGroupThemes</span></td><td>Groups keywords into sensible ad groups with suggested match types.</td></tr>
+    <tr><td><span class="ep">keywordPlans:generateForecastCurve</span> &middot; <span class="ep">:generateForecastTimeSeries</span></td><td>How results would change at different budgets &mdash; the honest answer to "what would another hundred a month buy me?".</td></tr>
+    <tr><td><span class="ep">reachPlans:generateReachForecast</span></td><td>Audience reach and frequency forecasts for video campaigns.</td></tr>
+    <tr><td><span class="ep">audienceInsights:generateInsightsFinderReport</span></td><td>What a given audience is interested in, for targeting decisions.</td></tr>
+  </tbody>
+</table>
+
+<div class="note">
+  <p>
+    <strong>Why this part matters to the product.</strong> Without it, PPCWay can tell a business
+    what is wrong. With it, PPCWay can tell them what it is worth in pounds and pence &mdash;
+    which is the difference between a report that is read and a report that is acted on.
+  </p>
+</div>
+
+<h2>What PPCWay calls today</h2>
+
+<p class="section-intro">
+  The whole audit, as deployed, is five read queries and one listing call per merchant. Every
+  one of them is in part one.
+</p>
+
+<table>
+  <thead><tr><th style="width:30%">Query</th><th>What the merchant is shown</th></tr></thead>
+  <tbody>
+    <tr><td><code>customer</code></td><td>"You spent $47.18 on Google Ads in the last thirty days. That bought 603 clicks at $0.08 each."</td></tr>
+    <tr><td><code>search_term_view</code></td><td>"$7.00 went to searches that brought no enquiry", with the searches listed.</td></tr>
+    <tr><td><code>keyword_view</code></td><td>"Google scores four of your keywords at five or less, and they took $12.40."</td></tr>
+    <tr><td><code>campaign</code></td><td>"Emergency plumbing missed 34% of its searches because the budget ran out."</td></tr>
+    <tr><td><code>ad_group_ad</code></td><td>"Two of your ads are disapproved, so they are not being shown at all."</td></tr>
+    <tr><td><span class="ep">customers:listAccessibleCustomers</span></td><td>Lets the owner choose which of their accounts we read.</td></tr>
+  </tbody>
+</table>
+
+<p>
+  That is six operations out of a daily allowance of fifteen thousand. The request for Basic
+  access is not about volume; it is simply that at Test level Google refuses all six against a
+  real account.
+</p>
+
+<h2>What PPCWay promises about part two</h2>
+
+<ul>
+  <li><strong>Nothing is changed without a specific yes.</strong> Not a category of changes agreed
+      once, but the individual change, described in plain words, approved before it happens.</li>
+  <li><strong>Everything is written down before it is applied.</strong> Every automated change goes
+      to an append-only record first &mdash; what, when, why, and on whose authority &mdash; and that
+      record is the merchant's to read.</li>
+  <li><strong>Every change passes a fixed set of safety checks</strong> in a fixed order before it
+      reaches Google, including limits on how far a budget may move.</li>
+  <li><strong>One door.</strong> A single service in the system holds the Google credentials and is
+      the only thing permitted to write. Nothing else can reach the account, by construction.</li>
+  <li><strong>The owner can revoke at any time</strong>, from their own Google account, without
+      asking us. The connection stops working immediately.</li>
+</ul>
+
+<p class="footer-note">
+  PPCWay &middot; Google Ads API reference for the client &middot; 8 October 2026 &middot;
+  Prepared against Google Ads API v25. Access levels, daily limits and service restrictions
+  are quoted from Google's published documentation and are subject to Google's changes.
+</p>
+
+</body>
+</html>
