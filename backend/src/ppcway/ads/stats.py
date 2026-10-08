@@ -38,8 +38,14 @@ MICRO = 1_000_000
 
 @dataclass
 class Spend:
-    """The month in four numbers, which is the sentence before any chart."""
+    """The month in four numbers, which is the sentence before any chart.
 
+    `read` matters as much as the numbers. Zero spend and an unread account look
+    identical in a total, and only one of them is good news.
+    """
+
+    read: bool = False
+    trouble: str = ""
     cost: float = 0.0
     clicks: int = 0
     impressions: int = 0
@@ -183,7 +189,9 @@ def _search(
     not, and the page we never ask for is the spend we never report.
     """
     rows: list[dict[str, Any]] = []
-    body: dict[str, Any] = {"query": query, "pageSize": 1000}
+    # No page size: v25 refuses the field outright ("Setting the page size is not
+    # supported"), and refuses the whole query with it.
+    body: dict[str, Any] = {"query": query}
     for _ in range(10):  # ten pages is far past any small business
         reply = client.post(
             f"{API}/{api_version}/customers/{customer_id}/googleAds:search",
@@ -268,6 +276,8 @@ def read_account(
     reading = AdsReading(customer_id=customer_id)
     try:
         rows, trouble = _search(customer_id, SPEND_QUERY, **ask)  # type: ignore[arg-type]
+        reading.spend.read = not trouble
+        reading.spend.trouble = trouble
         for row in rows:
             metrics = row.get("metrics", {})
             reading.spend.cost += _micros(metrics.get("costMicros"))

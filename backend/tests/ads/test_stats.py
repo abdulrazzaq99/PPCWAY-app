@@ -65,6 +65,36 @@ def ok(results: list[dict[str, object]], next_page: str = "") -> httpx.Response:
     return httpx.Response(200, json=body)
 
 
+def test_no_page_size_is_sent() -> None:
+    """v25 refuses the whole query if a page size is set, which cost a live run."""
+    bodies: list[dict[str, object]] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return ok([])
+
+    with httpx.Client(transport=httpx.MockTransport(handle), base_url="https://x") as c:
+        read_account("2580586343", access_token="a", developer_token="d", client=c)
+
+    assert bodies, "no query was sent"
+    assert all("pageSize" not in body for body in bodies)
+
+
+def test_a_refused_spend_read_is_not_shown_as_a_month_of_nothing() -> None:
+    """Zero spend and an unread account look identical in a total, and only one
+    of them is good news."""
+
+    def answer(which: str, page: int) -> httpx.Response:
+        return httpx.Response(403, json=REFUSED)
+
+    with account(answer) as c:
+        reading = read_account("2580586343", access_token="a", developer_token="d", client=c)
+
+    assert reading.spend.read is False
+    assert reading.spend.trouble
+    assert reading.as_dict()["spend"]["read"] is False
+
+
 def test_a_month_of_spend_becomes_the_sentence_before_the_numbers() -> None:
     def answer(which: str, page: int) -> httpx.Response:
         if which == "FROM customer":
@@ -86,6 +116,7 @@ def test_a_month_of_spend_becomes_the_sentence_before_the_numbers() -> None:
     with account(answer) as c:
         reading = read_account("2580586343", access_token="a", developer_token="d", client=c)
 
+    assert reading.spend.read is True
     assert reading.spend.cost == 47.18
     assert reading.spend.currency == "CAD"
     assert reading.spend.cost_per_click == 0.08

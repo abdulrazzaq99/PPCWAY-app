@@ -14,6 +14,8 @@ export type AdsReading = {
   customer_id: string;
   window_days: number;
   spend: {
+    read: boolean;
+    trouble: string;
     cost: number;
     clicks: number;
     impressions: number;
@@ -115,18 +117,22 @@ export function AdsFindings({ ads }: { ads: AdsReading }) {
             Open, from your own account
           </p>
           <h2 className="mt-2 text-[20px] leading-[26px] font-semibold">
-            {ads.spend.cost > 0
-              ? `You spent ${spent} on Google Ads in the last ${ads.window_days} days.`
-              : `Your account shows no spend in the last ${ads.window_days} days.`}
+            {!ads.spend.read
+              ? "We could not read what your account spent."
+              : ads.spend.cost > 0
+                ? `You spent ${spent} on Google Ads in the last ${ads.window_days} days.`
+                : `Your account shows no spend in the last ${ads.window_days} days.`}
           </h2>
           <p className="text-muted mt-1 max-w-[680px] text-[15px] leading-[23px]">
-            {ads.spend.clicks > 0
-              ? `That bought ${ads.spend.clicks.toLocaleString()} clicks at ${money(ads.spend.cost_per_click, currency)} each${
-                  ads.spend.conversions > 0
-                    ? `, and ${ads.spend.conversions} enquiries at ${money(ads.spend.cost_per_conversion, currency)} each.`
-                    : ", and no enquiries Google could count."
-                }`
-              : "Nothing was clicked, so there is nothing yet to judge the spending by."}
+            {!ads.spend.read
+              ? ads.spend.trouble
+              : ads.spend.clicks > 0
+                ? `That bought ${ads.spend.clicks.toLocaleString()} clicks at ${money(ads.spend.cost_per_click, currency)} each${
+                    ads.spend.conversions > 0
+                      ? `, and ${ads.spend.conversions} enquiries at ${money(ads.spend.cost_per_conversion, currency)} each.`
+                      : ", and no enquiries Google could count."
+                  }`
+                : "Nothing was clicked, so there is nothing yet to judge the spending by."}
           </p>
         </div>
 
