@@ -27,6 +27,22 @@ const SIGNED_IN_ONLY = [
 ];
 const SESSION_COOKIE = "ppcway_session";
 
+/*
+  One address, once CANONICAL_HOST is set. A session cookie belongs to the host
+  that set it, so somebody who signs in on the Cloud Run address and comes back
+  from Google on the domain arrives as a stranger, with no session and no
+  explanation. Rather than keep both hosts working and hope nobody mixes them,
+  everything is sent to the one host. Unset locally, where the host is localhost.
+*/
+const CANONICAL = process.env.CANONICAL_HOST;
+
+function wrongHost(request: NextRequest): string | null {
+  if (!CANONICAL) return null;
+  const host = request.headers.get("host");
+  if (!host || host === CANONICAL || host.startsWith("localhost")) return null;
+  return CANONICAL;
+}
+
 function needsSignIn(request: NextRequest): boolean {
   const { pathname, searchParams } = request.nextUrl;
   if (searchParams.has("view")) return false;
@@ -41,6 +57,15 @@ async function expectedToken(password: string): Promise<string> {
 }
 
 export async function proxy(request: NextRequest) {
+  const canonical = wrongHost(request);
+  if (canonical) {
+    const url = request.nextUrl.clone();
+    url.protocol = "https:";
+    url.host = canonical;
+    url.port = "";
+    return NextResponse.redirect(url, 308);
+  }
+
   if (needsSignIn(request)) {
     const url = request.nextUrl.clone();
     const asked = url.pathname + url.search;
