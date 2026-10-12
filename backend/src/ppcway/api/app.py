@@ -49,6 +49,8 @@ from ppcway.auth.models import UserAccount
 from ppcway.auth.sessions import sign_in, sign_out, sign_out_everywhere, whoever_holds
 from ppcway.config import Settings, load_settings
 from ppcway.db.session import get_session, session_factory
+from ppcway.mail.letters import invitation
+from ppcway.mail.send import NotSent, Post, send
 from ppcway.org.models import CAN, Organization, Role
 from ppcway.org.places import (
     NotAllowed,
@@ -425,6 +427,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(401, "Nobody is signed in.")
         return PersonOut(email=account.email, name=account.name, picture=account.picture)
 
+    def _post() -> Post:
+        """How this deployment sends email, built from settings."""
+        return Post(
+            sender=settings.email_from,
+            provider=settings.email_provider,
+            api_key=settings.resend_api_key.get_secret_value() if settings.resend_api_key else "",
+            smtp_host=settings.smtp_host,
+            smtp_port=settings.smtp_port,
+            smtp_user=settings.smtp_user,
+            smtp_password=(
+                settings.smtp_password.get_secret_value() if settings.smtp_password else ""
+            ),
+        )
+
     def _home(session: Session, account: UserAccount) -> Organization:
         """The business this person is in, made on first use."""
         return home_for(session, account)
@@ -471,8 +487,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         body: InviteIn,
         session: Annotated[Session, Depends(get_session)],
         x_session_token: Annotated[str | None, Header()] = None,
-    ) -> dict[str, str]:
-        """Ask somebody to join. Returns the link once; we never see it again."""
+    ) -> dict[str, object]:
+        """Ask somebody to join, and post it to them.
+
+        The link comes back as well as going out, because an owner whose email is
+        not set up yet, or whose invitee never receives it, still has to be able
+        to pass it on. It is shown once and not stored.
+        """
         account = _signed_in(session, x_session_token)
         place = _home(session, account)
         _allowed(session, account, place, "invite")
@@ -484,7 +505,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             token = invite(session, place, by=account, email=str(body.email), role=role)
         except NotAllowed as exc:
             raise HTTPException(400, f"You cannot {exc.args[0]}.") from None
-        return {"token": token, "email": str(body.email), "role": role.value}
+
+        link = f"{settings.app_base_url.rstrip('/')}/invite?token={token}"
+        posted = False
+        try:
+            send(
+                _post(),
+                invitation(
+                    to=str(body.email),
+                    business=place.name,
+                    inviter=account.name or account.email,
+                    role=role.value,
+                    link=link,
+                ),
+            )
+            posted = True
+        except NotSent as exc:
+            # The invitation exists either way; the owner can pass the link on.
+            log.warning("invitation to %s not sent: %s", place.id, exc)
+        return {
+            "token": token,
+            "email": str(body.email),
+            "role": role.value,
+            "link": link,
+            "emailed": posted,
+        }
 
     @app.post("/v1/org/accept", response_model=OrgOut)
     def accept_invite(

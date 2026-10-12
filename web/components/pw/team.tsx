@@ -51,6 +51,7 @@ export function Team({ org }: { org: Org }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("member");
   const [link, setLink] = useState("");
+  const [posted, setPosted] = useState(false);
   const [trouble, setTrouble] = useState("");
   const [busy, setBusy] = useState(false);
   const mayInvite = org.can.includes("invite");
@@ -65,12 +66,18 @@ export function Team({ org }: { org: Org }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email, role }),
       });
-      const said = (await res.json().catch(() => ({}))) as { token?: string; error?: string };
+      const said = (await res.json().catch(() => ({}))) as {
+        token?: string;
+        link?: string;
+        emailed?: boolean;
+        error?: string;
+      };
       if (!res.ok || !said.token) {
         setTrouble(said.error ?? "That invitation could not be made.");
         return;
       }
-      setLink(`${window.location.origin}/invite?token=${said.token}`);
+      setPosted(Boolean(said.emailed));
+      setLink(said.link ?? `${window.location.origin}/invite?token=${said.token}`);
       setEmail("");
       router.refresh();
     } catch {
@@ -201,12 +208,11 @@ export function Team({ org }: { org: Org }) {
           {link ? (
             <div className="border-pw-blue-tint bg-pw-blue-tint mt-4 rounded-[12px] border p-4">
               <p className="text-pw-blue-ink text-[14px] leading-[21px] font-semibold">
-                Send them this link. It works once, for that address, for fourteen days.
+                {posted
+                  ? "Sent. It works once, for that address, for fourteen days."
+                  : "Email is not set up yet, so pass this link on yourself. It works once, for that address, for fourteen days."}
               </p>
               <p className="text-pw-ink-700 mt-2 text-[13px] break-all">{link}</p>
-              <p className="text-pw-ink-500 mt-2 text-[12px]">
-                Sending it by email is next week&rsquo;s work; until then it is yours to pass on.
-              </p>
             </div>
           ) : null}
         </PwCard>

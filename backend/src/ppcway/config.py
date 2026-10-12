@@ -73,6 +73,18 @@ class Settings(BaseSettings):
     google_ads_house_customer_id: str | None = None
     google_ads_house_refresh_token: SecretStr | None = None
 
+    #: How this deployment sends email: "resend", "smtp", or nothing at all, in
+    #: which case sending refuses rather than silently dropping the message.
+    email_provider: str = ""
+    email_from: str = "PPCway <hello@ppcway.com>"
+    resend_api_key: SecretStr | None = None
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: SecretStr | None = None
+    #: Where links in email point. The deployment knows; a letter must not guess.
+    app_base_url: str = "http://localhost:3001"
+
     #: The Google sign-in button's client id. Public by construction: it travels in
     #: the browser. The backend needs it too, to check a token was issued for us.
     google_signin_client_id: str | None = None
