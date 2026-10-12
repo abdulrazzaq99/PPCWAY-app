@@ -4,14 +4,21 @@
 pages Google asks for are written and public, and the logo exists. What remains
 is form filling, in this order.
 
-## Step 0 — make support@ppcway.com receive mail (5 minutes)
+## Step 0 — the support address: done, with a caveat
 
-Google emails this address during verification, and a bouncing support address
-fails the review. The domain has no MX records at all today.
+Google emails this address during verification, and a bouncing one fails the
+review. It does **not** have to be on the domain; it has to be read.
 
-Cloudflare → ppcway.com → **Email** → **Email Routing** → enable, then add a
-custom address `support@ppcway.com` forwarding to whichever inbox is read.
-Cloudflare adds the MX records itself. Free.
+`abdulrazzaq.devv@gmail.com` is the address on the two pages and the one to put
+in the branding form. Changing it in the Console after verification can trigger
+a fresh review, so it is worth keeping.
+
+`support@ppcway.com` is half built. Email Routing is active on the zone, and MX,
+SPF and DKIM are live and visible from outside. What is missing is a verified
+destination address, which is an **account-scoped** setting, and the Cloudflare
+membership here is scoped to the `ppcway.com` zone alone. Only the owner of the
+"CanadaHosting41" account can add the destination or grant an account role.
+Nothing else depends on it.
 
 ## Step 1 — prove we own ppcway.com (10 minutes, once)
 
@@ -32,7 +39,7 @@ project `ppcway-509313`. Paste exactly:
 | Field | Value |
 |---|---|
 | App name | `PPCWay` |
-| User support email | `support@ppcway.com` |
+| User support email | `abdulrazzaq.devv@gmail.com` |
 | App logo | upload `web/public/logo-120.png` |
 | Application home page | `https://app.ppcway.com` |
 | Application privacy policy | `https://app.ppcway.com/privacy` |

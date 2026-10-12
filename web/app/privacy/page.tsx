@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   Google's reviewer reads this page to decide whether the adwords permission is
   honestly described, so anything we start doing has to arrive here first.
 */
-const CONTACT = "support@ppcway.com";
+const CONTACT = "abdulrazzaq.devv@gmail.com";
 
 export default function Privacy() {
   return (
