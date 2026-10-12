@@ -161,6 +161,25 @@ def fresh_access_token(
             c.close()
 
 
+def revoke_permission(refresh_token: str, *, client: httpx.Client | None = None) -> bool:
+    """Tell Google the permission is over.
+
+    Best effort on purpose: if Google cannot be reached, the merchant has still
+    disconnected here and the stored key is still destroyed. Returns whether
+    Google acknowledged it, for the log and nothing else.
+    """
+    own = client is None
+    c = client or httpx.Client(timeout=httpx.Timeout(15))
+    try:
+        reply = c.post(REVOKE_ENDPOINT, data={"token": refresh_token})
+        return reply.status_code == 200
+    except httpx.HTTPError:
+        return False
+    finally:
+        if own:
+            c.close()
+
+
 class TokenVault:
     """Encrypts a refresh token at rest, and refuses to exist without a key."""
 

@@ -21,6 +21,11 @@ class AdsConnection(Base):
     __tablename__ = "ads_connection"
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
     account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("account.id"), index=True)
+    #: The business this permission belongs to. A connection outlives the person
+    #: who granted it: staff leave, and the account they connected stays.
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organization.id"), index=True, nullable=True
+    )
     #: The refresh token, encrypted. Never read anywhere but the one door.
     ciphertext: Mapped[str] = mapped_column(Text)
     #: Which advertising account they chose, once they have chosen.

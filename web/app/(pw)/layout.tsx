@@ -2,6 +2,7 @@ import {
   ChartBar,
   ChatCircleDots,
   Gauge,
+  Gear,
   House,
   MagnifyingGlass,
   Megaphone,
@@ -9,7 +10,7 @@ import {
   Sparkle,
   TrendUp,
 } from "@phosphor-icons/react/dist/ssr";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { Sidebar } from "@/components/pw/shell";
@@ -29,6 +30,7 @@ const MAIN = [
   { href: "/otto", label: "Otto inbox", icon: <Sparkle size={size} weight="bold" /> },
   { href: "/reports", label: "Reports", icon: <ChartBar size={size} weight="bold" /> },
   { href: "/chat", label: "Chat with Otto", icon: <ChatCircleDots size={size} weight="bold" /> },
+  { href: "/settings", label: "Settings", icon: <Gear size={size} weight="bold" /> },
 ];
 
 const TOOLS = [
@@ -50,9 +52,15 @@ const TOOLS = [
   },
 ];
 
+/** Where the visitor was going, so signing in returns them to it with its query. */
+async function here(): Promise<string> {
+  const head = await headers();
+  return head.get("x-pathname") ?? head.get("x-invoke-path") ?? "/home";
+}
+
 export default async function PwLayout({ children }: { children: ReactNode }) {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
-  if (!token) redirect("/login?next=/home");
+  if (!token) redirect(`/login?next=${encodeURIComponent(await here())}`);
 
   const person = await fetch(`${BACKEND}/v1/auth/me`, {
     headers: { "x-session-token": token },
@@ -60,7 +68,7 @@ export default async function PwLayout({ children }: { children: ReactNode }) {
   })
     .then((r) => (r.ok ? (r.json() as Promise<{ email: string; name: string }>) : null))
     .catch(() => null);
-  if (!person) redirect("/login?next=/home");
+  if (!person) redirect(`/login?next=${encodeURIComponent(await here())}`);
 
   const business = person.name || person.email;
 

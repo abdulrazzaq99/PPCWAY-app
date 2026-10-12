@@ -42,6 +42,10 @@ class AuditRequest(Base):
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("account.id"), index=True, nullable=True
     )
+    #: And the business it belongs to, so a colleague sees it too.
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organization.id"), index=True, nullable=True
+    )
     consent_text: Mapped[str] = mapped_column(Text)
     consented_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

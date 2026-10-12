@@ -30,6 +30,7 @@ from ppcway.ads.oauth import (
     exchange_code,
     fresh_access_token,
     new_state,
+    revoke_permission,
 )
 from ppcway.ads.planner import demand_for
 from ppcway.ads.stats import read_account
@@ -48,6 +49,18 @@ from ppcway.auth.models import UserAccount
 from ppcway.auth.sessions import sign_in, sign_out, sign_out_everywhere, whoever_holds
 from ppcway.config import Settings, load_settings
 from ppcway.db.session import get_session, session_factory
+from ppcway.org.models import CAN, Organization, Role
+from ppcway.org.places import (
+    NotAllowed,
+    accept,
+    change_role,
+    home_for,
+    insist,
+    invite,
+    people_in,
+    remove,
+    role_of,
+)
 
 log = logging.getLogger(__name__)
 
@@ -145,6 +158,36 @@ class ConnectStartOut(BaseModel):
     """Where to send the merchant, and the state that ties the trip to them."""
 
     url: str
+
+
+class PersonInOrgOut(BaseModel):
+    account_id: UUID
+    email: str
+    name: str
+    role: str
+    is_you: bool
+
+
+class OrgOut(BaseModel):
+    """The business, and what the person asking may do in it."""
+
+    id: UUID
+    name: str
+    plan: str
+    currency: str
+    your_role: str
+    can: list[str]
+    people: list[PersonInOrgOut]
+
+
+class InviteIn(BaseModel):
+    email: EmailStr
+    role: str = Field(default="member")
+
+
+class RoleIn(BaseModel):
+    account_id: UUID
+    role: str
 
 
 class AdsAccountOut(BaseModel):
@@ -382,6 +425,116 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(401, "Nobody is signed in.")
         return PersonOut(email=account.email, name=account.name, picture=account.picture)
 
+    def _home(session: Session, account: UserAccount) -> Organization:
+        """The business this person is in, made on first use."""
+        return home_for(session, account)
+
+    def _allowed(session: Session, account: UserAccount, place: Organization, what: str) -> None:
+        """Refuse plainly. The interface hides what it can; this is what decides."""
+        try:
+            insist(session, account, place, what)
+        except NotAllowed:
+            raise HTTPException(
+                403, f"Your role does not allow you to {what.replace('_', ' ')}."
+            ) from None
+
+    @app.get("/v1/org", response_model=OrgOut)
+    def read_org(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> OrgOut:
+        """The business, who is in it, and what the person asking may do."""
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        mine = role_of(session, account, place)
+        return OrgOut(
+            id=place.id,
+            name=place.name,
+            plan=place.plan,
+            currency=place.currency,
+            your_role=mine.value if mine else "",
+            can=sorted(CAN[mine]) if mine else [],
+            people=[
+                PersonInOrgOut(
+                    account_id=person.id,
+                    email=person.email,
+                    name=person.name,
+                    role=role.value,
+                    is_you=person.id == account.id,
+                )
+                for person, role in people_in(session, place)
+            ],
+        )
+
+    @app.post("/v1/org/invite")
+    def invite_person(
+        body: InviteIn,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, str]:
+        """Ask somebody to join. Returns the link once; we never see it again."""
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "invite")
+        try:
+            role = Role(body.role)
+        except ValueError:
+            raise HTTPException(400, "That is not a role.") from None
+        try:
+            token = invite(session, place, by=account, email=str(body.email), role=role)
+        except NotAllowed as exc:
+            raise HTTPException(400, f"You cannot {exc.args[0]}.") from None
+        return {"token": token, "email": str(body.email), "role": role.value}
+
+    @app.post("/v1/org/accept", response_model=OrgOut)
+    def accept_invite(
+        body: dict[str, str],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> OrgOut:
+        """Take up an invitation. The address has to match the one invited."""
+        account = _signed_in(session, x_session_token)
+        place = accept(session, body.get("token", ""), account)
+        if place is None:
+            raise HTTPException(400, "That invitation is not valid for this account.")
+        return read_org(session, x_session_token)
+
+    @app.post("/v1/org/role", status_code=204)
+    def set_role(
+        body: RoleIn,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> None:
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "invite")
+        who = session.get(UserAccount, body.account_id)
+        if who is None:
+            raise HTTPException(404, "No such person.")
+        try:
+            change_role(session, place, who, Role(body.role))
+        except ValueError:
+            raise HTTPException(400, "That is not a role.") from None
+        except NotAllowed as exc:
+            raise HTTPException(400, f"You cannot {exc.args[0]}.") from None
+
+    @app.delete("/v1/org/people/{account_id}", status_code=204)
+    def remove_person(
+        account_id: UUID,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> None:
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "invite")
+        who = session.get(UserAccount, account_id)
+        if who is None:
+            return
+        try:
+            remove(session, place, who)
+        except NotAllowed as exc:
+            raise HTTPException(400, f"You cannot {exc.args[0]}.") from None
+
     @app.post("/v1/auth/signout", status_code=204)
     def sign_out_here(
         session: Annotated[Session, Depends(get_session)],
@@ -446,6 +599,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> ConnectStartOut:
         """Where to send the merchant, with a state only this server could have made."""
         account = _signed_in(session, x_session_token)
+        _allowed(session, account, _home(session, account), "connect")
         client_id, _ = _ads_ready()
         try:  # refuse before Google is involved, not after they have agreed
             TokenVault(
@@ -508,12 +662,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ):
             # Connecting again replaces the last permission rather than racing it.
             old.revoked_at = datetime.now(UTC)
+        place = _home(session, account)
         connection = AdsConnection(
-            account_id=account.id, ciphertext=vault.lock(grant.refresh_token)
+            account_id=account.id,
+            organization_id=place.id,
+            ciphertext=vault.lock(grant.refresh_token),
         )
         session.add(connection)
         session.commit()
         return AdsStatusOut(connected=True)
+
+    @app.post("/v1/ads/disconnect", status_code=204)
+    def disconnect_ads(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> None:
+        """End the permission and destroy the stored key.
+
+        The row stays, so the history shows a connection existed and when it
+        ended. What does not stay is the ciphertext: a permission nobody can use
+        is not a permission anybody should keep.
+        """
+        account = _signed_in(session, x_session_token)
+        _allowed(session, account, _home(session, account), "disconnect")
+        connection = _connection(session, account)
+        if connection is None:
+            return
+        client_id = settings.google_oauth_client_id
+        secret = settings.google_oauth_client_secret
+        if client_id and secret and settings.google_oauth_token_key:
+            # Tell Google too, so the grant ends at their end as well as ours.
+            try:
+                vault = TokenVault(settings.google_oauth_token_key.get_secret_value())
+                revoke_permission(vault.unlock(connection.ciphertext))
+            except (AdsConnectionRefused, VaultUnavailable) as exc:
+                log.warning("could not tell Google the permission ended: %s", exc)
+        connection.revoked_at = datetime.now(UTC)
+        connection.ciphertext = ""
+        session.commit()
 
     @app.get("/v1/ads/status", response_model=AdsStatusOut)
     def ads_status(
@@ -537,6 +723,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> list[AdsAccountOut]:
         """Which advertising accounts their permission reaches. See `ads.accounts`."""
         account = _signed_in(session, x_session_token)
+        _allowed(session, account, _home(session, account), "connect")
         connection = _connection(session, account)
         if connection is None:
             raise HTTPException(404, "No Google Ads account is connected.")
@@ -696,6 +883,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         number typed by hand cannot be stored as though it were theirs.
         """
         account = _signed_in(session, x_session_token)
+        _allowed(session, account, _home(session, account), "connect")
         connection = _connection(session, account)
         if connection is None:
             raise HTTPException(404, "No Google Ads account is connected.")

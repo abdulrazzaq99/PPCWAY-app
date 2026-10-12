@@ -15,6 +15,15 @@ const OPEN = ["/gate", "/api/gate"];
   how the Figma states are reviewed, and it says plainly that it is a drawing.
 */
 const SIGNED_IN_ONLY = [
+  "/home",
+  "/campaigns",
+  "/reports",
+  "/otto",
+  "/chat",
+  "/welcome",
+  "/tools",
+  "/settings",
+  "/invite",
   "/overview",
   "/activity",
   "/approvals",
@@ -63,6 +72,8 @@ async function expectedToken(password: string): Promise<string> {
   out anyway — which is the bug this pairs with, not a separate nicety.
 */
 function keepSignedIn(request: NextRequest, reply: NextResponse): NextResponse {
+  // The path, for a server component that needs to know where it is.
+  reply.headers.set("x-pathname", request.nextUrl.pathname + request.nextUrl.search);
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   if (token) {
     reply.cookies.set(SESSION_COOKIE, token, {
