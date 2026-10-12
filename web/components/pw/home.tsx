@@ -69,11 +69,7 @@ export function Home({
 
   return (
     <>
-      {summary.reconnect ? (
-        <GoneBanner trouble={summary.trouble} />
-      ) : !connected ? (
-        <ConnectBanner />
-      ) : null}
+      {summary.reconnect ? <GoneBanner /> : !connected ? <ConnectBanner /> : null}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
@@ -152,13 +148,13 @@ function ConnectBanner() {
   );
 }
 
-function GoneBanner({ trouble }: { trouble?: string }) {
+function GoneBanner() {
   return (
     <div className="border-pw-warn-border bg-pw-warn-bg flex flex-wrap items-center justify-between gap-4 rounded-[14px] border px-5 py-4">
-      <p className="text-pw-warn-ink text-[15px] leading-[22px]">
+      <p className="text-pw-warn-ink max-w-[760px] text-[15px] leading-[22px]">
         <strong className="font-bold">Google has ended the permission for your account.</strong>{" "}
-        {trouble ?? "Connect again and everything here fills back in."} Nothing of yours was
-        changed, and your campaigns are untouched.
+        Connect again and this page fills back in. Nothing of yours was changed, and your campaigns
+        are untouched.
       </p>
       <ConnectButton
         label="Connect again"
