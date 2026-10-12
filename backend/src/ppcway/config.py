@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     #: How this deployment sends email: "resend", "smtp", or nothing at all, in
     #: which case sending refuses rather than silently dropping the message.
     email_provider: str = ""
-    email_from: str = "PPCway <hello@ppcway.com>"
+    email_from: str = "PPCway <support@ppcway.com>"
     resend_api_key: SecretStr | None = None
     smtp_host: str = ""
     smtp_port: int = 587
