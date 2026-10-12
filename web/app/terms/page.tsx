@@ -8,7 +8,7 @@ export const metadata: Metadata = {
     "What PPCWay does for you, what it will never do without asking, what it costs, and how either of us can walk away.",
 };
 
-const CONTACT = "abdulrazzaq.devv@gmail.com";
+const CONTACT = "abdulrazzaq0621@gmail.com";
 
 export default function Terms() {
   return (

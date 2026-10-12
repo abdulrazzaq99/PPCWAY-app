@@ -9,7 +9,8 @@ is form filling, in this order.
 Google emails this address during verification, and a bouncing one fails the
 review. It does **not** have to be on the domain; it has to be read.
 
-`abdulrazzaq.devv@gmail.com` is the address on the two pages and the one to put
+`abdulrazzaq0621@gmail.com` is the address on the two pages (Google only offers
+the signed-in account, or a Google Group you manage, in that dropdown) and the one to put
 in the branding form. Changing it in the Console after verification can trigger
 a fresh review, so it is worth keeping.
 
@@ -39,7 +40,7 @@ project `ppcway-509313`. Paste exactly:
 | Field | Value |
 |---|---|
 | App name | `PPCWay` |
-| User support email | `abdulrazzaq.devv@gmail.com` |
+| User support email | `abdulrazzaq0621@gmail.com` |
 | App logo | upload `web/public/logo-120.png` |
 | Application home page | `https://app.ppcway.com` |
 | Application privacy policy | `https://app.ppcway.com/privacy` |
