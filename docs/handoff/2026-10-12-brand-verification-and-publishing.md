@@ -100,3 +100,28 @@ next Monday. That is survivable in testing and fatal at launch.
 - `web/public/logo.png` (512px) and `logo-120.png` for the branding upload.
 - Both pages are linked from the site footer, and are reachable without signing in,
   which the reviewer checks.
+
+## Done on 12 October, after this was written
+
+- Brand verification: **verified and published**.
+- Google Ads API: **Basic access granted** (15,000 operations a day, all services).
+- OAuth consent screen: **in production**. The seven-day refresh token expiry is
+  gone. The lifetime cap of 100 users stands until the `adwords` scope is
+  reviewed, which is the one thing still outstanding and the slow one.
+- The house permission exists: PPCWay asks Keyword Planner from Byte9
+  (258-058-6343), stored as Secret Manager `ppcway-ads-house-token`. A
+  signed-out audit now shows "About 11,280 searches a month for what you do in
+  Oakville… $18.28 to $53.35 a click".
+
+### Still open
+
+1. **Submit for verification** (Verification Center) to lift the 100-user cap.
+2. **Rotate the OAuth client secret.** It was pasted into a working session and
+   has never been replaced. Console → Clients → Add secret, swap the Secret
+   Manager version, delete the old one.
+3. `web/.env` holds an OAuth client from a different project (733299437383)
+   while the deployment uses 734687676224. Local development authenticates as
+   something production is not.
+4. `support@ppcway.com` routes nowhere: Email Routing is active and MX, SPF and
+   DKIM are live, but a destination address is account-scoped on Cloudflare and
+   the membership here covers the zone only.
