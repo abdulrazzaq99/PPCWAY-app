@@ -1,4 +1,4 @@
-import type { AdsReading } from "@/components/audit/ads-findings";
+import type { AdsReading, Demand } from "@/components/audit/ads-findings";
 import type { AuditLine, AuditPanel, AuditSample } from "@/components/audit/report-views";
 import type { Listing } from "./listing";
 
@@ -37,6 +37,9 @@ export type Run = {
     headline: string;
     /** Present only when they connected an account and chose which to read. */
     ads?: AdsReading;
+    /** What the trade is worth here. Asked from our own account, so everybody
+        gets it, connected or not. */
+    demand?: Demand;
   } | null;
 };
 
@@ -239,8 +242,7 @@ function comparePanel(mine: Listing, rivals: Listing[]): AuditPanel {
   because the only honest answer to "what is this worth" is Google's own search
   volume for their trade in their town, and that needs their permission.
 */
-function demandCost(ads: AdsReading): AuditSample["cost"] | undefined {
-  const demand = ads.demand;
+function demandCost(demand: Demand | undefined): AuditSample["cost"] | undefined {
   if (!demand?.read || demand.monthly <= 0) return undefined;
   const where = demand.town_matched && demand.town ? `in ${demand.town}` : "across Canada";
   // Searches, not people. Google returns many phrasings of the same intent, each
@@ -320,7 +322,9 @@ export function reportFromRun(run: Run, mine: Listing | null, rivals: Listing[])
       button: "Connect Google Ads, read only",
     },
     // Their own account answers it in money; without one it stays a promise.
-    cost: (run.report?.ads ? demandCost(run.report.ads) : undefined) ?? costOf(ordered, site),
+    // Google's own search volume when we have it, for everybody; the promise
+    // about their own account's figures only when we do not.
+    cost: demandCost(run.report?.demand) ?? costOf(ordered, site),
     locked:
       rivals.length > 2
         ? {

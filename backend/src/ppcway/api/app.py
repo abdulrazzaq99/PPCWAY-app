@@ -701,7 +701,6 @@ def _their_ads(
         if connection is None or not connection.customer_id:
             return None
         customer_id, ciphertext = connection.customer_id, connection.ciphertext
-        trade, city, place_id = asked.trade, asked.city, asked.place_id
 
     if not (settings.google_oauth_client_id and settings.google_oauth_client_secret):
         return None
@@ -730,21 +729,57 @@ def _their_ads(
         log.warning("audit %s could not read the connected Google Ads account: %s", run_id, exc)
         return None
 
-    written = reading.as_dict()
-    # What the trade is worth in that town. A separate question from how their
-    # own account is doing, and the only one that answers "is this worth money".
+    return reading.as_dict()
+
+
+def _worth(
+    run_id: UUID, settings: Settings, factory: sessionmaker[Session]
+) -> dict[str, Any] | None:
+    """What this trade is worth in this town, for anybody who runs the audit.
+
+    Deliberately not tied to a merchant's own account. The free audit is where
+    this number does its work, and the person running it has given us nothing.
+    So it is asked from PPCWay's own Google Ads account, which exists for this
+    one question. Without house credentials configured, the report carries no
+    money line rather than a guessed one.
+    """
+    if not (settings.google_ads_house_customer_id and settings.google_ads_house_refresh_token):
+        return None
+    if settings.google_ads_developer_token is None:
+        return None
+    if not (settings.google_oauth_client_id and settings.google_oauth_client_secret):
+        return None
+
+    with factory() as session:
+        run = session.get(AuditRun, run_id)
+        if run is None or run.request_id is None:
+            return None
+        asked = session.get(AuditRequest, run.request_id)
+        if asked is None:
+            return None
+        trade, city, place_id = asked.trade, asked.city, asked.place_id
+
     seeds = _seeds(trade, city, place_id, settings)
-    if seeds:
-        written["demand"] = demand_for(
+    if not seeds:
+        return None
+    try:
+        access = fresh_access_token(
+            settings.google_ads_house_refresh_token.get_secret_value(),
+            client_id=settings.google_oauth_client_id,
+            client_secret=settings.google_oauth_client_secret.get_secret_value(),
+        )
+        found = demand_for(
             seeds,
             city,
-            customer_id=customer_id,
+            customer_id=settings.google_ads_house_customer_id.replace("-", ""),
             access_token=access,
-            developer_token=developer_token,
+            developer_token=settings.google_ads_developer_token.get_secret_value(),
             api_version=settings.google_ads_api_version,
-            login_customer_id=settings.google_ads_login_customer_id,
-        ).as_dict()
-    return written
+        )
+    except AdsConnectionRefused as exc:
+        log.warning("audit %s could not ask what the trade is worth: %s", run_id, exc)
+        return None
+    return found.as_dict() if found.read else None
 
 
 def _seeds(trade: str, city: str, place_id: str, settings: Settings) -> list[str]:
@@ -802,6 +837,10 @@ def _run(run_id: UUID, settings: Settings) -> None:
             (folder / f"{kind}.jpg").write_bytes(data)
             report.screenshot_urls[kind] = f"/v1/audits/{run_id}/screenshot/{kind}"
         written = report.as_dict()
+        worth = _worth(run_id, settings, factory)
+        if worth is not None:
+            # What the searching is worth here, which does not need their account.
+            written["demand"] = worth
         theirs = _their_ads(run_id, settings, factory)
         if theirs is not None:
             # Their own account, read with the permission they gave, beside what

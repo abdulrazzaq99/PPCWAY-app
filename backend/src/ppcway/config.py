@@ -65,6 +65,13 @@ class Settings(BaseSettings):
     #: Where Google sends a merchant back after they agree. Must match, byte for
     #: byte, a redirect URI registered on the OAuth client.
     google_ads_redirect_uri: str = "http://localhost:3001/ads/callback"
+    #: PPCWay's own Google Ads account, used only to ask Keyword Planner what a
+    #: trade is worth in a town. Nobody's account is read with it and nothing is
+    #: spent through it; it exists because Google will not answer that question
+    #: without an account to ask from, and a stranger running the free audit has
+    #: not given us one. Absent, the free report simply carries no money line.
+    google_ads_house_customer_id: str | None = None
+    google_ads_house_refresh_token: SecretStr | None = None
 
     #: The Google sign-in button's client id. Public by construction: it travels in
     #: the browser. The backend needs it too, to check a token was issued for us.
