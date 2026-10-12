@@ -177,54 +177,57 @@ def account_summary(
         "client": c,
     }
     try:
-        # Day by day, split into calls and everything else.
-        rows, trouble = _ask(
+        # Two reads, and they cannot be one. Google refuses to segment by
+        # conversion category and report clicks, cost or impressions together:
+        # "unsupported metrics: clicks, cost_micros, impressions". So the money
+        # comes by day on its own, and the calls-and-forms split beside it.
+        by_day: dict[str, Day] = {}
+
+        money, trouble = _ask(
             customer_id,
             f"""
-            SELECT segments.date, segments.conversion_action_category,
-                   metrics.conversions, metrics.cost_micros, metrics.clicks,
+            SELECT segments.date, metrics.cost_micros, metrics.clicks,
                    metrics.impressions, customer.currency_code
-            FROM customer
-            WHERE segments.date DURING {window}
+            FROM customer WHERE segments.date DURING {window}
             """,
             **ask,  # type: ignore[arg-type]
         )
         if trouble:
             found.trouble = trouble
             return found
-
-        by_day: dict[str, Day] = {}
-        for row in rows:
+        for row in money:
             day = str(row.get("segments", {}).get("date", ""))
-            kind = str(row.get("segments", {}).get("conversionActionCategory", ""))
             metrics = row.get("metrics", {})
             found.currency = str(row.get("customer", {}).get("currencyCode", "")) or found.currency
             entry = by_day.setdefault(day, Day(date=day))
-            conversions = float(metrics.get("conversions", 0) or 0)
-            if kind in CALL_KINDS:
-                entry.calls += conversions
-            else:
-                entry.forms += conversions
-        found.series = [by_day[k] for k in sorted(by_day)]
-        found.calls = round(sum(d.calls for d in found.series), 2)
-        found.forms = round(sum(d.forms for d in found.series), 2)
-        found.leads = round(found.calls + found.forms, 2)
-
-        # The window's money, asked plainly so segmenting cannot double-count it.
-        totals, trouble = _ask(
-            customer_id,
-            f"""
-            SELECT metrics.cost_micros, metrics.clicks, metrics.impressions
-            FROM customer WHERE segments.date DURING {window}
-            """,
-            **ask,  # type: ignore[arg-type]
-        )
-        for row in totals:
-            metrics = row.get("metrics", {})
+            entry.cost += _micros(metrics.get("costMicros"))
             found.cost += _micros(metrics.get("costMicros"))
             found.clicks += int(metrics.get("clicks", 0) or 0)
             found.impressions += int(metrics.get("impressions", 0) or 0)
         found.cost = round(found.cost, 2)
+
+        leads, trouble = _ask(
+            customer_id,
+            f"""
+            SELECT segments.date, segments.conversion_action_category, metrics.conversions
+            FROM customer WHERE segments.date DURING {window}
+            """,
+            **ask,  # type: ignore[arg-type]
+        )
+        for row in leads:
+            day = str(row.get("segments", {}).get("date", ""))
+            kind = str(row.get("segments", {}).get("conversionActionCategory", ""))
+            conversions = float(row.get("metrics", {}).get("conversions", 0) or 0)
+            entry = by_day.setdefault(day, Day(date=day))
+            if kind in CALL_KINDS:
+                entry.calls += conversions
+            else:
+                entry.forms += conversions
+
+        found.series = [by_day[k] for k in sorted(by_day)]
+        found.calls = round(sum(d.calls for d in found.series), 2)
+        found.forms = round(sum(d.forms for d in found.series), 2)
+        found.leads = round(found.calls + found.forms, 2)
 
         # Campaigns, with what each one brought and what it is allowed to spend.
         campaigns, trouble = _ask(

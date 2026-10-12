@@ -84,7 +84,7 @@ export function AdsCallback({
               disconnect whenever you like.
             </p>
             <div className="mt-5 flex flex-wrap gap-3">
-              <LinkButton href="/overview">See what it unlocked</LinkButton>
+              <LinkButton href="/welcome">Choose which account to read</LinkButton>
               <LinkButton href="/audit" variant="secondary">
                 Run the audit again
               </LinkButton>
@@ -94,7 +94,7 @@ export function AdsCallback({
           <>
             <p className="text-muted text-[16px] leading-[24px]">{reason}</p>
             <div className="mt-5">
-              <LinkButton href="/overview">Back to your account</LinkButton>
+              <LinkButton href="/welcome">Back to your account</LinkButton>
             </div>
           </>
         )}

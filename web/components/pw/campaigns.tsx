@@ -28,6 +28,8 @@ type Summary = {
   read: boolean;
   trouble?: string;
   reconnect?: boolean;
+  /** Connected, but they have not said which of their accounts to read. */
+  choose?: boolean;
   currency?: string;
   days?: number;
   campaigns?: Row[];
@@ -112,13 +114,23 @@ export function CampaignList({ initial }: { initial: Summary }) {
 
       <PwCard className="overflow-hidden">
         {rows.length === 0 ? (
-          <p className="text-pw-ink-500 px-6 py-10 text-center text-[15px]">
-            {summary.read
-              ? find || filter !== "All"
-                ? "No campaign matches that."
-                : "This account has no campaigns in this window."
-              : (summary.trouble ?? "Connect your account to see your campaigns.")}
-          </p>
+          <div className="px-6 py-10 text-center">
+            <p className="text-pw-ink-500 text-[15px]">
+              {summary.read
+                ? find || filter !== "All"
+                  ? "No campaign matches that."
+                  : "This account has no campaigns in this window."
+                : (summary.trouble ?? "Connect your account to see your campaigns.")}
+            </p>
+            {summary.choose ? (
+              <Link
+                href="/welcome"
+                className="bg-pw-blue hover:bg-pw-blue-hover mt-4 inline-block rounded-[10px] px-4 py-2 text-[14px] font-semibold text-white"
+              >
+                Choose your account
+              </Link>
+            ) : null}
+          </div>
         ) : (
           <table className="w-full text-left">
             <thead>

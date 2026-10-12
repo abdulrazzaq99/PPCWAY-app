@@ -579,8 +579,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """
         account = _signed_in(session, x_session_token)
         connection = _connection(session, account)
-        if connection is None or not connection.customer_id:
+        if connection is None:
             return {"read": False, "trouble": "No Google Ads account is connected yet."}
+        if not connection.customer_id:
+            return {
+                "read": False,
+                "choose": True,
+                "trouble": "Choose which of your Google Ads accounts we read.",
+            }
         if settings.google_ads_developer_token is None:
             return {"read": False, "trouble": "Reading Google Ads is not set up yet."}
         client_id, secret = _ads_ready()
@@ -627,8 +633,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "No campaign with that id.")
         account = _signed_in(session, x_session_token)
         connection = _connection(session, account)
-        if connection is None or not connection.customer_id:
+        if connection is None:
             return {"read": False, "trouble": "No Google Ads account is connected yet."}
+        if not connection.customer_id:
+            return {
+                "read": False,
+                "choose": True,
+                "trouble": "Choose which of your Google Ads accounts we read.",
+            }
         if settings.google_ads_developer_token is None:
             return {"read": False, "trouble": "Reading Google Ads is not set up yet."}
         client_id, secret = _ads_ready()

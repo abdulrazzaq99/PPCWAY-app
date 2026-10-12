@@ -18,6 +18,8 @@ export type Summary = {
   trouble?: string;
   /** Google has ended the permission; the only way forward is to grant it again. */
   reconnect?: boolean;
+  /** Connected, but they have not said which of their accounts to read. */
+  choose?: boolean;
   currency?: string;
   days?: number;
   leads?: number;
@@ -69,7 +71,13 @@ export function Home({
 
   return (
     <>
-      {summary.reconnect ? <GoneBanner /> : !connected ? <ConnectBanner /> : null}
+      {summary.reconnect ? (
+        <GoneBanner />
+      ) : summary.choose ? (
+        <ChooseBanner />
+      ) : !connected ? (
+        <ConnectBanner />
+      ) : null}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
@@ -144,6 +152,24 @@ function ConnectBanner() {
         it, read only, and this page fills with your own numbers.
       </p>
       <ConnectButton className="bg-pw-warn-ink rounded-[10px] px-4 py-2 text-[14px] font-semibold text-white" />
+    </div>
+  );
+}
+
+function ChooseBanner() {
+  return (
+    <div className="border-pw-blue-tint bg-pw-blue-tint flex flex-wrap items-center justify-between gap-4 rounded-[14px] border px-5 py-4">
+      <p className="text-pw-blue-ink max-w-[760px] text-[15px] leading-[22px]">
+        <strong className="font-bold">Your Google account is connected.</strong> One thing left:
+        tell us which of your Google Ads accounts your ads run in, and this page fills with its
+        numbers.
+      </p>
+      <Link
+        href="/welcome"
+        className="bg-pw-blue hover:bg-pw-blue-hover rounded-[10px] px-4 py-2 text-[14px] font-semibold text-white"
+      >
+        Choose your account
+      </Link>
     </div>
   );
 }
