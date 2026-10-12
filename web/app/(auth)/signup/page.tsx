@@ -1,20 +1,54 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState, type FormEvent } from "react";
 import { AuthCard, AuthShell } from "@/components/auth/auth-shell";
 import { GoogleButton } from "@/components/auth/google-button";
 import { Button, TextLink } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, Input, PasswordInput } from "@/components/ui/field";
 
-export default function SignupPage() {
+/*
+  Signing up with an address and a password, beside Google's button. The account
+  exists the moment this succeeds; the confirmation email is a second step and
+  not a gate, because a business owner who cannot reach their inbox at that
+  moment should still be able to look around.
+*/
+function SignupForm() {
+  const router = useRouter();
+  const next = useSearchParams().get("next") || "/home";
   const [agreed, setAgreed] = useState(true);
   const [working, setWorking] = useState(false);
+  const [trouble, setTrouble] = useState("");
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!agreed) return;
+    const form = new FormData(event.currentTarget);
     setWorking(true);
+    setTrouble("");
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: String(form.get("email") ?? ""),
+          password: String(form.get("password") ?? ""),
+          name: String(form.get("name") ?? ""),
+        }),
+      });
+      if (res.ok) {
+        router.replace(next);
+        router.refresh();
+        return;
+      }
+      const said = (await res.json().catch(() => ({}))) as { error?: string };
+      setTrouble(said.error ?? "We could not make that account.");
+    } catch {
+      setTrouble("We could not reach the service. Try again in a minute.");
+    } finally {
+      setWorking(false);
+    }
   }
 
   return (
@@ -29,8 +63,13 @@ export default function SignupPage() {
       }
     >
       <AuthCard title="Create your account" onSubmit={submit}>
-        <GoogleButton label="Sign up with Google" />
+        <GoogleButton label="Sign up with Google" next={next} />
         <p className="text-faint text-[13px] leading-4 font-medium">or use your email</p>
+
+        <Field label="Your name">
+          {(id) => <Input id={id} name="name" autoComplete="name" placeholder="Dana Reid" />}
+        </Field>
+
         <Field label="Work email">
           {(id) => (
             <Input
@@ -38,30 +77,47 @@ export default function SignupPage() {
               name="email"
               type="email"
               autoComplete="email"
-              placeholder="you@yourbusiness.ca"
+              required
+              placeholder="dana@alphaplumbing.ca"
             />
           )}
         </Field>
-        <Field
-          label="Choose a password"
-          labelAside={
-            <span className="text-faint text-[13px] leading-4 font-semibold">
-              12 characters or more
-            </span>
-          }
-        >
+
+        <Field label="Password" hint="At least 10 characters. Length matters more than symbols.">
           {(id) => (
-            <PasswordInput id={id} name="password" autoComplete="new-password" minLength={12} />
+            <PasswordInput
+              id={id}
+              name="password"
+              autoComplete="new-password"
+              required
+              minLength={10}
+            />
           )}
         </Field>
+
         <Checkbox checked={agreed} onChange={setAgreed}>
-          I agree to the Terms, and to PPCWay using my business details and my website&rsquo;s text
-          to build and run my ads, as the Privacy Policy explains.
+          I agree to the <TextLink href="/terms">terms</TextLink> and the{" "}
+          <TextLink href="/privacy">privacy policy</TextLink>.
         </Checkbox>
-        <Button type="submit" full className="h-12" working={working && "Creating your account"}>
+
+        {trouble ? (
+          <p className="text-red text-[14px] leading-[18px] font-medium" role="alert">
+            {trouble}
+          </p>
+        ) : null}
+
+        <Button type="submit" full working={working && "Making your account"} disabled={!agreed}>
           Create account
         </Button>
       </AuthCard>
     </AuthShell>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense>
+      <SignupForm />
+    </Suspense>
   );
 }

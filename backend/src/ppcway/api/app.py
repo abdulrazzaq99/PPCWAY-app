@@ -44,12 +44,28 @@ from ppcway.audit.places import (
     place_details,
 )
 from ppcway.audit.runner import normalise_site, run_audit
+from ppcway.auth.accounts import (
+    AlreadyHere,
+    finish_reset,
+    fresh_verification,
+    register,
+    sign_in_with_password,
+    start_reset,
+    verify,
+)
 from ppcway.auth.google import SignInRefused, verify_google_token
 from ppcway.auth.models import UserAccount
-from ppcway.auth.sessions import sign_in, sign_out, sign_out_everywhere, whoever_holds
+from ppcway.auth.passwords import WeakPassword
+from ppcway.auth.sessions import (
+    sign_in,
+    sign_in_existing,
+    sign_out,
+    sign_out_everywhere,
+    whoever_holds,
+)
 from ppcway.config import Settings, load_settings
 from ppcway.db.session import get_session, session_factory
-from ppcway.mail.letters import invitation
+from ppcway.mail.letters import invitation, reset_password, verify_email
 from ppcway.mail.send import NotSent, Post, send
 from ppcway.org.models import CAN, Organization, Role
 from ppcway.org.places import (
@@ -125,6 +141,28 @@ class AuditOut(BaseModel):
     city: str = ""
 
 
+class RegisterIn(BaseModel):
+    """What the sign-up form sends."""
+
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=200)
+    name: str = Field(default="", max_length=200)
+
+
+class PasswordIn(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=200)
+
+
+class TokenIn(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+
+
+class ResetIn(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+    password: str = Field(min_length=1, max_length=200)
+
+
 class SignInIn(BaseModel):
     """What Google's button hands the browser, passed straight through once."""
 
@@ -137,6 +175,18 @@ class PersonOut(BaseModel):
     email: str
     name: str
     picture: str
+    #: False until they have followed the link in their email. Google's sign-in
+    #: proves the address for us, so those accounts arrive verified.
+    email_verified: bool = True
+
+    @classmethod
+    def of(cls, account: UserAccount) -> PersonOut:
+        return cls(
+            email=account.email,
+            name=account.name,
+            picture=account.picture,
+            email_verified=account.email_verified_at is not None,
+        )
 
 
 class SignedInOut(BaseModel):
@@ -180,6 +230,12 @@ class OrgOut(BaseModel):
     your_role: str
     can: list[str]
     people: list[PersonInOrgOut]
+
+
+class RenameIn(BaseModel):
+    """What a business is called. It appears in invitations and in every report."""
+
+    name: str = Field(min_length=1, max_length=200)
 
 
 class InviteIn(BaseModel):
@@ -413,7 +469,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(401, str(exc)) from None
         account, token = sign_in(session, who)
         return SignedInOut(
-            person=PersonOut(email=account.email, name=account.name, picture=account.picture),
+            person=PersonOut.of(account),
             token=token,
         )
 
@@ -425,7 +481,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         account = _person(session, x_session_token)
         if account is None:
             raise HTTPException(401, "Nobody is signed in.")
-        return PersonOut(email=account.email, name=account.name, picture=account.picture)
+        return PersonOut.of(account)
 
     def _post() -> Post:
         """How this deployment sends email, built from settings."""
@@ -481,6 +537,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 for person, role in people_in(session, place)
             ],
         )
+
+    @app.post("/v1/org/name", status_code=204)
+    def rename_org(
+        body: RenameIn,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> None:
+        """Rename the business. It arrived named after whoever signed up first."""
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "invite")
+        place.name = body.name.strip()
+        session.commit()
 
     @app.post("/v1/org/invite")
     def invite_person(
@@ -579,6 +648,100 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             remove(session, place, who)
         except NotAllowed as exc:
             raise HTTPException(400, f"You cannot {exc.args[0]}.") from None
+
+    def _send_verification(account: UserAccount, secret: str) -> None:
+        """Post the confirmation link, and carry on if the post is not set up."""
+        if not secret:
+            return
+        link = f"{settings.app_base_url.rstrip('/')}/verify-email?token={secret}"
+        try:
+            send(_post(), verify_email(to=account.email, name=account.name, link=link))
+        except NotSent as exc:
+            log.warning("verification for %s not sent: %s", account.id, exc)
+
+    @app.post("/v1/auth/register", response_model=SignedInOut)
+    def register_account(
+        body: RegisterIn,
+        session: Annotated[Session, Depends(get_session)],
+    ) -> SignedInOut:
+        """Make an account with an address and a password, and post the link."""
+        try:
+            account, secret = register(
+                session, email=str(body.email), password=body.password, name=body.name
+            )
+        except WeakPassword as exc:
+            raise HTTPException(400, str(exc)) from None
+        except AlreadyHere:
+            raise HTTPException(
+                409, "That address already has an account. Sign in, or reset the password."
+            ) from None
+        _send_verification(account, secret)
+        token = sign_in_existing(session, account)
+        return SignedInOut(token=token, person=PersonOut.of(account))
+
+    @app.post("/v1/auth/password", response_model=SignedInOut)
+    def sign_in_password(
+        body: PasswordIn,
+        session: Annotated[Session, Depends(get_session)],
+    ) -> SignedInOut:
+        """Sign in with an address and a password."""
+        account = sign_in_with_password(session, email=str(body.email), password=body.password)
+        if account is None:
+            # One message for a wrong address and a wrong password: which it was
+            # is not a stranger's business.
+            raise HTTPException(401, "That address and password do not match.")
+        token = sign_in_existing(session, account)
+        return SignedInOut(token=token, person=PersonOut.of(account))
+
+    @app.post("/v1/auth/verify", response_model=PersonOut)
+    def verify_address(
+        body: TokenIn,
+        session: Annotated[Session, Depends(get_session)],
+    ) -> PersonOut:
+        account = verify(session, body.token)
+        if account is None:
+            raise HTTPException(400, "That link has been used already, or has expired.")
+        return PersonOut.of(account)
+
+    @app.post("/v1/auth/verify/resend", status_code=204)
+    def resend_verification(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> None:
+        account = _signed_in(session, x_session_token)
+        if account.email_verified_at is not None:
+            return
+        _send_verification(account, fresh_verification(session, account))
+
+    @app.post("/v1/auth/forgot", status_code=204)
+    def forgot_password(
+        body: dict[str, str],
+        session: Annotated[Session, Depends(get_session)],
+    ) -> None:
+        """Send a reset link, and say nothing about whether there was an account."""
+        found = start_reset(session, body.get("email", ""))
+        if found is None:
+            return
+        account, secret = found
+        link = f"{settings.app_base_url.rstrip('/')}/reset-password?token={secret}"
+        try:
+            send(_post(), reset_password(to=account.email, name=account.name, link=link))
+        except NotSent as exc:
+            log.warning("reset for %s not sent: %s", account.id, exc)
+
+    @app.post("/v1/auth/reset", response_model=SignedInOut)
+    def reset_the_password(
+        body: ResetIn,
+        session: Annotated[Session, Depends(get_session)],
+    ) -> SignedInOut:
+        try:
+            account = finish_reset(session, token=body.token, password=body.password)
+        except WeakPassword as exc:
+            raise HTTPException(400, str(exc)) from None
+        if account is None:
+            raise HTTPException(400, "That link has been used already, or has expired.")
+        token = sign_in_existing(session, account)
+        return SignedInOut(token=token, person=PersonOut.of(account))
 
     @app.post("/v1/auth/signout", status_code=204)
     def sign_out_here(

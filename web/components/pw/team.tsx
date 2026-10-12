@@ -48,6 +48,8 @@ function label(role: string): string {
 
 export function Team({ org }: { org: Org }) {
   const router = useRouter();
+  const [name, setName] = useState(org.name);
+  const [naming, setNaming] = useState(false);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("member");
   const [link, setLink] = useState("");
@@ -103,8 +105,50 @@ export function Team({ org }: { org: Org }) {
     router.refresh();
   }
 
+  async function rename() {
+    setNaming(true);
+    try {
+      await fetch("/api/org/name", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      router.refresh();
+    } finally {
+      setNaming(false);
+    }
+  }
+
   return (
     <>
+      {mayInvite ? (
+        <PwCard className="p-5 sm:p-6">
+          <h2 className="text-[17px] leading-[22px] font-semibold">What this business is called</h2>
+          <p className="text-pw-ink-500 mt-1 text-[14px] leading-[21px]">
+            It appears on invitations, on reports, and at the top of every screen your colleagues
+            see.
+          </p>
+          <div className="mt-4 flex flex-wrap items-end gap-3">
+            <label className="flex min-w-[260px] flex-1 flex-col gap-[6px]">
+              <span className="sr-only">Business name</span>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="border-pw-border-input bg-pw-card h-[44px] rounded-[12px] border px-3 text-[15px]"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={rename}
+              disabled={naming || !name.trim() || name.trim() === org.name}
+              className="bg-pw-blue hover:bg-pw-blue-hover h-[44px] rounded-[12px] px-4 text-[15px] font-semibold text-white disabled:opacity-60"
+            >
+              {naming ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </PwCard>
+      ) : null}
+
       <PwCard className="overflow-hidden">
         <div className="border-pw-divider border-b px-5 py-5 sm:px-6">
           <h2 className="text-[17px] leading-[22px] font-semibold">People</h2>

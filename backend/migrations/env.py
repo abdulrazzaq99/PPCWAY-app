@@ -13,9 +13,9 @@ from pathlib import Path
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-import ppcway.ads.models  # noqa: F401 - registers the tables on Base.metadata
-import ppcway.audit.models  # noqa: F401
-import ppcway.auth.models  # noqa: F401
+import ppcway.ads.models
+import ppcway.audit.models
+import ppcway.auth.models
 import ppcway.org.models  # noqa: F401
 from ppcway.config import load_settings
 from ppcway.db.base import Base

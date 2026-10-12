@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ConnectButton } from "@/components/pw/connect-button";
+import { ConnectButton, ResendConfirmation } from "@/components/pw/connect-button";
 import { Chip, Kpi, PwCard } from "@/components/pw/shell";
 import { cn } from "@/lib/cn";
 
@@ -55,12 +55,14 @@ export function Home({
   summary,
   audit,
   connected,
+  emailVerified = true,
 }: {
   firstName: string;
   business: string;
   summary: Summary;
   audit: LatestAudit;
   connected: boolean;
+  emailVerified?: boolean;
 }) {
   const days = summary.days ?? 30;
   const currency = summary.currency ?? "";
@@ -71,6 +73,8 @@ export function Home({
 
   return (
     <>
+      {!emailVerified ? <ConfirmBanner /> : null}
+
       {summary.reconnect ? (
         <GoneBanner />
       ) : summary.choose ? (
@@ -152,6 +156,19 @@ function ConnectBanner() {
         it, read only, and this page fills with your own numbers.
       </p>
       <ConnectButton className="bg-pw-warn-ink rounded-[10px] px-4 py-2 text-[14px] font-semibold text-white" />
+    </div>
+  );
+}
+
+function ConfirmBanner() {
+  return (
+    <div className="border-pw-border bg-pw-muted flex flex-wrap items-center justify-between gap-4 rounded-[14px] border px-5 py-4">
+      <p className="text-pw-ink-700 max-w-[760px] text-[15px] leading-[22px]">
+        <strong className="font-bold">Confirm your email address.</strong> We sent you a link. It is
+        how you get the weekly summary and anything urgent about your account; everything else works
+        meanwhile.
+      </p>
+      <ResendConfirmation />
     </div>
   );
 }

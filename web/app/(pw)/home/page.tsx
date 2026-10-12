@@ -29,7 +29,10 @@ export default async function HomePage() {
   };
 
   const [person, summary, runs, ads] = await Promise.all([
-    ask<{ email: string; name: string }>("/v1/auth/me", { email: "", name: "" }),
+    ask<{ email: string; name: string; email_verified?: boolean }>("/v1/auth/me", {
+      email: "",
+      name: "",
+    }),
     ask<Summary>("/v1/ads/summary?days=30", { read: false }),
     ask<Run[]>("/v1/audits/mine", []),
     ask<{ connected: boolean; customer_name?: string }>("/v1/ads/status", { connected: false }),
@@ -62,6 +65,7 @@ export default async function HomePage() {
           summary={summary}
           audit={audit}
           connected={Boolean(ads.connected)}
+          emailVerified={person.email_verified !== false}
         />
       </PwPage>
     </>

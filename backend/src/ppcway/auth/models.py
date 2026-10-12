@@ -20,8 +20,17 @@ class UserAccount(Base):
 
     __tablename__ = "account"
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
-    #: Google's own id for the person. Stable even if they change their address.
-    google_sub: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    #: Google's own id for the person, when they came that way. Stable even if
+    #: they change their address. Empty for somebody who signed up with a password.
+    google_sub: Mapped[str | None] = mapped_column(
+        String(64), unique=True, index=True, nullable=True
+    )
+    #: Argon2, or empty for somebody who only ever signs in with Google.
+    password_hash: Mapped[str] = mapped_column(String(255), default="")
+    #: When they proved the address is theirs. Google's sign-in proves it for us.
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     email: Mapped[str] = mapped_column(String(320), index=True)
     name: Mapped[str] = mapped_column(String(200), default="")
     picture: Mapped[str] = mapped_column(String(500), default="")
@@ -29,6 +38,24 @@ class UserAccount(Base):
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class LinkToken(Base):
+    """A one-time link sent by email: confirming an address, or resetting a password.
+
+    Held as a hash, like a session. A copy of this table is a list of expired
+    opportunities, not a set of keys.
+    """
+
+    __tablename__ = "account_link"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("account.id"), index=True)
+    #: "verify" or "reset".
+    purpose: Mapped[str] = mapped_column(String(20))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Session(Base):

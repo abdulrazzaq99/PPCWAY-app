@@ -58,6 +58,25 @@ def _aware(when: datetime) -> datetime:
     return when if when.tzinfo else when.replace(tzinfo=UTC)
 
 
+def sign_in_existing(session: DbSession, account: UserAccount) -> str:
+    """Start a session for somebody already known, and hand back its token once.
+
+    Used by the password paths, where who they are has already been settled.
+    """
+    account.last_seen_at = datetime.now(UTC)
+    token = new_session_token()
+    session.add(
+        Session(
+            token_hash=hash_session_token(token),
+            user_id=account.id,
+            expires_at=datetime.now(UTC) + timedelta(days=SESSION_DAYS),
+            last_used_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
+    return token
+
+
 def whoever_holds(session: DbSession, token: str | None) -> UserAccount | None:
     """The account a cookie belongs to, or None: expired, revoked and unknown all
     look the same from outside, because they mean the same thing.

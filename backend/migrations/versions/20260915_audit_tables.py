@@ -4,6 +4,7 @@ Revision ID: a1b2c3d4e5f6
 Revises: None
 Create Date: 2026-09-15
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -27,19 +28,32 @@ def upgrade() -> None:
         sa.Column("site", sa.String(500), nullable=False),
         sa.Column("source", sa.String(20), nullable=False),
         sa.Column("consent_text", sa.Text(), nullable=False),
-        sa.Column("consented_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "consented_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
     )
     op.create_index("ix_audit_request_email", "audit_request", ["email"])
     op.create_table(
         "audit_run",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("request_id", sa.Uuid(), sa.ForeignKey("audit_request.id", name="fk_audit_run_request_id"), nullable=True),
+        sa.Column(
+            "request_id",
+            sa.Uuid(),
+            sa.ForeignKey("audit_request.id", name="fk_audit_run_request_id"),
+            nullable=True,
+        ),
         sa.Column("site", sa.String(500), nullable=False),
         sa.Column("status", sa.String(20), nullable=False),
-        sa.Column("report", sa.JSON().with_variant(postgresql.JSONB(), "postgresql"), nullable=True),
+        sa.Column(
+            "report", sa.JSON().with_variant(postgresql.JSONB(), "postgresql"), nullable=True
+        ),
         sa.Column("error", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
     )

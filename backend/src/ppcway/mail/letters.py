@@ -87,6 +87,29 @@ def invitation(*, to: str, business: str, inviter: str, role: str, link: str) ->
     )
 
 
+def reset_password(*, to: str, name: str, link: str) -> Letter:
+    """Somebody asked to set a new password."""
+    hello = f"Hello {name.split(' ')[0]}," if name else "Hello,"
+    text = (
+        f"{hello}\n\n"
+        "Somebody asked to reset the password on your PPCway account. If it was you, "
+        "set a new one here:\n\n"
+        f"{link}\n\n"
+        "The link works for two hours and once only. If it was not you, ignore this: "
+        "your password has not changed and nobody has been let in.\n\n"
+        f"{FOOT}"
+    )
+    html = _wrap(
+        "Set a new password",
+        f"<p>{hello}</p><p>Somebody asked to reset the password on your PPCway account. "
+        "The link works for two hours and once only.</p>"
+        "<p>If it was not you, ignore this: your password has not changed and nobody "
+        "has been let in.</p>",
+        ("Set a new password", link),
+    )
+    return Letter(to=to, subject="Set a new PPCway password", text=text, html=html)
+
+
 def audit_ready(*, to: str, business: str, score: int, link: str) -> Letter:
     """The free audit, when somebody asked for it by email."""
     text = (

@@ -16,6 +16,9 @@ dependencies = [
     "cryptography>=44.0",
     # Verifies the signed token Google's sign-in button hands the browser.
     "google-auth>=2.37",
+    # Hashes passwords. Argon2 is what the people who break passwords for a
+    # living recommend, and its cost is tunable as hardware gets faster.
+    "argon2-cffi>=23.1",
     # Pinned below 1.0, not a floor: selectolax 1.0 removed the parser these three
     # modules import, so a floor let the built image drift past the code and the
     # container would not start. Moving to the lexbor parser is its own change,

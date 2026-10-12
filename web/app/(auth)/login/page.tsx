@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useState, type FormEvent } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AuthCard, AuthShell } from "@/components/auth/auth-shell";
 import { GoogleButton } from "@/components/auth/google-button";
 import { Button, TextLink } from "@/components/ui/button";
@@ -17,11 +17,37 @@ function LoginPageInner() {
   const params = useSearchParams();
   const signedOut = params.get("reason") === "signed-out";
   const agency = params.get("brand") === "brightpath";
+  const router = useRouter();
+  const next = params.get("next") || "/home";
   const [working, setWorking] = useState(false);
+  const [trouble, setTrouble] = useState("");
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = new FormData(event.currentTarget);
     setWorking(true);
+    setTrouble("");
+    try {
+      const res = await fetch("/api/auth/password", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: String(form.get("email") ?? ""),
+          password: String(form.get("password") ?? ""),
+        }),
+      });
+      if (res.ok) {
+        router.replace(next);
+        router.refresh();
+        return;
+      }
+      const said = (await res.json().catch(() => ({}))) as { error?: string };
+      setTrouble(said.error ?? "That address and password do not match.");
+    } catch {
+      setTrouble("We could not reach the service. Try again in a minute.");
+    } finally {
+      setWorking(false);
+    }
   }
 
   const shell = agency
@@ -80,7 +106,7 @@ function LoginPageInner() {
       brand={agency ? "brightpath" : "ppcway"}
     >
       <AuthCard title={shell.title} onSubmit={submit} intro={null}>
-        <GoogleButton next={params.get("next") ?? "/overview"} />
+        <GoogleButton next={next} />
         <p className="text-faint text-[13px] leading-4 font-medium">or use your email</p>
         <Field label="Email">
           {(id) => (
@@ -111,6 +137,12 @@ function LoginPageInner() {
             />
           )}
         </Field>
+        {trouble ? (
+          <p className="text-red text-[14px] leading-[18px] font-medium" role="alert">
+            {trouble}
+          </p>
+        ) : null}
+
         <Button type="submit" full className="h-12" working={working && "Signing in"}>
           {shell.cta}
         </Button>

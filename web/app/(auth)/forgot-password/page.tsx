@@ -2,81 +2,74 @@
 
 import { useState, type FormEvent } from "react";
 import { AuthCard, AuthShell } from "@/components/auth/auth-shell";
-import { Button, TextLink } from "@/components/ui/button";
+import { Button, LinkButton, TextLink } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 
-/* Two frames: the request, then the "Check your email" confirmation once it is sent. */
+/*
+  Asking for a reset link. It says the same thing whatever happens, because
+  whether an address has an account is not a stranger's business — and the
+  person who does own it reads the rest in their inbox.
+*/
 export default function ForgotPasswordPage() {
   const [sent, setSent] = useState(false);
   const [working, setWorking] = useState(false);
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = new FormData(event.currentTarget);
     setWorking(true);
-    window.setTimeout(() => {
+    try {
+      await fetch("/api/auth/forgot", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: String(form.get("email") ?? "") }),
+      });
+    } finally {
       setWorking(false);
       setSent(true);
-    }, 600);
-  }
-
-  if (sent) {
-    return (
-      <AuthShell
-        headline="Nearly there."
-        body="The link expires in an hour and works only once, so nobody else can use it."
-        footnote="Free for 14 days. No card needed to look around."
-        below={
-          <>
-            Nothing arrived?{" "}
-            <button
-              type="button"
-              onClick={() => setSent(false)}
-              className="text-brand hover:text-brand-dark font-semibold"
-            >
-              Send it again
-            </button>
-          </>
-        }
-      >
-        <AuthCard
-          title="Check your email"
-          intro="We sent a link to dana@alphaplumbing.ca. It works once and expires in an hour."
-        />
-      </AuthShell>
-    );
+    }
   }
 
   return (
     <AuthShell
-      headline="Locked out. It happens."
-      body="Your campaigns keep running while you sort this out. Nothing pauses, and nothing is lost."
-      footnote="Free for 14 days. No card needed to look around."
+      headline="Forgotten your password?"
+      body="Tell us the address you signed up with and we will send a link to set a new one."
+      footnote="The link works for two hours, and once only."
       below={
         <>
-          Remembered it? <TextLink href="/login">Back to sign in</TextLink>
+          Remembered it? <TextLink href="/login">Sign in</TextLink>
         </>
       }
     >
-      <AuthCard
-        title="Reset your password"
-        intro="Tell us the email you signed up with and we'll send a link to set a new one."
-        onSubmit={submit}
-      >
-        <Field label="Email">
-          {(id) => (
-            <Input
-              id={id}
-              name="email"
-              type="email"
-              autoComplete="email"
-              defaultValue="dana@alphaplumbing.ca"
-            />
-          )}
-        </Field>
-        <Button type="submit" full className="h-12" working={working && "Sending"}>
-          Send the link
-        </Button>
-      </AuthCard>
+      {sent ? (
+        <AuthCard title="Check your email">
+          <p className="text-muted text-[15px] leading-[23px]">
+            If that address has an account, a link is on its way. It works for two hours. If nothing
+            arrives, look in your spam folder before trying again.
+          </p>
+          <LinkButton href="/login" full>
+            Back to sign in
+          </LinkButton>
+        </AuthCard>
+      ) : (
+        <AuthCard title="Send me a link" onSubmit={submit}>
+          <Field label="Your email">
+            {(id) => (
+              <Input
+                id={id}
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                placeholder="dana@alphaplumbing.ca"
+              />
+            )}
+          </Field>
+          <Button type="submit" full working={working && "Sending"}>
+            Send the link
+          </Button>
+        </AuthCard>
+      )}
     </AuthShell>
   );
 }

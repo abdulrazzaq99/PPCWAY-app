@@ -56,3 +56,47 @@ export function ConnectButton({
     </span>
   );
 }
+
+/*
+  Another confirmation link, for somebody whose first one is lost or expired.
+  It says what happened either way, because silence after a button is worse than
+  a refusal.
+*/
+export function ResendConfirmation() {
+  const [state, setState] = useState<"ready" | "sending" | "sent" | "failed">("ready");
+
+  async function again() {
+    setState("sending");
+    try {
+      const res = await fetch("/api/auth/verify/resend", { method: "POST" });
+      setState(res.ok ? "sent" : "failed");
+    } catch {
+      setState("failed");
+    }
+  }
+
+  if (state === "sent") {
+    return (
+      <span className="text-pw-ink-600 text-[14px] font-semibold">
+        Sent. It works for two days.
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex flex-col items-start gap-1">
+      <button
+        type="button"
+        onClick={again}
+        disabled={state === "sending"}
+        className="border-pw-border-strong hover:bg-pw-card rounded-[10px] border px-4 py-2 text-[14px] font-semibold disabled:opacity-70"
+      >
+        {state === "sending" ? "Sending…" : "Send it again"}
+      </button>
+      {state === "failed" ? (
+        <span className="text-pw-bad text-[13px]">
+          We could not send it. Try again in a minute.
+        </span>
+      ) : null}
+    </span>
+  );
+}
