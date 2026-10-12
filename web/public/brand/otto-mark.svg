@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512" role="img" aria-label="Otto AI by PPCway"><title>Otto AI</title><defs><linearGradient id="omg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8A4DFF"/><stop offset="1" stop-color="#4B2BBF"/></linearGradient></defs><rect width="64" height="64" rx="18" fill="url(#omg)"/>
+<path d="M14 21L11.5 7.5L24 15Z" fill="#B9C8FF"/>
+<path d="M50 21L52.5 7.5L40 15Z" fill="#B9C8FF"/>
+<path d="M32 12c-12.5 0-20 8.5-20 20.5C12 45 20.5 54 32 54s20-9 20-21.5C52 20.5 44.5 12 32 12z" fill="#E8EEFF"/>
+<circle cx="24" cy="30" r="8.2" fill="#FFFFFF" stroke="#2F5BEA" stroke-width="2.4"/>
+<circle cx="40" cy="30" r="8.2" fill="#FFFFFF" stroke="#2F5BEA" stroke-width="2.4"/>
+<circle cx="24.6" cy="30.6" r="4.3" fill="#15112A"/>
+<circle cx="39.4" cy="30.6" r="4.3" fill="#15112A"/>
+<circle cx="26" cy="29" r="1.5" fill="#FFFFFF"/>
+<circle cx="40.8" cy="29" r="1.5" fill="#FFFFFF"/>
+<path d="M32 36.5l-3.6 4.2 3.6 4.8 3.6-4.8z" fill="#F5B84A"/>
+<path d="M42 55L53.5 43.5" fill="none" stroke="#34D399" stroke-width="5" stroke-linecap="round"/>
+<path d="M46 42.5H54.5V51" fill="none" stroke="#34D399" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -33,6 +33,7 @@ from ppcway.ads.oauth import (
 )
 from ppcway.ads.planner import demand_for
 from ppcway.ads.stats import read_account
+from ppcway.ads.summary import account_summary
 from ppcway.audit.models import AuditRequest, AuditRun
 from ppcway.audit.places import (
     Listing,
@@ -536,6 +537,47 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
             for a in found
         ]
+
+    @app.get("/v1/ads/summary")
+    def ads_summary(
+        session: Annotated[Session, Depends(get_session)],
+        days: int = 30,
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """The numbers the dashboard home is built from, for the chosen account.
+
+        Live, because there is no local mirror yet. A merchant with no connection
+        or no chosen account gets `read: false` and a sentence, not an error: the
+        home screen has plenty to show without it.
+        """
+        account = _signed_in(session, x_session_token)
+        connection = _connection(session, account)
+        if connection is None or not connection.customer_id:
+            return {"read": False, "trouble": "No Google Ads account is connected yet."}
+        if settings.google_ads_developer_token is None:
+            return {"read": False, "trouble": "Reading Google Ads is not set up yet."}
+        client_id, secret = _ads_ready()
+        try:
+            vault = TokenVault(
+                settings.google_oauth_token_key.get_secret_value()
+                if settings.google_oauth_token_key
+                else None
+            )
+            access = fresh_access_token(
+                vault.unlock(connection.ciphertext), client_id=client_id, client_secret=secret
+            )
+            found = account_summary(
+                connection.customer_id,
+                access_token=access,
+                developer_token=settings.google_ads_developer_token.get_secret_value(),
+                days=days if days in (7, 30, 90) else 30,
+                api_version=settings.google_ads_api_version,
+                login_customer_id=settings.google_ads_login_customer_id,
+            )
+        except (AdsConnectionRefused, VaultUnavailable) as exc:
+            log.warning("home numbers failed for account %s: %s", account.id, exc)
+            return {"read": False, "trouble": "We could not read your Google Ads account."}
+        return found.as_dict()
 
     @app.post("/v1/ads/choose", response_model=AdsStatusOut)
     def choose_account(

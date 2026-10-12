@@ -306,3 +306,133 @@ body {
     transform: translateX(300%);
   }
 }
+
+/*
+  The customer dashboard's own tokens, from the client's handoff
+  (ppcway-dashboard-handoff/design-system). The signed-in app is built from
+  these; the public site keeps the palette above. Where both name a colour, the
+  handoff wins inside .pw.
+*/
+:root {
+  --pw-blue: #2f5bea;
+  --pw-blue-hover: #1e44c7;
+  --pw-blue-ink: #1e3a8a;
+  --pw-blue-tint: #eef2fe;
+  --pw-blue-tint-2: #f7f8fd;
+  --pw-blue-disabled: #b9c6f2;
+  --pw-blue-chart-light: #a9bcf8;
+  --pw-otto: #7138e2;
+  --pw-otto-ink: #5b21b6;
+  --pw-otto-light: #a78bfa;
+  --pw-otto-tint: #f3eefe;
+  --pw-otto-tint-2: #fbf9ff;
+  --pw-otto-border: #c4b5fd;
+
+  --pw-ink-900: #15112a;
+  --pw-ink-700: #3a3550;
+  --pw-ink-600: #4a4560;
+  --pw-ink-500: #6b6680;
+  --pw-ink-400: #8a8599;
+  --pw-ink-300: #9a94ad;
+  --pw-ink-200: #c9c4d9;
+
+  --pw-ground: #f6f5f2;
+  --pw-card: #ffffff;
+  --pw-row-hover: #faf9f7;
+  --pw-muted: #f4f2ee;
+  --pw-track: #f0eeea;
+  --pw-border: #e8e5df;
+  --pw-border-input: #e0dce8;
+  --pw-border-strong: #d5d0df;
+  --pw-divider: #f3f2ee;
+
+  --pw-night: #15112a;
+  --pw-night-raised: #1f1a38;
+  --pw-night-border: #2c2645;
+  --pw-night-border-strong: #3a3452;
+  --pw-night-text: #e4e0ee;
+  --pw-night-muted: #c9c4d9;
+
+  --pw-good: #15803d;
+  --pw-good-bg: #e9fbf0;
+  --pw-good-ink: #14532d;
+  --pw-good-solid: #16a34a;
+  --pw-warn: #b45309;
+  --pw-warn-bg: #fff4e0;
+  --pw-warn-ink: #713f12;
+  --pw-warn-border: #f3d9a6;
+  --pw-bad: #b91c1c;
+  --pw-bad-bg: #fdecec;
+  --pw-bad-ink: #7f1d1d;
+  --pw-bad-solid: #dc2626;
+  --pw-neutral: #4a4560;
+  --pw-neutral-bg: #f4f2ee;
+  --pw-info: #1e3a8a;
+  --pw-info-bg: #eef2fe;
+
+  --pw-r-input: 12px;
+  --pw-r-button: 12px;
+  --pw-r-card: 18px;
+  --pw-r-hero: 24px;
+  --pw-r-pill: 999px;
+
+  --pw-shadow-selected: 0 8px 24px rgba(47, 91, 234, 0.1);
+  --pw-shadow-selected-otto: 0 8px 24px rgba(113, 56, 226, 0.12);
+  --pw-shadow-toast: 0 18px 40px rgba(21, 17, 42, 0.3);
+
+  --pw-sidebar-w: 252px;
+  --pw-content-max: 1200px;
+}
+
+/* Numbers in tables and figures line up under each other. */
+.pw-num {
+  font-variant-numeric: tabular-nums;
+}
+
+@theme inline {
+  --color-pw-blue: var(--pw-blue);
+  --color-pw-blue-hover: var(--pw-blue-hover);
+  --color-pw-blue-ink: var(--pw-blue-ink);
+  --color-pw-blue-tint: var(--pw-blue-tint);
+  --color-pw-blue-tint-2: var(--pw-blue-tint-2);
+  --color-pw-blue-light: var(--pw-blue-chart-light);
+  --color-pw-otto: var(--pw-otto);
+  --color-pw-otto-ink: var(--pw-otto-ink);
+  --color-pw-otto-light: var(--pw-otto-light);
+  --color-pw-otto-tint: var(--pw-otto-tint);
+  --color-pw-otto-border: var(--pw-otto-border);
+  --color-pw-ink: var(--pw-ink-900);
+  --color-pw-ink-700: var(--pw-ink-700);
+  --color-pw-ink-600: var(--pw-ink-600);
+  --color-pw-ink-500: var(--pw-ink-500);
+  --color-pw-ink-400: var(--pw-ink-400);
+  --color-pw-ink-300: var(--pw-ink-300);
+  --color-pw-ink-200: var(--pw-ink-200);
+  --color-pw-ground: var(--pw-ground);
+  --color-pw-card: var(--pw-card);
+  --color-pw-row-hover: var(--pw-row-hover);
+  --color-pw-muted: var(--pw-muted);
+  --color-pw-track: var(--pw-track);
+  --color-pw-border: var(--pw-border);
+  --color-pw-border-input: var(--pw-border-input);
+  --color-pw-border-strong: var(--pw-border-strong);
+  --color-pw-divider: var(--pw-divider);
+  --color-pw-night: var(--pw-night);
+  --color-pw-night-raised: var(--pw-night-raised);
+  --color-pw-night-border: var(--pw-night-border);
+  --color-pw-night-text: var(--pw-night-text);
+  --color-pw-night-muted: var(--pw-night-muted);
+  --color-pw-good: var(--pw-good);
+  --color-pw-good-bg: var(--pw-good-bg);
+  --color-pw-good-ink: var(--pw-good-ink);
+  --color-pw-warn: var(--pw-warn);
+  --color-pw-warn-bg: var(--pw-warn-bg);
+  --color-pw-warn-ink: var(--pw-warn-ink);
+  --color-pw-warn-border: var(--pw-warn-border);
+  --color-pw-bad: var(--pw-bad);
+  --color-pw-bad-bg: var(--pw-bad-bg);
+  --color-pw-bad-ink: var(--pw-bad-ink);
+  --radius-pw: var(--pw-r-card);
+  --radius-pw-hero: var(--pw-r-hero);
+  --radius-pw-button: var(--pw-r-button);
+}
