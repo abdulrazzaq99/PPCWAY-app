@@ -33,7 +33,7 @@ from ppcway.ads.oauth import (
 )
 from ppcway.ads.planner import demand_for
 from ppcway.ads.stats import read_account
-from ppcway.ads.summary import account_summary
+from ppcway.ads.summary import account_summary, campaign_detail
 from ppcway.audit.models import AuditRequest, AuditRun
 from ppcway.audit.places import (
     Listing,
@@ -414,10 +414,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return account
 
     def _connection(session: Session, account: UserAccount) -> AdsConnection | None:
+        """Their live permission, preferring one that names an account.
+
+        A merchant who starts the trip to Google twice leaves two rows behind.
+        Picking the newest blindly can pick the one that never got as far as
+        choosing an account, which then reports "connected" and reads nothing.
+        """
         return session.scalar(
             select(AdsConnection)
             .where(AdsConnection.account_id == account.id, AdsConnection.revoked_at.is_(None))
-            .order_by(AdsConnection.created_at.desc())
+            .order_by(
+                (AdsConnection.customer_id.is_(None)).asc(),
+                (AdsConnection.customer_id == "").asc(),
+                AdsConnection.created_at.desc(),
+            )
         )
 
     @app.post("/v1/ads/connect", response_model=ConnectStartOut)
@@ -482,6 +492,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(502, str(exc)) from None
 
         trip.used_at = datetime.now(UTC)
+        for old in session.scalars(
+            select(AdsConnection).where(
+                AdsConnection.account_id == account.id, AdsConnection.revoked_at.is_(None)
+            )
+        ):
+            # Connecting again replaces the last permission rather than racing it.
+            old.revoked_at = datetime.now(UTC)
         connection = AdsConnection(
             account_id=account.id, ciphertext=vault.lock(grant.refresh_token)
         )
@@ -596,6 +613,54 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "trouble": "Google has ended this permission. Connect again to carry on.",
                 }
             return {"read": False, "trouble": "We could not read your Google Ads account."}
+        return found.as_dict()
+
+    @app.get("/v1/ads/campaigns/{campaign_id}")
+    def ads_campaign(
+        campaign_id: str,
+        session: Annotated[Session, Depends(get_session)],
+        days: int = 30,
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """One campaign: its numbers, keywords, search terms and ads."""
+        if not campaign_id.isdigit():
+            raise HTTPException(404, "No campaign with that id.")
+        account = _signed_in(session, x_session_token)
+        connection = _connection(session, account)
+        if connection is None or not connection.customer_id:
+            return {"read": False, "trouble": "No Google Ads account is connected yet."}
+        if settings.google_ads_developer_token is None:
+            return {"read": False, "trouble": "Reading Google Ads is not set up yet."}
+        client_id, secret = _ads_ready()
+        try:
+            vault = TokenVault(
+                settings.google_oauth_token_key.get_secret_value()
+                if settings.google_oauth_token_key
+                else None
+            )
+            access = fresh_access_token(
+                vault.unlock(connection.ciphertext), client_id=client_id, client_secret=secret
+            )
+            found = campaign_detail(
+                connection.customer_id,
+                campaign_id,
+                access_token=access,
+                developer_token=settings.google_ads_developer_token.get_secret_value(),
+                days=days if days in (7, 30, 90) else 30,
+                api_version=settings.google_ads_api_version,
+                login_customer_id=settings.google_ads_login_customer_id,
+            )
+        except (AdsConnectionRefused, VaultUnavailable) as exc:
+            log.warning("campaign %s unreadable for %s: %s", campaign_id, account.id, exc)
+            if _permission_is_gone(exc):
+                connection.revoked_at = datetime.now(UTC)
+                session.commit()
+                return {
+                    "read": False,
+                    "reconnect": True,
+                    "trouble": "Google has ended this permission.",
+                }
+            return {"read": False, "trouble": "We could not read that campaign."}
         return found.as_dict()
 
     @app.post("/v1/ads/choose", response_model=AdsStatusOut)

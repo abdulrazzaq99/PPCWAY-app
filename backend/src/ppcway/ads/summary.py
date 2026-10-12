@@ -275,3 +275,221 @@ def account_summary(
     finally:
         if own:
             c.close()
+
+
+@dataclass
+class Detail:
+    """One campaign, as its page needs it: the numbers, and what is inside it."""
+
+    read: bool = False
+    trouble: str = ""
+    campaign_id: str = ""
+    name: str = ""
+    status: str = ""
+    currency: str = ""
+    days: int = 30
+    leads: float = 0.0
+    cost: float = 0.0
+    clicks: int = 0
+    impressions: int = 0
+    budget: float = 0.0
+    lost_to_budget: float = 0.0
+    lost_to_rank: float = 0.0
+    impression_share: float = 0.0
+    keywords: list[dict[str, Any]] = field(default_factory=list)
+    terms: list[dict[str, Any]] = field(default_factory=list)
+    ads: list[dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def cost_per_lead(self) -> float:
+        return round(self.cost / self.leads, 2) if self.leads else 0.0
+
+    @property
+    def lead_rate(self) -> float:
+        """Clicks that became an enquiry, as a percentage."""
+        return round((self.leads / self.clicks) * 100, 1) if self.clicks else 0.0
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "read": self.read,
+            "trouble": self.trouble,
+            "campaign_id": self.campaign_id,
+            "name": self.name,
+            "status": self.status,
+            "currency": self.currency,
+            "days": self.days,
+            "leads": round(self.leads, 2),
+            "cost": round(self.cost, 2),
+            "clicks": self.clicks,
+            "impressions": self.impressions,
+            "budget": self.budget,
+            "cost_per_lead": self.cost_per_lead,
+            "lead_rate": self.lead_rate,
+            "lost_to_budget": self.lost_to_budget,
+            "lost_to_rank": self.lost_to_rank,
+            "impression_share": self.impression_share,
+            "keywords": self.keywords,
+            "terms": self.terms,
+            "ads": self.ads,
+        }
+
+
+def _share(value: Any) -> float:
+    try:
+        return round(float(value) * 100, 1)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def campaign_detail(
+    customer_id: str,
+    campaign_id: str,
+    *,
+    access_token: str,
+    developer_token: str,
+    days: int = 30,
+    api_version: str = "v25",
+    login_customer_id: str | None = None,
+    client: httpx.Client | None = None,
+) -> Detail:
+    """What one campaign did, and what it is made of.
+
+    Four reads again, each filtered to the campaign. A refusal on one leaves the
+    others standing, the same as everywhere else: a page that shows the keywords
+    and says it could not read the search terms is more use than an error.
+    """
+    own = client is None
+    c = client or httpx.Client(timeout=httpx.Timeout(60))
+    window = f"LAST_{days}_DAYS" if days in (7, 14, 30) else "LAST_30_DAYS"
+    found = Detail(campaign_id=campaign_id, days=days)
+    where = f"campaign.id = {campaign_id}"
+    ask = {
+        "access_token": access_token,
+        "developer_token": developer_token,
+        "login_customer_id": login_customer_id,
+        "api_version": api_version,
+        "client": c,
+    }
+    try:
+        rows, trouble = _ask(
+            customer_id,
+            f"""
+            SELECT campaign.id, campaign.name, campaign.status, customer.currency_code,
+                   campaign_budget.amount_micros, metrics.conversions, metrics.cost_micros,
+                   metrics.clicks, metrics.impressions,
+                   metrics.search_budget_lost_impression_share,
+                   metrics.search_rank_lost_impression_share, metrics.search_impression_share
+            FROM campaign WHERE {where} AND segments.date DURING {window}
+            """,
+            **ask,  # type: ignore[arg-type]
+        )
+        if trouble:
+            found.trouble = trouble
+            return found
+        for row in rows:
+            campaign = row.get("campaign", {})
+            metrics = row.get("metrics", {})
+            found.name = str(campaign.get("name", "")) or found.name
+            found.status = str(campaign.get("status", "")) or found.status
+            found.currency = str(row.get("customer", {}).get("currencyCode", "")) or found.currency
+            found.budget = (
+                _micros(row.get("campaignBudget", {}).get("amountMicros")) or found.budget
+            )
+            found.leads += float(metrics.get("conversions", 0) or 0)
+            found.cost += _micros(metrics.get("costMicros"))
+            found.clicks += int(metrics.get("clicks", 0) or 0)
+            found.impressions += int(metrics.get("impressions", 0) or 0)
+            found.lost_to_budget = _share(metrics.get("searchBudgetLostImpressionShare"))
+            found.lost_to_rank = _share(metrics.get("searchRankLostImpressionShare"))
+            found.impression_share = _share(metrics.get("searchImpressionShare"))
+        found.cost = round(found.cost, 2)
+
+        keywords, _ = _ask(
+            customer_id,
+            f"""
+            SELECT ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type,
+                   ad_group_criterion.quality_info.quality_score,
+                   metrics.clicks, metrics.conversions, metrics.cost_micros
+            FROM keyword_view WHERE {where} AND segments.date DURING {window}
+            ORDER BY metrics.cost_micros DESC
+            """,
+            **ask,  # type: ignore[arg-type]
+        )
+        for row in keywords[:60]:
+            criterion = row.get("adGroupCriterion", {})
+            metrics = row.get("metrics", {})
+            leads = round(float(metrics.get("conversions", 0) or 0), 2)
+            cost = _micros(metrics.get("costMicros"))
+            found.keywords.append(
+                {
+                    "keyword": str(criterion.get("keyword", {}).get("text", "")),
+                    "match": str(criterion.get("keyword", {}).get("matchType", "")).title(),
+                    "quality_score": int(
+                        criterion.get("qualityInfo", {}).get("qualityScore", 0) or 0
+                    ),
+                    "clicks": int(metrics.get("clicks", 0) or 0),
+                    "leads": leads,
+                    "cost": cost,
+                    "cost_per_lead": round(cost / leads, 2) if leads else 0.0,
+                }
+            )
+
+        terms, _ = _ask(
+            customer_id,
+            f"""
+            SELECT search_term_view.search_term, metrics.clicks, metrics.conversions,
+                   metrics.cost_micros
+            FROM search_term_view WHERE {where} AND segments.date DURING {window}
+              AND metrics.cost_micros > 0
+            ORDER BY metrics.cost_micros DESC
+            """,
+            **ask,  # type: ignore[arg-type]
+        )
+        for row in terms[:60]:
+            metrics = row.get("metrics", {})
+            leads = round(float(metrics.get("conversions", 0) or 0), 2)
+            found.terms.append(
+                {
+                    "term": str(row.get("searchTermView", {}).get("searchTerm", "")),
+                    "clicks": int(metrics.get("clicks", 0) or 0),
+                    "leads": leads,
+                    "cost": _micros(metrics.get("costMicros")),
+                    # Google's word for it, not ours: money spent, nothing back.
+                    "waste": leads == 0,
+                }
+            )
+
+        ads, _ = _ask(
+            customer_id,
+            f"""
+            SELECT ad_group.name, ad_group_ad.ad.responsive_search_ad.headlines,
+                   ad_group_ad.policy_summary.approval_status, ad_group_ad.status,
+                   metrics.impressions, metrics.clicks, metrics.conversions
+            FROM ad_group_ad WHERE {where} AND segments.date DURING {window}
+            ORDER BY metrics.impressions DESC
+            """,
+            **ask,  # type: ignore[arg-type]
+        )
+        for row in ads[:30]:
+            entry = row.get("adGroupAd", {})
+            metrics = row.get("metrics", {})
+            heads = (entry.get("ad", {}).get("responsiveSearchAd", {}) or {}).get("headlines", [])
+            impressions = int(metrics.get("impressions", 0) or 0)
+            clicks = int(metrics.get("clicks", 0) or 0)
+            found.ads.append(
+                {
+                    "ad_group": str(row.get("adGroup", {}).get("name", "")),
+                    "headlines": [str(h.get("text", "")) for h in heads][:3],
+                    "approval": str(entry.get("policySummary", {}).get("approvalStatus", "")),
+                    "status": str(entry.get("status", "")),
+                    "impressions": impressions,
+                    "clicks": clicks,
+                    "click_rate": round((clicks / impressions) * 100, 1) if impressions else 0.0,
+                }
+            )
+
+        found.read = True
+        return found
+    finally:
+        if own:
+            c.close()
