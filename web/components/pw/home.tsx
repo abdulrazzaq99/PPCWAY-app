@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ConnectButton } from "@/components/pw/connect-button";
 import { Chip, Kpi, PwCard } from "@/components/pw/shell";
 import { cn } from "@/lib/cn";
 
@@ -15,6 +16,8 @@ import { cn } from "@/lib/cn";
 export type Summary = {
   read: boolean;
   trouble?: string;
+  /** Google has ended the permission; the only way forward is to grant it again. */
+  reconnect?: boolean;
   currency?: string;
   days?: number;
   leads?: number;
@@ -66,7 +69,11 @@ export function Home({
 
   return (
     <>
-      {!connected ? <ConnectBanner /> : null}
+      {summary.reconnect ? (
+        <GoneBanner trouble={summary.trouble} />
+      ) : !connected ? (
+        <ConnectBanner />
+      ) : null}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
@@ -140,12 +147,23 @@ function ConnectBanner() {
         <strong className="font-bold">Your Google Ads account is not connected yet.</strong> Connect
         it, read only, and this page fills with your own numbers.
       </p>
-      <Link
-        href="/welcome"
+      <ConnectButton className="bg-pw-warn-ink rounded-[10px] px-4 py-2 text-[14px] font-semibold text-white" />
+    </div>
+  );
+}
+
+function GoneBanner({ trouble }: { trouble?: string }) {
+  return (
+    <div className="border-pw-warn-border bg-pw-warn-bg flex flex-wrap items-center justify-between gap-4 rounded-[14px] border px-5 py-4">
+      <p className="text-pw-warn-ink text-[15px] leading-[22px]">
+        <strong className="font-bold">Google has ended the permission for your account.</strong>{" "}
+        {trouble ?? "Connect again and everything here fills back in."} Nothing of yours was
+        changed, and your campaigns are untouched.
+      </p>
+      <ConnectButton
+        label="Connect again"
         className="bg-pw-warn-ink rounded-[10px] px-4 py-2 text-[14px] font-semibold text-white"
-      >
-        Connect Google Ads
-      </Link>
+      />
     </div>
   );
 }

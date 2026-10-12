@@ -389,6 +389,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> None:
         sign_out(session, x_session_token)
 
+    def _permission_is_gone(exc: Exception) -> bool:
+        """Google saying the grant no longer exists, in any of its wordings.
+
+        It happens when the merchant revokes us in their Google account, when a
+        testing-mode token ages out, and — the one that caught us out — when any
+        token in the same grant is revoked, which takes the whole grant with it.
+        """
+        said = str(exc).lower()
+        return "expired or revoked" in said or "invalid_grant" in said
+
     def _ads_ready() -> tuple[str, str]:
         """The two credentials the trip needs, or a refusal naming what is missing."""
         client_id = settings.google_oauth_client_id
@@ -576,6 +586,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         except (AdsConnectionRefused, VaultUnavailable) as exc:
             log.warning("home numbers failed for account %s: %s", account.id, exc)
+            if _permission_is_gone(exc):
+                # The grant is gone at Google's end, so stop claiming it is here.
+                connection.revoked_at = datetime.now(UTC)
+                session.commit()
+                return {
+                    "read": False,
+                    "reconnect": True,
+                    "trouble": "Google has ended this permission. Connect again to carry on.",
+                }
             return {"read": False, "trouble": "We could not read your Google Ads account."}
         return found.as_dict()
 
