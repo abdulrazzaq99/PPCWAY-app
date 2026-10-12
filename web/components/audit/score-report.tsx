@@ -156,6 +156,28 @@ export function ScoreReport({ sample }: { sample: AuditSample }) {
         </div>
       </section>
 
+      {/*
+        What the searching is worth, when we know. It sits directly under the
+        score because a number in pounds is the only line on this page that
+        makes somebody act, and it is left out entirely rather than guessed.
+      */}
+      {sample.cost ? (
+        <section className="mt-8">
+          <Card className="px-5 py-6 sm:px-7 sm:py-7">
+            <p className="text-brand text-[13px] leading-4 font-semibold tracking-[0.08em] uppercase">
+              {sample.cost.basis}
+            </p>
+            <h2 className="mt-2 text-[24px] leading-[30px] font-semibold text-balance sm:text-[30px] sm:leading-[36px]">
+              {sample.cost.title}
+            </h2>
+            <p className="mt-3 text-[17px] leading-[26px] font-semibold">{sample.cost.daily}</p>
+            <p className="text-muted mt-3 max-w-[760px] text-[16px] leading-[25px]">
+              {sample.cost.body}
+            </p>
+          </Card>
+        </section>
+      ) : null}
+
       <section className="mt-8">
         <Card className="overflow-hidden">
           <ul className="divide-line-soft divide-y">

@@ -234,6 +234,37 @@ function comparePanel(mine: Listing, rivals: Listing[]): AuditPanel {
   return { title: "Your competitors", score: "For information", lines };
 }
 
+/*
+  The money line. Until a merchant connects their account this stays a promise,
+  because the only honest answer to "what is this worth" is Google's own search
+  volume for their trade in their town, and that needs their permission.
+*/
+function demandCost(ads: AdsReading): AuditSample["cost"] | undefined {
+  const demand = ads.demand;
+  if (!demand?.read || demand.monthly <= 0) return undefined;
+  const where = demand.town_matched && demand.town ? `in ${demand.town}` : "across Canada";
+  // Searches, not people. Google returns many phrasings of the same intent, each
+  // with its own volume, so the total counts searches typed and says so.
+  const searches = demand.monthly.toLocaleString();
+  const daily = Math.round(demand.monthly / 30).toLocaleString();
+  const priced = demand.click_high > 0;
+  const top = demand.searches[0]?.term;
+  return {
+    basis: "Google's own search volume",
+    title: `About ${searches} searches a month for what you do ${where}.`,
+    daily: `That is roughly ${daily} a day${
+      priced
+        ? `, and the top of the page costs $${demand.click_low} to $${demand.click_high} a click`
+        : ""
+    }.`,
+    body: `${top ? `The most searched phrase is "${top}". ` : ""}That is the whole of the searching, across every way people phrase it. These are Google's figures for your trade and your town, not ours${
+      demand.town_matched
+        ? ""
+        : " — Google could not place your town, so this is the country-wide figure"
+    }. What you do with that is the whole of the work.`,
+  };
+}
+
 function costOf(lines: AuditLine[], site: string): AuditSample["cost"] {
   const worst = lines.find((l) => l.verdict === "cost");
   if (!worst) return undefined;
@@ -288,7 +319,8 @@ export function reportFromRun(run: Run, mine: Listing | null, rivals: Listing[])
       ],
       button: "Connect Google Ads, read only",
     },
-    cost: costOf(ordered, site),
+    // Their own account answers it in money; without one it stays a promise.
+    cost: (run.report?.ads ? demandCost(run.report.ads) : undefined) ?? costOf(ordered, site),
     locked:
       rivals.length > 2
         ? {

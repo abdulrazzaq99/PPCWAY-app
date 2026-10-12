@@ -31,6 +31,7 @@ from ppcway.ads.oauth import (
     fresh_access_token,
     new_state,
 )
+from ppcway.ads.planner import demand_for
 from ppcway.ads.stats import read_account
 from ppcway.audit.models import AuditRequest, AuditRun
 from ppcway.audit.places import (
@@ -253,6 +254,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             source=body.source,
             place_id=body.place_id.strip(),
             city=body.city.strip(),
+            trade=body.trade.strip(),
             user_id=asked_by.id if asked_by else None,
             consent_text=CONSENT_TEXT if body.consent else "",
         )
@@ -699,6 +701,7 @@ def _their_ads(
         if connection is None or not connection.customer_id:
             return None
         customer_id, ciphertext = connection.customer_id, connection.ciphertext
+        trade, city, place_id = asked.trade, asked.city, asked.place_id
 
     if not (settings.google_oauth_client_id and settings.google_oauth_client_secret):
         return None
@@ -715,17 +718,59 @@ def _their_ads(
             client_id=settings.google_oauth_client_id,
             client_secret=settings.google_oauth_client_secret.get_secret_value(),
         )
+        developer_token = settings.google_ads_developer_token.get_secret_value()
         reading = read_account(
             customer_id,
             access_token=access,
-            developer_token=settings.google_ads_developer_token.get_secret_value(),
+            developer_token=developer_token,
             api_version=settings.google_ads_api_version,
             login_customer_id=settings.google_ads_login_customer_id,
         )
     except (AdsConnectionRefused, VaultUnavailable) as exc:
         log.warning("audit %s could not read the connected Google Ads account: %s", run_id, exc)
         return None
-    return reading.as_dict()
+
+    written = reading.as_dict()
+    # What the trade is worth in that town. A separate question from how their
+    # own account is doing, and the only one that answers "is this worth money".
+    seeds = _seeds(trade, city, place_id, settings)
+    if seeds:
+        written["demand"] = demand_for(
+            seeds,
+            city,
+            customer_id=customer_id,
+            access_token=access,
+            developer_token=developer_token,
+            api_version=settings.google_ads_api_version,
+            login_customer_id=settings.google_ads_login_customer_id,
+        ).as_dict()
+    return written
+
+
+def _seeds(trade: str, city: str, place_id: str, settings: Settings) -> list[str]:
+    """The phrases a customer would actually type.
+
+    The trade they gave is best. Failing that, Google's own word for the business
+    from its listing, which is why the place id is worth one lookup. Failing both,
+    nothing: a guessed trade produces a confident number about the wrong business.
+    """
+    word = trade.strip().lower()
+    if not word and place_id and settings.google_maps_api_key:
+        try:
+            listing = place_details(
+                place_id, api_key=settings.google_maps_api_key.get_secret_value()
+            )
+            word = (listing.category if listing else "").strip().lower()
+        except PlacesError as exc:
+            log.warning("could not read the listing for its trade: %s", exc)
+    if not word:
+        return []
+    town = city.strip().lower()
+    seeds = [word, f"{word} near me", f"emergency {word}"]
+    if town:
+        seeds.insert(1, f"{word} {town}")
+    # Dedupe, keeping the order, because Google charges by the call not the seed.
+    return list(dict.fromkeys(seeds))
 
 
 def _run(run_id: UUID, settings: Settings) -> None:

@@ -28,6 +28,17 @@ export type AdsReading = {
   keywords: { read: boolean; trouble: string; rows: Weak[] };
   share: { read: boolean; trouble: string; rows: Share[] };
   rejected: { read: boolean; trouble: string; rows: Rejected[] };
+  /** What the trade is worth in their town, from Google's own search volumes. */
+  demand?: {
+    read: boolean;
+    trouble: string;
+    town: string;
+    town_matched: boolean;
+    monthly: number;
+    click_low: number;
+    click_high: number;
+    searches: { term: string; monthly: number }[];
+  };
 };
 type Wasted = { term: string; cost: number; clicks: number };
 type Weak = { keyword: string; quality_score: number; cost: number; clicks: number };
