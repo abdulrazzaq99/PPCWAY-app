@@ -58,9 +58,10 @@
     and the reasoning behind it.
   </p>
   <p class="lede">
-    The dates assume one developer. Where a wait is Google&rsquo;s rather than ours &mdash;
-    app verification, Standard API access &mdash; it is named and placed early, because those
-    reviews take weeks and nothing we do makes them faster.
+    The build is planned over four weeks, at the pace this project has actually been running.
+    Two things cannot be compressed by working faster: Google&rsquo;s reviews, and the soak
+    periods the requirements themselves set as exit gates. Both are named and dated separately,
+    so the plan does not pretend they are work.
   </p>
 
   <table style="margin-top:12mm">
@@ -69,14 +70,16 @@
     <tr><td><strong>Live today</strong></td>
         <td>The free audit, Google sign-in, a read-only Google Ads connection, and the new dashboard at app.ppcway.com</td></tr>
     <tr><td><strong>Plan starts</strong></td><td>Tuesday 13 October 2026</td></tr>
-    <tr><td><strong>Launch-ready</strong></td>
-        <td><strong>Friday 25 June 2027</strong> with one developer &middot; <strong>mid-March 2027</strong> with two</td></tr>
+    <tr><td><strong>Build complete</strong></td><td><strong>Friday 13 November 2026</strong> &mdash; every requirement written and tested</td></tr>
+    <tr><td><strong>Open to real customers</strong></td>
+        <td><strong>Early December 2026</strong>, once Google&rsquo;s reviews land and the soak gates pass</td></tr>
   </table>
 
   <p class="footer-note">
-    Estimates are grounded in what this project has actually taken: four weeks of building
-    produced the audit engine, the Google integration and the dashboard shell. Nothing here
-    assumes a faster pace than that.
+    The pace is the one this project has been running at: a single day last week produced the
+    whole dashboard in the client&rsquo;s design, two new reporting endpoints and three fixes
+    found by testing against a live account. The plan assumes that continues, and says plainly
+    where it would break.
   </p>
 </section>
 
@@ -146,18 +149,27 @@
 <h2 class="pagebreak">How the dates were reached</h2>
 
 <p>
-  Four weeks of work produced the audit engine, the Google Ads integration, the deployment and the
-  dashboard shell. The estimates below assume the same pace: roughly one substantial feature a week
-  for one developer, less where the work waits on Google.
+  This is not a conventional estimate, because it is not a conventional pace. In four weeks the
+  project has produced the audit engine, the Google Ads integration, the deployment, the domain,
+  the client&rsquo;s dashboard and the live account reading &mdash; and the last of those took a
+  single day. The plan below assumes that continues: roughly one milestone a week rather than one
+  feature.
+</p>
+<p>
+  What it does not assume is that anything outside the keyboard moves faster. Google reviews take
+  the time Google takes. A seven-day sync with no mismatches takes seven days. Thirty days of
+  pilot writes takes thirty days. Those are on a separate track, and they are why the build
+  finishing in November does not mean customers on the same day.
 </p>
 
 <table>
   <thead><tr><th style="width:30%">Assumption</th><th>What it means for the dates</th></tr></thead>
   <tbody>
-    <tr><td><strong>One developer</strong></td><td>Milestones run one after another. Two developers on independent tracks compresses the plan to roughly mid-March 2027; the second column of every milestone says what can run in parallel.</td></tr>
+    <tr><td><strong>The same pace as the last four weeks</strong></td><td>A milestone a week. If it drops to a conventional single-developer pace, the build runs to roughly June 2027 instead &mdash; the difference is that large, and it is the main risk in this plan.</td></tr>
+    <tr><td><strong>You review as it lands, not at the end</strong></td><td>Each week ends with something deployed and testable. A week&rsquo;s worth of feedback arriving in week four costs more than a week to unpick.</td></tr>
     <tr><td><strong>Google&rsquo;s reviews are not ours</strong></td><td>App verification (weeks) and Standard access (10&ndash;15 business days, often longer) are started as early as possible and run behind the build.</td></tr>
-    <tr><td><strong>The client answers on the day</strong></td><td>Three open questions block milestone 3. Each week they go unanswered moves everything after them by a week.</td></tr>
-    <tr><td><strong>No holidays assumed beyond two weeks</strong></td><td>Late December is treated as two weeks of no progress. Any other absence adds to the end.</td></tr>
+    <tr><td><strong>The three decisions are answered this week</strong></td><td>They block week three. At this pace a decision that takes a fortnight is the single most expensive thing in the plan.</td></tr>
+    <tr><td><strong>Scope does not grow</strong></td><td>Everything in the requirements and the handoff is in. Anything new displaces something, and the document says what.</td></tr>
     <tr><td><strong>Testing is in the estimate</strong></td><td>Every figure includes writing the tests, not just the feature. That is why they look slower than a demo would.</td></tr>
   </tbody>
 </table>
@@ -165,115 +177,170 @@
 <h2>The milestones</h2>
 
 <div class="ms">
-  <span class="when">Friday 7 November 2026</span>
-  <h3>M1 &middot; Foundation complete</h3>
-  <p class="small">Four weeks. Finishes phase 1 and its exit gate.</p>
+  <span class="when">Friday 17 October 2026</span>
+  <h3>Week 1 &middot; Foundation, and the clock on Google started</h3>
+  <p class="small">Finishes phase 1 of the requirements.</p>
   <ul>
-    <li><strong>Organisations, memberships and roles</strong> (1 week). Owner, admin, member, expert and client
+    <li><strong>Organisations, memberships and roles.</strong> Owner, admin, member, expert and client
         viewer, enforced in the backend rather than hidden in the interface. Everything later hangs
-        off this: plans, agencies, who may approve.</li>
-    <li><strong>The local mirror and its sync</strong> (2 weeks). Campaigns, ad groups, keywords, ads and daily
-        performance facts, synced every fifteen minutes for structure and hourly for performance,
-        with a nightly backfill for late conversions. The dashboard then reads our own database,
-        which is what makes a two-second home screen possible.</li>
-    <li><strong>The connect flow in full</strong> (1 week). The handoff&rsquo;s Get started screen: connect, choose
-        accounts, watch the first sync run, land on a first look at the account.</li>
+        off this: plans, agencies, who may approve a change.</li>
+    <li><strong>The local mirror and its sync.</strong> Campaigns, ad groups, keywords, ads and daily
+        performance facts in our own database, synced every fifteen minutes for structure and
+        hourly for performance, with a nightly backfill for late conversions. This is what makes a
+        two-second dashboard possible and what every screen after this reads from.</li>
+    <li><strong>The connect flow in full.</strong> The handoff&rsquo;s Get started screen: connect, choose
+        accounts, watch the first sync stream in, land on a first look at the account.</li>
+    <li><strong>Email and password sign-up</strong> with verification, beside the Google button.</li>
   </ul>
-  <p class="small"><strong>Exit gate:</strong> five internal accounts connected and synced for seven days with no
-     data mismatches, which is the requirement&rsquo;s own test.</p>
-  <p class="small"><strong>Started in parallel:</strong> the app verification submission to Google, because it is
-     slow and nothing depends on finishing it.</p>
+  <p class="small"><strong>Submitted on day one, because the clock is Google&rsquo;s:</strong> app
+     verification, which lifts the hundred-user limit. Nothing in the build waits for it.</p>
+  <p class="small"><strong>You can see at the end of the week:</strong> an account connecting, syncing and
+     filling the dashboard from our own data rather than a live call.</p>
 </div>
 
 <div class="ms">
-  <span class="when">Friday 16 January 2027</span>
-  <h3>M2 &middot; Read and recommend</h3>
-  <p class="small">Nine weeks, including two weeks of no progress over the holidays.</p>
+  <span class="when">Friday 24 October 2026</span>
+  <h3>Week 2 &middot; Read and recommend</h3>
+  <p class="small">Finishes phase 2. The product becomes worth opening daily.</p>
   <ul>
-    <li><strong>Dashboard home against the mirror</strong> (1 week). The results strip, "needs you", the Otto
-        activity list and the Visibility Score over time, all reading local data.</li>
-    <li><strong>Campaigns and campaign detail</strong> (1.5 weeks). The filter, the sparkline per row, and the
-        five tabs: overview, keywords, search terms, ads and change history.</li>
-    <li><strong>Reports</strong> (1.5 weeks). Thirty, ninety days and year on year, the significance test that
-        decides "a real change" from "within the normal range", definitions, and sharing.</li>
-    <li><strong>The audit as a living tool</strong> (1.5 weeks). Scheduled re-runs, change detection, the score
-        history, "what changed since last time", per-page landing checks and the alerts.</li>
-    <li><strong>Otto&rsquo;s recommendation engine, read only</strong> (3 weeks). The daily pass over each account
-        that turns findings into proposals with a reason, the evidence, an expected impact and an
-        undo plan. Shown in the inbox; nothing is applied.</li>
-    <li><strong>Email</strong> (0.5 week). The transactional provider, the weekly plain-language summary and
-        the alerts, which several requirements depend on.</li>
+    <li><strong>Dashboard home against the mirror:</strong> the results strip with the change against the
+        previous period, "needs you", the Otto activity list, and the Visibility Score over time.</li>
+    <li><strong>Campaigns and campaign detail finished:</strong> the per-row sparkline, the Learning chip
+        counting its days, and all five tabs including change history.</li>
+    <li><strong>Reports:</strong> thirty days, ninety days and year on year, the significance test that
+        decides "a real change" from "within the normal range", the definitions panel, and sharing
+        by link.</li>
+    <li><strong>The audit as a living tool:</strong> scheduled re-runs, website change detection, the score
+        history chart, "what changed since last time", per-page landing checks, and the alerts.</li>
+    <li><strong>Otto&rsquo;s recommendation engine, read only:</strong> the daily pass over each account that
+        turns findings into proposals with a reason, the evidence, an expected impact and an undo
+        plan. Shown in the inbox; nothing is applied to anything.</li>
+    <li><strong>Email:</strong> the provider, the weekly plain-language summary, and the alert messages
+        several other requirements depend on.</li>
   </ul>
-  <p class="small"><strong>Exit gate:</strong> pilot customers use it weekly, and the recommendations are reviewed
-     for accuracy by the client&rsquo;s Google Ads consultant before any of them can be applied.</p>
+  <p class="small"><strong>You can see at the end of the week:</strong> real recommendations about Byte9,
+     with the evidence behind each one, and a weekly email in your inbox.</p>
 </div>
 
 <div class="ms">
-  <span class="when">Friday 19 March 2027</span>
-  <h3>M3 &middot; Approve and write</h3>
-  <p class="small">Nine weeks. The heart of the product, and the first time PPCway changes anything.</p>
+  <span class="when">Friday 31 October 2026</span>
+  <h3>Week 3 &middot; Approve and write</h3>
+  <p class="small">Phase 3, and the first time PPCway changes anything in a real account.</p>
   <ul>
-    <li><strong>The change pipeline</strong> (2 weeks). Proposed change and applied change as first-class
-        records: type, target, before, after, reason, evidence, risk, route, status. Immutable once
-        applied, which is what powers history and undo.</li>
-    <li><strong>Guardrails</strong> (1.5 weeks). Checked before every write, in a fixed order: daily and monthly
-        spend caps, the maximum budget move in a day, blocked keywords, protected brand terms, and
-        no changes during the fourteen-day learning window except fixes.</li>
-    <li><strong>The write path to Google</strong> (2 weeks). One service, batched mutates, partial-failure
-        handling, a per-account queue with retries and backoff, and an alert at 80% of the daily
-        quota. A failed write never leaves half a change behind.</li>
-    <li><strong>Approvals and undo</strong> (1.5 weeks). The three routes &mdash; auto-applied, one tap, expert
-        sign-off &mdash; the toast with undo, and thirty days to revert any change from the history.</li>
-    <li><strong>Editing campaigns from the dashboard</strong> (1 week). Pause, resume, budget with its preview
-        card, negative keywords in one click from a search term, bulk actions.</li>
-    <li><strong>The expert console</strong> (1 week). The queue of assigned accounts, sign-off with a note the
+    <li><strong>The change pipeline:</strong> proposed change and applied change as first-class records
+        &mdash; type, target, before, after, reason, evidence, risk, route, status &mdash; immutable
+        once applied, which is what powers both the history and the undo.</li>
+    <li><strong>Guardrails,</strong> checked before every write in a fixed order: daily and monthly spend
+        caps, the largest budget move allowed in a day, blocked keywords, protected brand terms,
+        and no changes inside the fourteen-day learning window except fixes.</li>
+    <li><strong>The write path to Google:</strong> one service, batched mutates, partial-failure handling, a
+        per-account queue with retries and backoff, and an alert at 80% of the daily quota. A failed
+        write never leaves half a change behind.</li>
+    <li><strong>Approvals and undo:</strong> the three routes &mdash; auto-applied, one tap, expert sign-off
+        &mdash; the toast with Undo, and thirty days to revert anything from the history.</li>
+    <li><strong>Editing from the dashboard:</strong> pause, resume, the budget preview card, a negative
+        keyword in one click from a wasteful search term, and bulk actions.</li>
+    <li><strong>The expert console:</strong> the queue of assigned accounts, sign-off with a note the
         customer sees, sessions, and hours logged against the plan allowance.</li>
+    <li><strong>Chat with Otto:</strong> the tools that let it read the account, and a proposed change card
+        that can only become a change through the same approval as everything else.</li>
   </ul>
-  <p class="small"><strong>Exit gate:</strong> thirty days of pilot writes with zero guardrail breaches and every
-     change revertible &mdash; again, the requirement&rsquo;s own test.</p>
-  <p class="small"><strong>Blocked by:</strong> three client decisions, listed at the end of this document.</p>
+  <p class="small"><strong>Blocked unless the three decisions are in:</strong> auto-apply defaults, plan
+     limits and data residency. They shape the guardrail policy written on the Monday.</p>
+  <p class="small"><strong>You can see at the end of the week:</strong> a wasteful search term blocked in
+     Byte9 from the dashboard, logged, and put back with one tap.</p>
 </div>
 
 <div class="ms">
-  <span class="when">Friday 28 May 2027</span>
-  <h3>M4 &middot; New advertisers</h3>
-  <p class="small">Ten weeks. Can start before M3 finishes, since the builder writes through M3&rsquo;s pipeline.</p>
+  <span class="when">Friday 7 November 2026</span>
+  <h3>Week 4 &middot; New advertisers, plans and the phone</h3>
+  <p class="small">Phase 4 and the cross-cutting work.</p>
   <ul>
-    <li><strong>The PPCway manager account and account creation</strong> (2 weeks). Creating a client account in
-        the customer&rsquo;s currency and time zone, inviting them as an admin so they own it, and the
-        guided deep link into Google&rsquo;s billing with a block on launching until it is active.</li>
-    <li><strong>The campaign builder, eight steps</strong> (4 weeks). Goal, services, where and when, keywords
-        with estimates, ads with a live preview and a policy check, budget and bidding, tracking,
-        then review and launch. Autosave at every step.</li>
-    <li><strong>Learning mode</strong> (1 week). The fourteen to twenty-one day window, the day-3 and day-7
-        check-ins, and the rule that no bids change inside it.</li>
-    <li><strong>Plans, limits and billing</strong> (2 weeks). Starter, Growth and Agency with their account,
-        spend and expert-hour limits enforced in the backend, the per-currency price book, the
-        subscription, and the warnings at 80% and 100% of a plan&rsquo;s managed spend.</li>
-    <li><strong>Standard access and the required features</strong> (1 week of work, plus Google&rsquo;s review).
-        Target ROAS bidding and the search terms view must ship whether or not launch customers
-        need them, because Google audits for them.</li>
+    <li><strong>The PPCway manager account and account creation:</strong> a client account in the
+        customer&rsquo;s currency and time zone, the customer invited as admin so they own it, and the
+        guided deep link into Google&rsquo;s billing, with launch blocked until billing is active.</li>
+    <li><strong>The campaign builder, all eight steps:</strong> goal, services, where and when, keywords with
+        real estimates, ads with a live preview and a policy check, budget and bidding, tracking,
+        then review and launch &mdash; autosaving at every step, and writing through week three&rsquo;s
+        pipeline rather than around it.</li>
+    <li><strong>Learning mode:</strong> the fourteen to twenty-one day window, the day-3 and day-7 check-ins,
+        and the rule that no bids move inside it.</li>
+    <li><strong>Plans, limits and billing:</strong> Starter, Growth and Agency with their account, spend and
+        expert-hour limits enforced in the backend, the per-currency price book, the subscription,
+        and the warnings at 80% and 100% of managed spend.</li>
+    <li><strong>The phone layout,</strong> which the handoff designs separately: a tab bar, a floating Ask
+        Otto, and approvals that work with a thumb.</li>
+    <li><strong>Accessibility, localisation and observability:</strong> WCAG 2.2 AA, account currency and
+        time zone everywhere with the interface ready for twelve languages, traces across the
+        gateway and a status page.</li>
   </ul>
-  <p class="small"><strong>Exit gate:</strong> the first ten new advertisers launched end to end, and Standard
-     access approved.</p>
+  <p class="small"><strong>Applied this week:</strong> Standard API access, which needs the required
+     features from this milestone to be in place first.</p>
 </div>
 
 <div class="ms">
-  <span class="when">Friday 25 June 2027</span>
-  <h3>M5 &middot; Hardening and launch</h3>
-  <p class="small">Four weeks. The work that is invisible until it is missing.</p>
+  <span class="when">Friday 13 November 2026</span>
+  <h3>Week 5 &middot; Everything found by using it</h3>
+  <p class="small">The week that makes the difference between built and finished.</p>
   <ul>
-    <li><strong>The phone layout</strong> (1.5 weeks). The handoff designs it separately: a tab bar, a floating
-        Ask Otto, and approvals that work with a thumb.</li>
-    <li><strong>Accessibility to WCAG 2.2 AA</strong> (1 week). Full keyboard operation, screen-reader labels on
-        every chart and table, visible focus, and colour never the only signal.</li>
-    <li><strong>Localisation</strong> (0.5 week). Account currency and time zone everywhere, and the interface
-        strings ready for the twelve site languages, English first.</li>
-    <li><strong>Observability and the status page</strong> (0.5 week). Traces across the gateway, and components
-        for the app, the sync, Otto and the Google connection.</li>
-    <li><strong>A security and privacy pass</strong> (0.5 week). The data processing agreement, automated
-        deletion within thirty days of a request, and staff multi-factor sign-in.</li>
+    <li><strong>End to end on real accounts,</strong> both paths: a business that already advertises, and one
+        starting from nothing.</li>
+    <li><strong>The QA list from the handoff:</strong> the same numbers on every screen for the same range,
+        approve then undo restoring both the account and the badge counts, a budget rise of 50%
+        routing to the expert, the builder surviving a reload, the streams recovering from a dropped
+        connection, and every screen against its screenshot at 1440 pixels.</li>
+    <li><strong>A security and privacy pass:</strong> the data processing agreement, automated deletion within
+        thirty days of a request, staff multi-factor sign-in, and the client secret rotated.</li>
+    <li><strong>Whatever the first four weeks turned up</strong> and did not stop for.</li>
   </ul>
+  <p class="small"><strong>At the end of this week the build is complete</strong> &mdash; every requirement in
+     both documents written, tested and deployed.</p>
+</div>
+
+<h2 class="pagebreak">The two things a month of work cannot buy</h2>
+
+<p>
+  The requirements set exit gates that are measured in calendar days, and Google sets review
+  times nobody can hurry. Both run behind the build rather than inside it, and they are the
+  reason the build finishing on 13 November is not the same as opening the doors.
+</p>
+
+<table>
+  <thead><tr><th style="width:26%">Gate</th><th style="width:16%">Starts</th><th style="width:18%">Clears</th><th>What it is</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>App verification</strong></td><td>13 October</td><td>Mid-to-late November</td>
+      <td>Google&rsquo;s review of the sensitive scope. Until it lands, a hundred people in the
+          lifetime of the project may connect an account, and two are already used. Submitted on
+          day one for exactly this reason.</td>
+    </tr>
+    <tr>
+      <td><strong>Standard API access</strong></td><td>Early November</td><td>Late November or early December</td>
+      <td>Ten to fifteen business days after applying, and the application needs week four&rsquo;s
+          features to exist. Required before serving real customers at scale.</td>
+    </tr>
+    <tr>
+      <td><strong>Seven days of clean sync</strong></td><td>17 October</td><td>24 October</td>
+      <td>The requirements&rsquo; own gate for phase 1: five internal accounts synced for a week
+          with no data mismatches. It runs quietly underneath week two.</td>
+    </tr>
+    <tr>
+      <td><strong>Thirty days of pilot writes</strong></td><td>31 October</td><td>30 November</td>
+      <td>The requirements&rsquo; gate for phase 3: a month of real changes with zero guardrail
+          breaches and every one revertible. It cannot be shortened by working faster, only by
+          deciding to launch on less evidence.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="note">
+  <p>
+    <strong>So two dates matter, not one.</strong> The build is complete on <strong>13 November</strong>:
+    everything in both documents, written and tested, usable by you and by pilot accounts the same
+    day. Opening to paying customers waits on Google and on the thirty-day write gate, which puts it
+    in <strong>early December</strong>. Choosing to launch before that gate is a decision available to
+    the client; it is not a decision I would make quietly on their behalf.
+  </p>
 </div>
 
 <h2 class="pagebreak">Every requirement, and where it lands</h2>
@@ -283,117 +350,98 @@
   <tbody>
     <tr><td colspan="4" style="background:#F6F5F2;font-weight:700">Onboarding and account connection</td></tr>
     <tr><td>Sign-up, audit details carry over</td><td><span class="tag done">Done</span></td><td>&mdash;</td><td>Google sign-in; an audit run signed out follows them in</td></tr>
-    <tr><td>Email and password, verification</td><td><span class="tag todo">To do</span></td><td>M1</td><td>Drawn only; no password endpoint exists</td></tr>
+    <tr><td>Email and password, verification</td><td><span class="tag todo">To do</span></td><td>Week 1</td><td>Drawn only; no password endpoint exists</td></tr>
     <tr><td>Path B: connect, pick accounts</td><td><span class="tag done">Done</span></td><td>&mdash;</td><td>Live and reading a real account</td></tr>
-    <tr><td>Manager-link request and acceptance</td><td><span class="tag todo">To do</span></td><td>M4</td><td>Needs the PPCway manager account</td></tr>
-    <tr><td>Path A: account created for them</td><td><span class="tag todo">To do</span></td><td>M4</td><td>Needs the manager account and Standard access</td></tr>
-    <tr><td>First sync, 90 days, first three recommendations in 5 minutes</td><td><span class="tag part">Part</span></td><td>M1&ndash;M2</td><td>Reads live today; no import, no history, no recommendations</td></tr>
-    <tr><td>Conversion tracking check and guided setup</td><td><span class="tag part">Part</span></td><td>M2</td><td>Website tracking detected; account-level check to come</td></tr>
-    <tr><td>Expert match and profile</td><td><span class="tag todo">To do</span></td><td>M3</td><td>With the expert console</td></tr>
-    <tr><td>Disconnect, tokens deleted</td><td><span class="tag part">Part</span></td><td>M1</td><td>Honoured in code; no screen for it yet</td></tr>
+    <tr><td>Manager-link request and acceptance</td><td><span class="tag todo">To do</span></td><td>Week 4</td><td>Needs the PPCway manager account</td></tr>
+    <tr><td>Path A: account created for them</td><td><span class="tag todo">To do</span></td><td>Week 4</td><td>Needs the manager account and Standard access</td></tr>
+    <tr><td>First sync, 90 days, first three recommendations in 5 minutes</td><td><span class="tag part">Part</span></td><td>Weeks 1&ndash;2</td><td>Reads live today; no import, no history, no recommendations</td></tr>
+    <tr><td>Conversion tracking check and guided setup</td><td><span class="tag part">Part</span></td><td>Week 2</td><td>Website tracking detected; account-level check to come</td></tr>
+    <tr><td>Expert match and profile</td><td><span class="tag todo">To do</span></td><td>Week 3</td><td>With the expert console</td></tr>
+    <tr><td>Disconnect, tokens deleted</td><td><span class="tag part">Part</span></td><td>Week 1</td><td>Honoured in code; no screen for it yet</td></tr>
 
     <tr><td colspan="4" style="background:#F6F5F2;font-weight:700">Campaign builder</td></tr>
-    <tr><td>All eight steps, autosave, estimates, preview, policy check</td><td><span class="tag todo">To do</span></td><td>M4</td><td>Drawn as screens; nothing wired</td></tr>
-    <tr><td>Expert sign-off before launch on Growth and Agency</td><td><span class="tag todo">To do</span></td><td>M4</td><td>Depends on the expert console in M3</td></tr>
-    <tr><td>Learning window and check-ins</td><td><span class="tag todo">To do</span></td><td>M4</td><td></td></tr>
+    <tr><td>All eight steps, autosave, estimates, preview, policy check</td><td><span class="tag todo">To do</span></td><td>Week 4</td><td>Drawn as screens; nothing wired</td></tr>
+    <tr><td>Expert sign-off before launch on Growth and Agency</td><td><span class="tag todo">To do</span></td><td>Week 4</td><td>Depends on the expert console in M3</td></tr>
+    <tr><td>Learning window and check-ins</td><td><span class="tag todo">To do</span></td><td>Week 4</td><td></td></tr>
 
     <tr><td colspan="4" style="background:#F6F5F2;font-weight:700">Campaign management</td></tr>
     <tr><td>Campaign list with status, spend, leads, cost per lead</td><td><span class="tag done">Done</span></td><td>&mdash;</td><td>Live, read from the account</td></tr>
     <tr><td>Detail: overview, keywords, search terms, ads</td><td><span class="tag done">Done</span></td><td>&mdash;</td><td>Live, including Quality Score and policy status</td></tr>
-    <tr><td>Per-row sparkline and Learning chip</td><td><span class="tag todo">To do</span></td><td>M2</td><td>Needs the daily mirror</td></tr>
-    <tr><td>Edits: pause, resume, budget, keywords, negatives</td><td><span class="tag todo">To do</span></td><td>M3</td><td>Every one is a write</td></tr>
-    <tr><td>Edit flow with before and after, and approval routing</td><td><span class="tag todo">To do</span></td><td>M3</td><td></td></tr>
-    <tr><td>External changes detected and rebased</td><td><span class="tag todo">To do</span></td><td>M3</td><td>Needs the mirror and the change log</td></tr>
-    <tr><td>Bulk actions</td><td><span class="tag todo">To do</span></td><td>M3</td><td></td></tr>
+    <tr><td>Per-row sparkline and Learning chip</td><td><span class="tag todo">To do</span></td><td>Week 2</td><td>Needs the daily mirror</td></tr>
+    <tr><td>Edits: pause, resume, budget, keywords, negatives</td><td><span class="tag todo">To do</span></td><td>Week 3</td><td>Every one is a write</td></tr>
+    <tr><td>Edit flow with before and after, and approval routing</td><td><span class="tag todo">To do</span></td><td>Week 3</td><td></td></tr>
+    <tr><td>External changes detected and rebased</td><td><span class="tag todo">To do</span></td><td>Week 3</td><td>Needs the mirror and the change log</td></tr>
+    <tr><td>Bulk actions</td><td><span class="tag todo">To do</span></td><td>Week 3</td><td></td></tr>
 
     <tr><td colspan="4" style="background:#F6F5F2;font-weight:700">Dashboard home and reporting</td></tr>
     <tr><td>Results strip: leads, cost per lead, spend against budget</td><td><span class="tag done">Done</span></td><td>&mdash;</td><td>Live; the change-against-previous-period chip comes with the mirror</td></tr>
-    <tr><td>Needs you</td><td><span class="tag todo">To do</span></td><td>M2</td><td>Needs Otto</td></tr>
-    <tr><td>Otto activity and what it did</td><td><span class="tag todo">To do</span></td><td>M3</td><td>Needs the change log</td></tr>
-    <tr><td>Visibility Score, tracked over time</td><td><span class="tag part">Part</span></td><td>M2</td><td>Score shown; no series yet</td></tr>
-    <tr><td>Your expert</td><td><span class="tag todo">To do</span></td><td>M3</td><td></td></tr>
-    <tr><td>Weekly email, monthly PDF, white label</td><td><span class="tag todo">To do</span></td><td>M2 / M4</td><td>White label with the Agency plan</td></tr>
-    <tr><td>Default metrics at every level, plus search terms</td><td><span class="tag part">Part</span></td><td>M2</td><td>Read today; browsable per level with the mirror</td></tr>
+    <tr><td>Needs you</td><td><span class="tag todo">To do</span></td><td>Week 2</td><td>Needs Otto</td></tr>
+    <tr><td>Otto activity and what it did</td><td><span class="tag todo">To do</span></td><td>Week 3</td><td>Needs the change log</td></tr>
+    <tr><td>Visibility Score, tracked over time</td><td><span class="tag part">Part</span></td><td>Week 2</td><td>Score shown; no series yet</td></tr>
+    <tr><td>Your expert</td><td><span class="tag todo">To do</span></td><td>Week 3</td><td></td></tr>
+    <tr><td>Weekly email, monthly PDF, white label</td><td><span class="tag todo">To do</span></td><td>Weeks 2 and 4</td><td>White label with the Agency plan</td></tr>
+    <tr><td>Default metrics at every level, plus search terms</td><td><span class="tag part">Part</span></td><td>Week 2</td><td>Read today; browsable per level with the mirror</td></tr>
 
     <tr><td colspan="4" style="background:#F6F5F2;font-weight:700">Website audit</td></tr>
     <tr><td>The fourteen public checks</td><td><span class="tag done">Done</span></td><td>&mdash;</td><td>Live, and beyond what was asked</td></tr>
-    <tr><td>In-app checks on every landing page</td><td><span class="tag todo">To do</span></td><td>M2</td><td>Homepage and crawled pages today</td></tr>
-    <tr><td>Scheduled re-runs and change detection</td><td><span class="tag todo">To do</span></td><td>M2</td><td></td></tr>
-    <tr><td>Score history, what changed, alerts</td><td><span class="tag todo">To do</span></td><td>M2</td><td></td></tr>
-    <tr><td>Send the fix list to the web person</td><td><span class="tag todo">To do</span></td><td>M2</td><td>Needs email</td></tr>
-    <tr><td>Per-plan page limits</td><td><span class="tag todo">To do</span></td><td>M4</td><td>Needs plans</td></tr>
+    <tr><td>In-app checks on every landing page</td><td><span class="tag todo">To do</span></td><td>Week 2</td><td>Homepage and crawled pages today</td></tr>
+    <tr><td>Scheduled re-runs and change detection</td><td><span class="tag todo">To do</span></td><td>Week 2</td><td></td></tr>
+    <tr><td>Score history, what changed, alerts</td><td><span class="tag todo">To do</span></td><td>Week 2</td><td></td></tr>
+    <tr><td>Send the fix list to the web person</td><td><span class="tag todo">To do</span></td><td>Week 2</td><td>Needs email</td></tr>
+    <tr><td>Per-plan page limits</td><td><span class="tag todo">To do</span></td><td>Week 4</td><td>Needs plans</td></tr>
 
     <tr><td colspan="4" style="background:#F6F5F2;font-weight:700">Otto, approvals and guardrails</td></tr>
-    <tr><td>Daily recommendation pass with reasons and evidence</td><td><span class="tag todo">To do</span></td><td>M2</td><td></td></tr>
-    <tr><td>Three risk routes, thresholds as settings</td><td><span class="tag todo">To do</span></td><td>M3</td><td>Blocked by a client decision</td></tr>
-    <tr><td>Guardrails before every write</td><td><span class="tag todo">To do</span></td><td>M3</td><td></td></tr>
-    <tr><td>Undo within thirty days</td><td><span class="tag todo">To do</span></td><td>M3</td><td></td></tr>
-    <tr><td>Explainability: the data behind each one</td><td><span class="tag todo">To do</span></td><td>M2</td><td></td></tr>
-    <tr><td>Model behind a server-side service, logged and filtered</td><td><span class="tag todo">To do</span></td><td>M2</td><td>No model is wired in today</td></tr>
-    <tr><td>Chat with Otto, with tools</td><td><span class="tag todo">To do</span></td><td>M3</td><td>Shares the change pipeline</td></tr>
+    <tr><td>Daily recommendation pass with reasons and evidence</td><td><span class="tag todo">To do</span></td><td>Week 2</td><td></td></tr>
+    <tr><td>Three risk routes, thresholds as settings</td><td><span class="tag todo">To do</span></td><td>Week 3</td><td>Blocked by a client decision</td></tr>
+    <tr><td>Guardrails before every write</td><td><span class="tag todo">To do</span></td><td>Week 3</td><td></td></tr>
+    <tr><td>Undo within thirty days</td><td><span class="tag todo">To do</span></td><td>Week 3</td><td></td></tr>
+    <tr><td>Explainability: the data behind each one</td><td><span class="tag todo">To do</span></td><td>Week 2</td><td></td></tr>
+    <tr><td>Model behind a server-side service, logged and filtered</td><td><span class="tag todo">To do</span></td><td>Week 2</td><td>No model is wired in today</td></tr>
+    <tr><td>Chat with Otto, with tools</td><td><span class="tag todo">To do</span></td><td>Week 3</td><td>Shares the change pipeline</td></tr>
 
     <tr><td colspan="4" style="background:#F6F5F2;font-weight:700">Expert in the loop</td></tr>
-    <tr><td>Console, sign-off, sessions, hours, access, quality</td><td><span class="tag todo">To do</span></td><td>M3</td><td></td></tr>
+    <tr><td>Console, sign-off, sessions, hours, access, quality</td><td><span class="tag todo">To do</span></td><td>Week 3</td><td></td></tr>
 
     <tr><td colspan="4" style="background:#F6F5F2;font-weight:700">Roles, plans and limits</td></tr>
-    <tr><td>Five roles, enforced in the backend</td><td><span class="tag todo">To do</span></td><td>M1</td><td>One person, one account today</td></tr>
-    <tr><td>Three plans, their limits and the price book</td><td><span class="tag todo">To do</span></td><td>M4</td><td></td></tr>
-    <tr><td>Spend warnings at 80% and 100%</td><td><span class="tag todo">To do</span></td><td>M4</td><td>A client decision is open on what happens at 100%</td></tr>
+    <tr><td>Five roles, enforced in the backend</td><td><span class="tag todo">To do</span></td><td>Week 1</td><td>One person, one account today</td></tr>
+    <tr><td>Three plans, their limits and the price book</td><td><span class="tag todo">To do</span></td><td>Week 4</td><td></td></tr>
+    <tr><td>Spend warnings at 80% and 100%</td><td><span class="tag todo">To do</span></td><td>Week 4</td><td>A client decision is open on what happens at 100%</td></tr>
 
     <tr><td colspan="4" style="background:#F6F5F2;font-weight:700">Data model</td></tr>
     <tr><td>Ads connection, audit run</td><td><span class="tag done">Done</span></td><td>&mdash;</td><td>Encrypted tokens, chosen account, run history</td></tr>
-    <tr><td>User and membership, business profile</td><td><span class="tag part">Part</span></td><td>M1</td><td>Accounts exist; no organisation, role or profile of its own</td></tr>
-    <tr><td>Organization, campaign mirror, performance facts</td><td><span class="tag todo">To do</span></td><td>M1</td><td></td></tr>
-    <tr><td>Proposed change, applied change, guardrail policy</td><td><span class="tag todo">To do</span></td><td>M3</td><td></td></tr>
-    <tr><td>Expert task and time entry</td><td><span class="tag todo">To do</span></td><td>M3</td><td></td></tr>
+    <tr><td>User and membership, business profile</td><td><span class="tag part">Part</span></td><td>Week 1</td><td>Accounts exist; no organisation, role or profile of its own</td></tr>
+    <tr><td>Organization, campaign mirror, performance facts</td><td><span class="tag todo">To do</span></td><td>Week 1</td><td></td></tr>
+    <tr><td>Proposed change, applied change, guardrail policy</td><td><span class="tag todo">To do</span></td><td>Week 3</td><td></td></tr>
+    <tr><td>Expert task and time entry</td><td><span class="tag todo">To do</span></td><td>Week 3</td><td></td></tr>
 
     <tr><td colspan="4" style="background:#F6F5F2;font-weight:700">Integrations</td></tr>
     <tr><td>Google Ads API, reads</td><td><span class="tag done">Done</span></td><td>&mdash;</td><td>One service holds the credentials</td></tr>
-    <tr><td>Google Ads API, writes with batching and queues</td><td><span class="tag todo">To do</span></td><td>M3</td><td></td></tr>
+    <tr><td>Google Ads API, writes with batching and queues</td><td><span class="tag todo">To do</span></td><td>Week 3</td><td></td></tr>
     <tr><td>Google sign-in, encrypted tokens</td><td><span class="tag done">Done</span></td><td>&mdash;</td><td></td></tr>
     <tr><td>Business listing and places, site checks</td><td><span class="tag done">Done</span></td><td>&mdash;</td><td></td></tr>
-    <tr><td>Language model, billing, email, scheduling, analytics</td><td><span class="tag todo">To do</span></td><td>M2&ndash;M4</td><td>None wired today</td></tr>
+    <tr><td>Language model, billing, email, scheduling, analytics</td><td><span class="tag todo">To do</span></td><td>Weeks 2&ndash;4</td><td>None wired today</td></tr>
 
     <tr><td colspan="4" style="background:#F6F5F2;font-weight:700">Google Ads API access and compliance</td></tr>
     <tr><td>Basic access</td><td><span class="tag done">Done</span></td><td>&mdash;</td><td>Granted 12 October, 15,000 operations a day</td></tr>
-    <tr><td>Standard access and the required minimum features</td><td><span class="tag todo">To do</span></td><td>M4</td><td>Apply by February; the review is 10&ndash;15 business days</td></tr>
-    <tr><td>App verification to lift the 100-user cap</td><td><span class="tag todo">To do</span></td><td>M1</td><td>Submit immediately; the cap is a lifetime limit</td></tr>
+    <tr><td>Standard access and the required minimum features</td><td><span class="tag todo">To do</span></td><td>Week 4</td><td>Apply by February; the review is 10&ndash;15 business days</td></tr>
+    <tr><td>App verification to lift the 100-user cap</td><td><span class="tag todo">To do</span></td><td>Week 1</td><td>Submit immediately; the cap is a lifetime limit</td></tr>
 
     <tr><td colspan="4" style="background:#F6F5F2;font-weight:700">Non-functional</td></tr>
-    <tr><td>Security: secrets, encryption, least privilege</td><td><span class="tag part">Part</span></td><td>M5</td><td>Done but for staff multi-factor and a sign-in audit log</td></tr>
-    <tr><td>Sync cadence and manual refresh</td><td><span class="tag todo">To do</span></td><td>M1</td><td></td></tr>
-    <tr><td>Quota handling and alerts</td><td><span class="tag todo">To do</span></td><td>M3</td><td></td></tr>
-    <tr><td>Home under two seconds from the mirror</td><td><span class="tag todo">To do</span></td><td>M2</td><td>Reads Google live today, so it is slower than the target</td></tr>
-    <tr><td>Privacy: agreement, residency, deletion in 30 days</td><td><span class="tag part">Part</span></td><td>M5</td><td>Policy published, Toronto chosen; deletion is manual</td></tr>
-    <tr><td>Accessibility, localisation, mobile, observability</td><td><span class="tag part">Part</span></td><td>M5</td><td></td></tr>
-  </tbody>
-</table>
-
-<h2 class="pagebreak">What is waiting on Google, and when to start it</h2>
-
-<table>
-  <thead><tr><th style="width:26%">What</th><th style="width:16%">Start</th><th style="width:16%">Expect</th><th>Why it matters</th></tr></thead>
-  <tbody>
-    <tr>
-      <td><strong>App verification</strong></td><td>This week</td><td>2&ndash;6 weeks</td>
-      <td>Until it is granted, only 100 people in the lifetime of the project may ever connect an account. Two are already used.</td>
-    </tr>
-    <tr>
-      <td><strong>Standard API access</strong></td><td>February 2027</td><td>10&ndash;15 business days, often longer</td>
-      <td>Needed before serving real customers at scale, and it brings an audit against Google&rsquo;s required features.</td>
-    </tr>
-    <tr>
-      <td><strong>PPCway manager account</strong></td><td>January 2027</td><td>Same day</td>
-      <td>Phase 4 cannot create accounts for new advertisers without one. Free, and worth doing early.</td>
-    </tr>
+    <tr><td>Security: secrets, encryption, least privilege</td><td><span class="tag part">Part</span></td><td>Week 5</td><td>Done but for staff multi-factor and a sign-in audit log</td></tr>
+    <tr><td>Sync cadence and manual refresh</td><td><span class="tag todo">To do</span></td><td>Week 1</td><td></td></tr>
+    <tr><td>Quota handling and alerts</td><td><span class="tag todo">To do</span></td><td>Week 3</td><td></td></tr>
+    <tr><td>Home under two seconds from the mirror</td><td><span class="tag todo">To do</span></td><td>Week 2</td><td>Reads Google live today, so it is slower than the target</td></tr>
+    <tr><td>Privacy: agreement, residency, deletion in 30 days</td><td><span class="tag part">Part</span></td><td>Week 5</td><td>Policy published, Toronto chosen; deletion is manual</td></tr>
+    <tr><td>Accessibility, localisation, mobile, observability</td><td><span class="tag part">Part</span></td><td>Week 5</td><td></td></tr>
   </tbody>
 </table>
 
 <h2>What the client needs to decide, and by when</h2>
 
 <p>
-  Three of the open questions in the requirements block milestone 3. The others can be answered
-  later without moving any date.
+  At this pace a decision is the most expensive thing in the plan. Three of the open questions in
+  the requirements block week three, which starts on 27 October &mdash; so they are needed inside
+  a fortnight, not a quarter. The rest can be answered as their week approaches.
 </p>
 
 <table>
@@ -401,66 +449,95 @@
   <tbody>
     <tr>
       <td><strong>Which change types may auto-apply, and is auto-apply on or off for a new account?</strong></td>
-      <td>1 December 2026</td>
-      <td>The default guardrail policy, which is written before the first line of the change pipeline.</td>
+      <td><strong>Fri 23 October</strong></td>
+      <td>The default guardrail policy, written on the first morning of week three.</td>
     </tr>
     <tr>
       <td><strong>Campaign limits for Growth and Agency, and what happens when spend passes the plan limit</strong></td>
-      <td>1 February 2027</td>
-      <td>The plan model and the enforcement in the backend.</td>
+      <td><strong>Fri 30 October</strong></td>
+      <td>The plan model and its enforcement, built in week four.</td>
     </tr>
     <tr>
       <td><strong>Data residency: one region, or Canada, the US and the EU?</strong></td>
-      <td>1 December 2026</td>
-      <td>Both services run in Toronto by the decision of 1 October. Three regions is a different deployment and adds roughly three weeks.</td>
+      <td><strong>Fri 23 October</strong></td>
+      <td>Both services run in Toronto by the decision of 1 October. Three regions is a different deployment and adds about a week to week four.</td>
     </tr>
     <tr>
-      <td>Trial or first-month charge at sign-up; card before connecting</td><td>March 2027</td><td>The sign-up flow in M4.</td>
+      <td>Trial or first-month charge at sign-up; card before connecting</td><td>Fri 30 October</td><td>The sign-up and billing flow in week four.</td>
     </tr>
     <tr>
-      <td>Expert turnaround target and weekend cover</td><td>January 2027</td><td>The expert console&rsquo;s queue in M3.</td>
+      <td>Expert turnaround target and weekend cover</td><td>Fri 23 October</td><td>The expert console&rsquo;s queue in week three.</td>
     </tr>
     <tr>
-      <td>Which campaign types follow Search; the Agency white-label domain</td><td>April 2027</td><td>Scope after launch.</td>
+      <td>Which campaign types follow Search; the Agency white-label domain</td><td>After launch</td><td>Scope beyond this month.</td>
     </tr>
   </tbody>
 </table>
 
-<h2>If the plan needs to be shorter</h2>
+<h2>What would break this plan, and what to do about it</h2>
 
 <p>
-  The honest levers, in the order I would pull them.
+  A month is achievable at the pace this project has been running. These are the four things
+  that would stop it, in the order they are likely.
 </p>
 
+<table>
+  <thead><tr><th style="width:28%">Risk</th><th style="width:13%">Costs</th><th>What to do</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>A decision takes a fortnight</strong></td><td>1&ndash;2 weeks</td>
+      <td>The three in the table above are needed by 23 and 30 October. If an answer is not ready,
+          say so and I will build the default behind a setting rather than stop &mdash; but the
+          default then has to be lived with or redone.</td>
+    </tr>
+    <tr>
+      <td><strong>Google refuses or queries something</strong></td><td>1&ndash;4 weeks</td>
+      <td>Both reviews are submitted as early as the work allows. A query usually needs a same-day
+          answer, so whoever owns the Google account should be reachable through November.</td>
+    </tr>
+    <tr>
+      <td><strong>Scope grows</strong></td><td>a week each</td>
+      <td>Everything in both documents is in the plan. Anything new displaces something, and the
+          honest thing is to name which, at the time, rather than absorb it quietly.</td>
+    </tr>
+    <tr>
+      <td><strong>Review arrives late</strong></td><td>up to a week</td>
+      <td>Each week ends deployed and testable. Feedback on week one arriving in week four is the
+          most expensive kind, because the later weeks are built on it.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>If it has to be shorter still</h3>
 <ul>
-  <li><strong>A second developer takes the independent track.</strong> The builder, billing and the expert
-      console barely touch the change pipeline, so two people working in parallel bring launch to
-      roughly <strong>mid-March 2027</strong>. This is the only lever that does not cut scope.</li>
-  <li><strong>Launch for existing advertisers first.</strong> Milestones 1 to 3 are a complete product for a
+  <li><strong>Launch for existing advertisers only.</strong> Weeks 1 to 3 are a complete product for a
       business that already runs Google Ads: it audits, recommends, and changes with approval.
-      Phase 4 exists for businesses with no account at all. Dropping it from the first release moves
-      launch to <strong>late March 2027</strong>.</li>
-  <li><strong>Hold the chat back.</strong> Otto&rsquo;s inbox is the product; the conversational interface is
-      the demonstration. Deferring it saves about two weeks and no capability.</li>
-  <li><strong>Agency last.</strong> Ten client accounts, per-client fees and white labelling are a plan, not a
-      feature of the core. Deferring saves about two weeks in M4.</li>
+      Week four exists for businesses with no account at all. Dropping it brings the build in on
+      <strong>31 October</strong>.</li>
+  <li><strong>Hold the chat back.</strong> Otto&rsquo;s inbox is the product; the conversation is the
+      demonstration of it. Deferring saves about two days and no capability.</li>
+  <li><strong>Agency last.</strong> Ten client accounts, per-client fees and white labelling are a plan,
+      not a feature of the core. Deferring saves about two days in week four.</li>
 </ul>
 
 <div class="note">
   <p>
-    <strong>The one thing I would not cut</strong> is the change pipeline in M3: proposed change, guardrails,
-    undo and the append-only log. It is tempting to apply the first recommendation directly and add
-    the record-keeping later. Every change after that would then be outside the system that makes
-    this product safe to sell, and the client&rsquo;s own rule &mdash; nothing changes without a decision
-    &mdash; would be a promise with nothing behind it.
+    <strong>The one thing I would not cut</strong> is the change pipeline in week three: the proposed
+    change, the guardrails, the undo and the append-only log. It is tempting to apply the first
+    recommendation directly and add the record-keeping afterwards. Every change made before that
+    exists would be outside the system that makes this product safe to sell, and the client&rsquo;s
+    own rule &mdash; nothing changes without a decision &mdash; would be a promise with nothing
+    behind it.
   </p>
 </div>
 
 <p class="footer-note">
-  PPCway delivery plan &middot; 12 October 2026 &middot; Against Developer Requirements v1.0 and the
-  customer dashboard handoff. Dates assume one developer from 13 October 2026, and move with any
-  change to that assumption or to the decisions above.
-</p>
+    The pace is the one this project has been running at: a single day last week produced the
+    whole dashboard in the client&rsquo;s design, two new reporting endpoints and three fixes
+    found by testing against a live account. The plan assumes that continues, and says plainly
+    where it would break.
+  </p>
+</section>
 
 </body>
 </html>
