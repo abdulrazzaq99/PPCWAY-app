@@ -706,8 +706,11 @@ function Footer() {
         <Link href="/help" className="hover:text-ink">
           Help
         </Link>
-        <Link href="/settings?view=your-data" className="hover:text-ink">
+        <Link href="/privacy" className="hover:text-ink">
           Privacy
+        </Link>
+        <Link href="/terms" className="hover:text-ink">
+          Terms
         </Link>
         <Link href="/login" className="hover:text-ink">
           Sign in
