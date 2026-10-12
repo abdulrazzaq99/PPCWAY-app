@@ -45,7 +45,7 @@ from ppcway.audit.places import (
 from ppcway.audit.runner import normalise_site, run_audit
 from ppcway.auth.google import SignInRefused, verify_google_token
 from ppcway.auth.models import UserAccount
-from ppcway.auth.sessions import sign_in, sign_out, whoever_holds
+from ppcway.auth.sessions import sign_in, sign_out, sign_out_everywhere, whoever_holds
 from ppcway.config import Settings, load_settings
 from ppcway.db.session import get_session, session_factory
 
@@ -388,6 +388,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         x_session_token: Annotated[str | None, Header()] = None,
     ) -> None:
         sign_out(session, x_session_token)
+
+    @app.post("/v1/auth/signout-everywhere")
+    def sign_out_all(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, int]:
+        """Every session this person has, on every device, ended at once."""
+        account = _signed_in(session, x_session_token)
+        return {"ended": sign_out_everywhere(session, account)}
 
     def _permission_is_gone(exc: Exception) -> bool:
         """Google saying the grant no longer exists, in any of its wordings.

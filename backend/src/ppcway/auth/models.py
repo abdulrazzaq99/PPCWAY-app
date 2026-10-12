@@ -42,3 +42,6 @@ class Session(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     #: Set when they sign out, so the row stays as a record of the session.
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: The last time this cookie was presented. A session in daily use rolls its
+    #: expiry forward; one left alone for a month stops working, as it should.
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

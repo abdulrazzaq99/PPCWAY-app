@@ -47,20 +47,56 @@ def sign_in(session: DbSession, who: GoogleIdentity) -> tuple[UserAccount, str]:
     return account, token
 
 
+#: How long a session lasts from the last time it was used, not from sign-in. A
+#: fixed window from sign-in signs out somebody who has been here every day.
+#: Rolling it forward on use is what "stay signed in" actually means.
+ROLL_AFTER = timedelta(hours=12)
+
+
+def _aware(when: datetime) -> datetime:
+    """SQLite hands back naive datetimes; Postgres does not."""
+    return when if when.tzinfo else when.replace(tzinfo=UTC)
+
+
 def whoever_holds(session: DbSession, token: str | None) -> UserAccount | None:
     """The account a cookie belongs to, or None: expired, revoked and unknown all
-    look the same from outside, because they mean the same thing."""
+    look the same from outside, because they mean the same thing.
+
+    Using a session also renews it. The renewal is written at most twice a day,
+    because every page in the app asks this question and a write per page view
+    would cost more than it is worth.
+    """
     if not token:
         return None
     held = session.scalar(select(Session).where(Session.token_hash == hash_session_token(token)))
     if held is None or held.revoked_at is not None:
         return None
-    expires = held.expires_at
-    if expires.tzinfo is None:  # SQLite hands back naive datetimes
-        expires = expires.replace(tzinfo=UTC)
-    if expires <= datetime.now(UTC):
+    now = datetime.now(UTC)
+    if _aware(held.expires_at) <= now:
         return None
+
+    last = _aware(held.last_used_at) if held.last_used_at else None
+    if last is None or now - last >= ROLL_AFTER:
+        held.last_used_at = now
+        held.expires_at = now + timedelta(days=SESSION_DAYS)
+        session.commit()
     return session.get(UserAccount, held.user_id)
+
+
+def sign_out_everywhere(session: DbSession, account: UserAccount) -> int:
+    """Revoke every session this person has, on every device. Returns how many.
+
+    What somebody wants when they have lost a laptop, and the only honest answer
+    to "am I signed in anywhere else?".
+    """
+    now = datetime.now(UTC)
+    live = session.scalars(
+        select(Session).where(Session.user_id == account.id, Session.revoked_at.is_(None))
+    ).all()
+    for held in live:
+        held.revoked_at = now
+    session.commit()
+    return len(live)
 
 
 def sign_out(session: DbSession, token: str | None) -> None:

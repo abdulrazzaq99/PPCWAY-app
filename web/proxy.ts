@@ -56,6 +56,26 @@ async function expectedToken(password: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/*
+  The cookie rolls forward with the session behind it. The backend renews the
+  session when it is used; without this the browser would still throw the cookie
+  away thirty days after sign-in, and somebody here every day would be signed
+  out anyway — which is the bug this pairs with, not a separate nicety.
+*/
+function keepSignedIn(request: NextRequest, reply: NextResponse): NextResponse {
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
+  if (token) {
+    reply.cookies.set(SESSION_COOKIE, token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30,
+    });
+  }
+  return reply;
+}
+
 export async function proxy(request: NextRequest) {
   const canonical = wrongHost(request);
   if (canonical) {
@@ -76,11 +96,13 @@ export async function proxy(request: NextRequest) {
   }
 
   const password = process.env.SITE_PASSWORD;
-  if (!password) return NextResponse.next();
+  if (!password) return keepSignedIn(request, NextResponse.next());
   const { pathname, search } = request.nextUrl;
   if (OPEN.some((p) => pathname === p || pathname.startsWith(p + "/"))) return NextResponse.next();
   const token = request.cookies.get("ppcway_gate")?.value;
-  if (token && token === (await expectedToken(password))) return NextResponse.next();
+  if (token && token === (await expectedToken(password))) {
+    return keepSignedIn(request, NextResponse.next());
+  }
   if (pathname.startsWith("/api/")) {
     return NextResponse.json({ error: "This preview is password protected." }, { status: 401 });
   }

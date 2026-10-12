@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { AccountCard } from "@/components/pw/account-card";
 import { cn } from "@/lib/cn";
 
 /*
@@ -78,21 +79,7 @@ export function Sidebar({
       </nav>
 
       <div className="mt-auto flex flex-col gap-3 p-4">
-        <div className="border-pw-border flex items-center gap-3 rounded-[14px] border p-3">
-          <span className="bg-pw-muted text-pw-ink-700 flex size-9 shrink-0 items-center justify-center rounded-[10px] text-[12px] font-bold">
-            {initials(business)}
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-[14px] leading-[18px] font-semibold">
-              {business}
-            </span>
-            {plan ? (
-              <span className="text-pw-ink-500 block truncate text-[12px] leading-[16px]">
-                {plan}
-              </span>
-            ) : null}
-          </span>
-        </div>
+        <AccountCard business={business} plan={plan} />
       </div>
     </aside>
   );
@@ -126,17 +113,6 @@ function NavLink({ item, active }: { item: NavItem; active: string }) {
         </span>
       ) : null}
     </Link>
-  );
-}
-
-function initials(name: string): string {
-  return (
-    name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((w) => w[0]?.toUpperCase() ?? "")
-      .join("") || "PW"
   );
 }
 
