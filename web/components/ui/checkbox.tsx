@@ -31,7 +31,7 @@ export function Checkbox({
           className={cn(
             "flex size-5 items-center justify-center rounded-[6px] border transition-colors duration-[var(--dur-hover)]",
             "peer-focus-visible:ring-brand-bar peer-focus-visible:ring-4",
-            checked ? "bg-brand border-brand" : "border-line-input bg-panel",
+            checked ? "bg-pw-blue border-pw-blue" : "border-pw-border-input bg-pw-card",
           )}
         >
           {checked ? (
@@ -47,7 +47,7 @@ export function Checkbox({
           ) : null}
         </span>
       </span>
-      <span className="text-muted text-[13px] leading-4">{children}</span>
+      <span className="text-pw-ink-500 text-[13px] leading-[18px]">{children}</span>
     </label>
   );
 }

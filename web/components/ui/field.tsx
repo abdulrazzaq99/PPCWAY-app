@@ -23,9 +23,9 @@ export function Input({ invalid, trailing, className, ...rest }: InputProps) {
       <input
         aria-invalid={invalid || undefined}
         className={cn(
-          "text-body text-ink placeholder:text-rail-icon bg-panel h-[46px] w-full rounded-[var(--radius-control)] border px-[17px] outline-none",
+          "text-body text-pw-ink placeholder:text-pw-ink-300 bg-pw-card h-[46px] w-full rounded-[12px] border px-[17px] outline-none",
           "transition-[border-color,background-color] duration-[var(--dur-hover)] ease-out",
-          "border-line-input focus:border-brand focus:border-2 focus:px-4",
+          "border-pw-border-input focus:border-pw-blue focus:border-2 focus:px-4",
           invalid && "bg-red-pale border-[#c0392b] focus:border-[#c0392b]",
           Boolean(trailing) && "pr-16",
         )}
@@ -53,7 +53,7 @@ export function Field({ label, labelAside, hint, error, children, className }: F
   return (
     <div className={cn("flex flex-col gap-2", className)}>
       <div className="flex items-center justify-between gap-3">
-        <label htmlFor={id} className="text-label text-ink">
+        <label htmlFor={id} className="text-label text-pw-ink">
           {label}
         </label>
         {labelAside}
@@ -64,7 +64,7 @@ export function Field({ label, labelAside, hint, error, children, className }: F
           {error}
         </p>
       ) : hint ? (
-        <p className="text-meta text-faint">{hint}</p>
+        <p className="text-meta text-pw-ink-400">{hint}</p>
       ) : null}
     </div>
   );
@@ -82,7 +82,7 @@ export function PasswordInput(props: PasswordProps) {
         <button
           type="button"
           onClick={() => setShown((s) => !s)}
-          className="text-brand hover:text-brand-dark focus-visible:ring-brand-bar rounded-sm text-[14px] leading-[17px] font-semibold focus-visible:ring-4 focus-visible:outline-none"
+          className="text-pw-blue hover:text-pw-blue-hover rounded-sm text-[14px] leading-[17px] font-semibold focus-visible:outline-none"
           aria-pressed={shown}
         >
           {shown ? "Hide" : "Show"}

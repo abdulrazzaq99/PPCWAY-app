@@ -139,6 +139,9 @@ class AuditOut(BaseModel):
     place_id: str = ""
     #: The town they typed, the anchor for the businesses nearby.
     city: str = ""
+    #: The score out of 100, worked out from the checks that have an answer.
+    #: Carried on the listing so a screen showing many runs need not fetch each.
+    score: int | None = None
 
 
 class RegisterIn(BaseModel):
@@ -414,7 +417,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             .limit(min(limit, 100))
         ).all()
         return [
-            AuditOut(id=r.id, site=r.site, status=r.status, error=r.error, stage=r.stage)
+            AuditOut(
+                id=r.id,
+                site=r.site,
+                status=r.status,
+                error=r.error,
+                stage=r.stage,
+                score=_score_of(r),
+            )
             for r in rows
         ]
 
@@ -1216,6 +1226,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return [AuditOut(id=r.id, site=r.site, status=r.status, error=r.error) for r in rows]
 
     return app
+
+
+def _score_of(run: AuditRun) -> int | None:
+    """The run's score, or None when it has no answered checks.
+
+    The same arithmetic the report rings: of the checks that have an answer, how
+    many are good. Unknowable checks do not count against a business.
+    """
+    findings = (run.report or {}).get("findings") if run.report else None
+    if not findings:
+        return None
+    known = [f for f in findings if f.get("status") != "unknown"]
+    if not known:
+        return None
+    good = sum(1 for f in known if f.get("status") == "good")
+    return round((good / len(known)) * 100)
 
 
 def _their_ads(

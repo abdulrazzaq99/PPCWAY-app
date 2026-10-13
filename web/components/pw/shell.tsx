@@ -6,18 +6,19 @@ import { cn } from "@/lib/cn";
 
 /*
   The signed-in app's frame, from the client's dashboard handoff: a 252px
-  sidebar on the warm ground, the content column capped at 1200, and a header
-  that carries the date, the business and the range.
+  sidebar on the warm ground, a header carrying the date and the actions for the
+  screen, and the content column capped at 1200.
 
   Everything in here is chrome. No screen's data passes through it, which is why
-  it can be a server component and why every page can be read without it.
+  it can be a server component and why every page reads without it.
 */
 export type NavItem = {
   href: string;
   label: string;
   icon: ReactNode;
+  /** A count or a score, shown as the handoff shows them: a quiet pill. */
   badge?: number | string;
-  external?: boolean;
+  badgeTone?: "otto" | "quiet";
 };
 
 export function Sidebar({
@@ -78,7 +79,7 @@ export function Sidebar({
         ))}
       </nav>
 
-      <div className="mt-auto flex flex-col gap-3 p-4">
+      <div className="mt-auto p-4">
         <AccountCard business={business} plan={plan} />
       </div>
     </aside>
@@ -105,8 +106,8 @@ function NavLink({ item, active }: { item: NavItem; active: string }) {
       {item.badge ? (
         <span
           className={cn(
-            "flex h-[20px] min-w-[20px] items-center justify-center rounded-full px-[6px] text-[11px] font-bold",
-            here ? "bg-pw-blue text-white" : "bg-pw-muted text-pw-ink-600",
+            "flex h-[20px] min-w-[22px] items-center justify-center rounded-full px-[7px] text-[11px] font-bold",
+            item.badgeTone === "otto" ? "bg-pw-otto text-white" : "bg-pw-muted text-pw-ink-600",
           )}
         >
           {item.badge}
@@ -126,15 +127,40 @@ export function Header({
   right?: ReactNode;
 }) {
   return (
-    <header className="flex flex-wrap items-end justify-between gap-4 px-5 pt-7 pb-5 sm:px-8">
+    <header className="flex flex-wrap items-start justify-between gap-4 px-5 pt-7 pb-5 sm:px-8">
       <div className="min-w-0">
         {eyebrow ? <p className="text-pw-ink-500 text-[13px] leading-[17px]">{eyebrow}</p> : null}
         <h1 className="display mt-1 text-[26px] leading-[32px] font-semibold sm:text-[30px] sm:leading-[36px]">
           {title}
         </h1>
       </div>
-      {right ? <div className="flex flex-wrap items-center gap-3">{right}</div> : null}
+      {right ? <div className="flex flex-wrap items-center gap-3 pt-1">{right}</div> : null}
     </header>
+  );
+}
+
+/** The dark button the handoff puts at the top right of the home screen. */
+export function AskOttoButton() {
+  return (
+    <Link
+      href="/chat"
+      className="bg-pw-night hover:bg-pw-night-raised flex h-[42px] items-center gap-2 rounded-[12px] px-4 text-[15px] font-semibold text-white"
+    >
+      <Image src="/brand/otto-mark.svg" alt="" width={20} height={20} className="size-5" />
+      Ask Otto
+    </Link>
+  );
+}
+
+/** A secondary action in a header: an outline button that is still a link. */
+export function HeaderLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="border-pw-border-strong bg-pw-card hover:bg-pw-muted flex h-[42px] items-center rounded-[12px] border px-4 text-[15px] font-semibold"
+    >
+      {children}
+    </Link>
   );
 }
 
@@ -197,6 +223,50 @@ export function Kpi({
   );
 }
 
+/**
+ * The connected row of small figures the handoff uses inside a campaign and a
+ * report: one bordered strip, divided, rather than separate cards.
+ */
+export function Tiles({ children }: { children: ReactNode }) {
+  return (
+    <div className="border-pw-border bg-pw-card divide-pw-border grid grid-cols-2 divide-x divide-y overflow-hidden rounded-[18px] border sm:grid-cols-3 xl:grid-cols-6 xl:divide-y-0">
+      {children}
+    </div>
+  );
+}
+
+export function Tile({
+  label,
+  value,
+  note,
+  tone,
+}: {
+  label: string;
+  value: string;
+  note?: ReactNode;
+  tone?: "good" | "warn" | "bad";
+}) {
+  return (
+    <div className="min-w-0 px-4 py-4">
+      <p className="text-pw-ink-500 text-[13px] leading-[17px]">{label}</p>
+      <p className="pw-num display mt-1 text-[24px] leading-[30px] font-semibold">{value}</p>
+      {note ? (
+        <p
+          className={cn(
+            "mt-1 truncate text-[12px] leading-[17px]",
+            tone === "good" && "text-pw-good",
+            tone === "warn" && "text-pw-warn",
+            tone === "bad" && "text-pw-bad",
+            !tone && "text-pw-ink-500",
+          )}
+        >
+          {note}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function Chip({
   tone,
   children,
@@ -221,5 +291,30 @@ export function Chip({
     >
       {children}
     </span>
+  );
+}
+
+/** The pill group the handoff uses for filters and ranges. */
+export function PillGroup({ children }: { children: ReactNode }) {
+  return <div className="bg-pw-muted flex rounded-[12px] p-[4px]">{children}</div>;
+}
+
+export function Pill({
+  active,
+  children,
+  ...rest
+}: { active?: boolean; children: ReactNode } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      className={cn(
+        "rounded-[9px] px-3 py-[7px] text-[14px] font-semibold whitespace-nowrap",
+        active ? "bg-pw-card text-pw-ink shadow-sm" : "text-pw-ink-500 hover:text-pw-ink",
+      )}
+      {...rest}
+    >
+      {children}
+    </button>
   );
 }

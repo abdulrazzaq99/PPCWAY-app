@@ -1,14 +1,14 @@
 import { cookies } from "next/headers";
 import type { Metadata } from "next";
 import { Home, type LatestAudit, type Summary } from "@/components/pw/home";
-import { Header, PwPage } from "@/components/pw/shell";
+import { AskOttoButton, Header, PwPage } from "@/components/pw/shell";
 import { SESSION_COOKIE } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Home · PPCway" };
 
 const BACKEND = process.env.BACKEND_URL ?? "http://localhost:8300";
 
-type Run = { id: string; site: string; status: string; report?: { score?: number } | null };
+type Run = { id: string; site: string; status: string; score?: number | null };
 
 function greeting(now: Date): string {
   const hour = now.getHours();
@@ -40,12 +40,7 @@ export default async function HomePage() {
 
   const done = runs.find((r) => r.status === "done");
   const audit: LatestAudit = done
-    ? {
-        id: done.id,
-        site: done.site,
-        score: scoreOf(done),
-        when: "",
-      }
+    ? { id: done.id, site: done.site, score: done.score ?? null, when: "" }
     : null;
 
   const first = (person.name || person.email).split(/[\s@]/)[0] ?? "there";
@@ -57,6 +52,7 @@ export default async function HomePage() {
       <Header
         eyebrow={`${today.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })} · ${business}`}
         title={`${greeting(today)}, ${first}`}
+        right={<AskOttoButton />}
       />
       <PwPage>
         <Home
@@ -70,12 +66,4 @@ export default async function HomePage() {
       </PwPage>
     </>
   );
-}
-
-/** The audit's own score, the same number the report rings. */
-function scoreOf(run: Run): number | null {
-  const findings = (run.report as { findings?: { status: string }[] } | null)?.findings;
-  if (!findings?.length) return null;
-  const good = findings.filter((f) => f.status === "good").length;
-  return Math.round((good / findings.length) * 100);
 }

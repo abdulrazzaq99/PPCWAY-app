@@ -1,13 +1,16 @@
+import Image from "next/image";
+import Link from "next/link";
 import type { ReactNode } from "react";
-import { Brand } from "@/components/ui/brand";
 import { cn } from "@/lib/cn";
 
 /*
-  The sign-in family, from the "V2 Log in" frames.
-  Desktop: a 540px navy panel on the left with the wordmark at the top, a pitch in the
-  middle and a footnote at the foot; the canvas on the right holds a 460px card.
-  Narrow screens: the navy panel becomes a band across the top with the wordmark and
-  the pitch, and the card fills the width below it.
+  The way in, wearing the dashboard's own skin: the night panel on the left with
+  the wordmark and the pitch, the warm ground on the right holding a 460px card.
+
+  The client's handoff does not draw these screens — it covers the signed-in app
+  and says to use its shell and tokens for anything it missed. So they use them,
+  and somebody signing in and landing on the dashboard sees one product rather
+  than two.
 */
 export function AuthShell({
   headline,
@@ -27,21 +30,31 @@ export function AuthShell({
   brand?: string;
 }) {
   return (
-    <div className="flex min-h-dvh flex-col lg:flex-row">
-      <aside className="bg-rail text-white lg:flex lg:w-[540px] lg:shrink-0 lg:flex-col lg:justify-between">
+    // `site` carries the client's brand blue, which the shared buttons read.
+    <div className="site bg-pw-ground text-pw-ink flex min-h-dvh flex-col lg:flex-row">
+      <aside className="bg-pw-night text-pw-night-text lg:flex lg:w-[540px] lg:shrink-0 lg:flex-col lg:justify-between">
         <div className="px-6 pt-8 pb-8 sm:px-10 lg:px-14 lg:pt-14 lg:pb-0">
-          <Brand tone="dark" href="/" name={brand} />
+          <Link href="/" className="inline-flex items-center">
+            <Image
+              src="/brand/ppcway-logo-white.svg"
+              alt={brand === "ppcway" ? "PPCway" : brand}
+              width={140}
+              height={30}
+              priority
+              className="h-[30px] w-auto"
+            />
+          </Link>
         </div>
         <div className="px-6 pb-10 sm:px-10 lg:px-14 lg:pb-0">
-          <h1 className="max-w-[428px] text-[26px] leading-[32px] font-semibold text-balance sm:text-[32px] sm:leading-[39px]">
+          <h1 className="display max-w-[428px] text-[26px] leading-[32px] font-semibold text-balance sm:text-[32px] sm:leading-[39px]">
             {headline}
           </h1>
-          <p className="text-rail-icon mt-[18px] max-w-[440px] text-[16px] leading-[19px]">
+          <p className="text-pw-night-muted mt-[18px] max-w-[440px] text-[16px] leading-[24px]">
             {body}
           </p>
         </div>
         {footnote ? (
-          <p className="text-rail-text hidden px-14 pb-14 text-[14px] leading-[17px] lg:block">
+          <p className="text-pw-ink-300 hidden px-14 pb-14 text-[14px] leading-[20px] lg:block">
             {footnote}
           </p>
         ) : null}
@@ -50,10 +63,12 @@ export function AuthShell({
       <main className="flex flex-1 flex-col items-center justify-center px-4 py-10 sm:px-8 lg:py-16">
         <div className="w-full max-w-[460px]">{children}</div>
         {below ? (
-          <p className="text-muted mt-5 text-center text-[14px] leading-[17px]">{below}</p>
+          <p className="text-pw-ink-500 mt-5 text-center text-[14px] leading-[20px]">{below}</p>
         ) : null}
         {footnote ? (
-          <p className="text-faint mt-8 text-center text-[13px] leading-4 lg:hidden">{footnote}</p>
+          <p className="text-pw-ink-400 mt-8 text-center text-[13px] leading-[19px] lg:hidden">
+            {footnote}
+          </p>
         ) : null}
       </main>
     </div>
@@ -80,13 +95,13 @@ export function AuthCard({
       onSubmit={onSubmit}
       noValidate={onSubmit ? true : undefined}
       className={cn(
-        "bg-panel border-line flex flex-col gap-[18px] rounded-[20px] border p-6 sm:p-10",
+        "bg-pw-card border-pw-border flex flex-col gap-[18px] rounded-[18px] border p-6 sm:p-10",
         className,
       )}
     >
-      <h2 className="text-ink text-[26px] leading-[31px] font-semibold">{title}</h2>
+      <h2 className="display text-[26px] leading-[31px] font-semibold">{title}</h2>
       {intro ? (
-        <div className="text-faint -mt-2 text-[13px] leading-4 font-medium">{intro}</div>
+        <div className="text-pw-ink-400 -mt-2 text-[13px] leading-4 font-medium">{intro}</div>
       ) : null}
       {children}
     </Tag>

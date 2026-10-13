@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { money } from "@/components/pw/campaigns";
-import { Chip, Kpi, PwCard } from "@/components/pw/shell";
-import { Header, PwPage } from "@/components/pw/shell";
+import { Chip, PwCard, Tile, Tiles } from "@/components/pw/shell";
+import { AskOttoButton, Header, PwPage } from "@/components/pw/shell";
 import { NotConnected } from "@/components/pw/states";
 import { ask } from "@/lib/pw-fetch";
 
@@ -36,7 +36,7 @@ export default async function ReportsPage() {
   if (!s.read) {
     return (
       <>
-        <Header eyebrow="Last 30 days" title="Reports" />
+        <Header eyebrow="Last 30 days" title="Reports" right={<AskOttoButton />} />
         <PwPage>
           <NotConnected what="Your reports are built from what your account actually spent and brought in." />
         </PwPage>
@@ -50,22 +50,31 @@ export default async function ReportsPage() {
 
   return (
     <>
-      <Header eyebrow="Last 30 days, from your Google Ads account" title="Reports" />
+      <Header
+        eyebrow="Last 30 days, from your Google Ads account"
+        title="Reports"
+        right={<AskOttoButton />}
+      />
       <PwPage>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Kpi
+        <Tiles>
+          <Tile
             label="Leads"
             value={String(Math.round(s.leads ?? 0))}
-            foot={`${Math.round(s.calls ?? 0)} calls · ${Math.round(s.forms ?? 0)} forms`}
+            note={`${Math.round(s.calls ?? 0)} calls · ${Math.round(s.forms ?? 0)} forms`}
           />
-          <Kpi label="Cost per lead" value={s.cost_per_lead ? money(s.cost_per_lead, c) : "—"} />
-          <Kpi label="Spend" value={money(s.cost ?? 0, c)} />
-          <Kpi
-            label="Clicks"
-            value={(s.clicks ?? 0).toLocaleString()}
-            foot={`${(s.impressions ?? 0).toLocaleString()} times shown`}
+          <Tile label="Cost per lead" value={s.cost_per_lead ? money(s.cost_per_lead, c) : "—"} />
+          <Tile label="Spend" value={money(s.cost ?? 0, c)} />
+          <Tile label="Clicks" value={(s.clicks ?? 0).toLocaleString()} />
+          <Tile label="Times shown" value={(s.impressions ?? 0).toLocaleString()} />
+          <Tile
+            label="Click rate"
+            value={
+              (s.impressions ?? 0) > 0
+                ? `${Math.round(((s.clicks ?? 0) / (s.impressions ?? 1)) * 1000) / 10}%`
+                : "—"
+            }
           />
-        </div>
+        </Tiles>
 
         <PwCard className="p-5 sm:p-6">
           <h2 className="text-[17px] leading-[22px] font-semibold">In one sentence</h2>
