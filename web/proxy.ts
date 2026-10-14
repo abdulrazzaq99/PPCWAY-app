@@ -1,13 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 /*
-  A password gate for the preview deployment. When SITE_PASSWORD is set, every
-  page and API route needs the gate cookie, which /api/gate sets after the right
-  password. Without SITE_PASSWORD (local development) nothing is gated.
-  The cookie holds a hash of the password, never the password, so rotating the
-  password logs everyone out.
+  A password gate for the deployment. When SITE_PASSWORD is set, every page and
+  API route needs the gate cookie, which /api/gate sets after the right password.
+  Without SITE_PASSWORD (local development) nothing is gated. The cookie holds a
+  hash of the password, never the password, so rotating the password logs
+  everyone out.
+
+  Three pages stay open whatever the password is, because Google's OAuth consent
+  screen names them: app.ppcway.com is the registered application home page, and
+  /privacy and /terms are the registered policy links. App verification is in
+  review, and a reviewer who finds a password where the privacy policy should be
+  has every reason to refuse us. They are also the three pages with nothing on
+  them worth hiding.
 */
-const OPEN = ["/gate", "/api/gate"];
+const OPEN = ["/gate", "/api/gate", "/", "/privacy", "/terms"];
 
 /*
   The signed-in screens. Without a session they send people to sign in rather than
@@ -97,6 +104,23 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url, 308);
   }
 
+  const password = process.env.SITE_PASSWORD;
+  const { pathname, search } = request.nextUrl;
+  const open = OPEN.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  if (password && !open) {
+    const token = request.cookies.get("ppcway_gate")?.value;
+    if (!token || token !== (await expectedToken(password))) {
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json({ error: "This site is not open yet." }, { status: 401 });
+      }
+      const url = request.nextUrl.clone();
+      url.pathname = "/gate";
+      url.search = "";
+      url.searchParams.set("next", pathname + search);
+      return NextResponse.redirect(url);
+    }
+  }
+
   if (needsSignIn(request)) {
     const url = request.nextUrl.clone();
     const asked = url.pathname + url.search;
@@ -106,22 +130,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  const password = process.env.SITE_PASSWORD;
-  if (!password) return keepSignedIn(request, NextResponse.next());
-  const { pathname, search } = request.nextUrl;
-  if (OPEN.some((p) => pathname === p || pathname.startsWith(p + "/"))) return NextResponse.next();
-  const token = request.cookies.get("ppcway_gate")?.value;
-  if (token && token === (await expectedToken(password))) {
-    return keepSignedIn(request, NextResponse.next());
-  }
-  if (pathname.startsWith("/api/")) {
-    return NextResponse.json({ error: "This preview is password protected." }, { status: 401 });
-  }
-  const url = request.nextUrl.clone();
-  url.pathname = "/gate";
-  url.search = "";
-  url.searchParams.set("next", pathname + search);
-  return NextResponse.redirect(url);
+  return keepSignedIn(request, NextResponse.next());
 }
 
 export const config = {
