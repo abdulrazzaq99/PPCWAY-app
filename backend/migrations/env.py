@@ -13,6 +13,7 @@ from pathlib import Path
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+import ppcway.ads.mirror
 import ppcway.ads.models
 import ppcway.audit.models
 import ppcway.auth.models

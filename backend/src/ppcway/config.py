@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     #: Where links in email point. The deployment knows; a letter must not guess.
     app_base_url: str = "http://localhost:3001"
 
+    #: What the scheduler must present to ask for a sync. The sync endpoint runs
+    #: against every connected account, so it is not a thing to leave open; unset,
+    #: it refuses rather than running for anyone who finds the address.
+    sync_key: SecretStr | None = None
+
     #: The Google sign-in button's client id. Public by construction: it travels in
     #: the browser. The backend needs it too, to check a token was issued for us.
     google_signin_client_id: str | None = None

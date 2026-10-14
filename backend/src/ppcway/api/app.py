@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import UTC, datetime
+from hmac import compare_digest
 from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID
@@ -17,10 +18,11 @@ from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Qu
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from ppcway.ads.accounts import accessible_accounts
+from ppcway.ads.mirror import CampaignDay, ExternalChange, MirrorCampaign, SyncRun
 from ppcway.ads.models import AdsConnection, ConsentTrip
 from ppcway.ads.oauth import (
     AdsConnectionRefused,
@@ -33,6 +35,7 @@ from ppcway.ads.oauth import (
     revoke_permission,
 )
 from ppcway.ads.planner import demand_for
+from ppcway.ads.runner import sync_everyone, sync_one
 from ppcway.ads.stats import read_account
 from ppcway.ads.summary import account_summary, campaign_detail
 from ppcway.audit.models import AuditRequest, AuditRun
@@ -260,6 +263,52 @@ class AdsAccountOut(BaseModel):
     #: False when Google refused to read it; `trouble` says why, in plain words.
     readable: bool = True
     trouble: str = ""
+
+
+class SyncOut(BaseModel):
+    """One pass over the account, as a screen waiting on it needs to see it."""
+
+    id: UUID
+    kind: str
+    status: str
+    stage: str = ""
+    counts: dict[str, Any] = Field(default_factory=dict)
+    trouble: str = ""
+    started_at: datetime
+    finished_at: datetime | None = None
+
+    @classmethod
+    def of(cls, run: SyncRun) -> SyncOut:
+        return cls(
+            id=run.id,
+            kind=run.kind,
+            status=run.status,
+            stage=run.stage,
+            counts=run.counts or {},
+            trouble=run.trouble,
+            started_at=run.started_at,
+            finished_at=run.finished_at,
+        )
+
+
+class ChangeOut(BaseModel):
+    """Something changed in Google Ads rather than here."""
+
+    kind: str
+    label: str
+    summary: str
+    noticed_at: datetime
+
+
+class SyncStateOut(BaseModel):
+    """What the mirror holds, and what the last look found."""
+
+    connected: bool
+    customer_name: str = ""
+    run: SyncOut | None = None
+    last_done_at: datetime | None = None
+    held: dict[str, int] = Field(default_factory=dict)
+    changes: list[ChangeOut] = Field(default_factory=list)
 
 
 class ChooseAccountIn(BaseModel):
@@ -1141,6 +1190,125 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             trouble=picked.trouble,
         )
 
+    @app.post("/v1/ads/sync", response_model=SyncOut, status_code=202)
+    def refresh_now(
+        tasks: BackgroundTasks,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> SyncOut:
+        """Read the account again, now, because somebody asked.
+
+        The requirements ask for a refresh on demand beside the scheduled ones.
+        A sync already running is handed back rather than started twice: two
+        passes over the same account would race each other to write the same rows.
+        """
+        account = _signed_in(session, x_session_token)
+        connection = _connection(session, account)
+        if connection is None or not connection.customer_id:
+            raise HTTPException(404, "No Google Ads account is connected.")
+        running = session.scalars(
+            select(SyncRun)
+            .where(SyncRun.customer_id == connection.customer_id, SyncRun.status == "running")
+            .order_by(SyncRun.started_at.desc())
+        ).first()
+        if running is not None:
+            return SyncOut.of(running)
+        # What decides the kind is what the mirror holds, not what has run. An
+        # account connected before the mirror existed has completed syncs and no
+        # history at all, and would otherwise never be given any.
+        held_days = (
+            session.scalar(
+                select(func.count(func.distinct(CampaignDay.day))).where(
+                    CampaignDay.customer_id == connection.customer_id
+                )
+            )
+            or 0
+        )
+        kind = "manual" if held_days >= ENOUGH_HISTORY else "first"
+        opened = SyncRun(
+            customer_id=connection.customer_id,
+            kind=kind,
+            status="running",
+            stage="Asking Google for your account",
+        )
+        session.add(opened)
+        session.commit()
+        tasks.add_task(_sync, opened.id, connection.id, settings, kind)
+        return SyncOut.of(opened)
+
+    @app.get("/v1/ads/sync", response_model=SyncStateOut)
+    def sync_state(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> SyncStateOut:
+        """What the mirror holds, and what the last look at Google found.
+
+        This is what the Get started screen polls while the first sync runs, and
+        what every screen will later use to say when it last looked.
+        """
+        account = _signed_in(session, x_session_token)
+        connection = _connection(session, account)
+        if connection is None or not connection.customer_id:
+            return SyncStateOut(connected=False)
+        customer_id = connection.customer_id
+        latest = session.scalars(
+            select(SyncRun)
+            .where(SyncRun.customer_id == customer_id)
+            .order_by(SyncRun.started_at.desc())
+        ).first()
+        done = session.scalars(
+            select(SyncRun)
+            .where(SyncRun.customer_id == customer_id, SyncRun.status == "done")
+            .order_by(SyncRun.started_at.desc())
+        ).first()
+        held = {
+            "campaigns": session.scalar(
+                select(func.count())
+                .select_from(MirrorCampaign)
+                .where(MirrorCampaign.customer_id == customer_id, MirrorCampaign.gone_at.is_(None))
+            )
+            or 0,
+            "days": session.scalar(
+                select(func.count(func.distinct(CampaignDay.day))).where(
+                    CampaignDay.customer_id == customer_id
+                )
+            )
+            or 0,
+        }
+        changes = session.scalars(
+            select(ExternalChange)
+            .where(ExternalChange.customer_id == customer_id)
+            .order_by(ExternalChange.noticed_at.desc())
+            .limit(10)
+        ).all()
+        return SyncStateOut(
+            connected=True,
+            customer_name=connection.customer_name,
+            run=SyncOut.of(latest) if latest else None,
+            last_done_at=done.finished_at if done else None,
+            held=held,
+            changes=[
+                ChangeOut(kind=c.kind, label=c.label, summary=c.summary, noticed_at=c.noticed_at)
+                for c in changes
+            ],
+        )
+
+    @app.post("/v1/internal/sync")
+    def scheduled_sync(
+        kind: Annotated[str, Query(pattern="^(structure|today|backfill)$")] = "structure",
+        x_sync_key: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Every connected account, for the scheduler that calls on the clock.
+
+        Not a public door: without a key in the settings it refuses outright
+        rather than running for whoever finds the address, and the key is
+        compared in constant time.
+        """
+        expected = settings.sync_key.get_secret_value() if settings.sync_key else ""
+        if not expected or not x_sync_key or not compare_digest(x_sync_key, expected):
+            raise HTTPException(403, "Not for you.")
+        return {"kind": kind, **sync_everyone(settings, session_factory(), kind=kind)}
+
     @app.get("/v1/places/suggest", response_model=list[ListingOut])
     def suggest_businesses(
         q: Annotated[str, Query(min_length=2, max_length=200)],
@@ -1375,6 +1543,16 @@ def _seeds(trade: str, city: str, place_id: str, settings: Settings) -> list[str
         seeds.insert(1, f"{word} {town}")
     # Dedupe, keeping the order, because Google charges by the call not the seed.
     return list(dict.fromkeys(seeds))
+
+
+#: Days of history that count as "we have their past". Below it, a refresh
+#: fetches the ninety days a new account gets rather than only today's.
+ENOUGH_HISTORY = 30
+
+
+def _sync(run_id: UUID, connection_id: UUID, settings: Settings, kind: str) -> None:
+    """Run a sync into the row the endpoint already opened and answered with."""
+    sync_one(connection_id, settings, session_factory(), kind=kind, run_id=run_id)
 
 
 def _run(run_id: UUID, settings: Settings) -> None:

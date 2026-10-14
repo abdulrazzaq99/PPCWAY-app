@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ConnectButton } from "@/components/pw/connect-button";
+import { counted } from "@/components/pw/first-sync";
 import { Chip, PwCard } from "@/components/pw/shell";
 
 /*
@@ -20,6 +21,37 @@ export function ConnectionCard({
   const router = useRouter();
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [sync, setSync] = useState<SyncState | null>(null);
+  const [reading, setReading] = useState(false);
+
+  // While a pass is running, look again every couple of seconds; when nothing
+  // is running, this settles into one request when the screen opens.
+  useEffect(() => {
+    if (!ads.connected || !ads.customer_id) return;
+    let stop = false;
+    const look = async () => {
+      try {
+        const res = await fetch("/api/ads/sync", { cache: "no-store" });
+        if (!res.ok || stop) return;
+        const now = (await res.json()) as SyncState;
+        setSync(now);
+        setReading(now.run?.status === "running");
+      } catch {
+        /* The card still shows what it knew; the next look is seconds away. */
+      }
+    };
+    void look();
+    const timer = setInterval(look, reading ? 2000 : 30000);
+    return () => {
+      stop = true;
+      clearInterval(timer);
+    };
+  }, [ads.connected, ads.customer_id, reading]);
+
+  async function refresh() {
+    setReading(true);
+    await fetch("/api/ads/sync", { method: "POST" }).catch(() => undefined);
+  }
 
   async function disconnect() {
     setBusy(true);
@@ -53,19 +85,35 @@ export function ConnectionCard({
           </p>
         </div>
         {ads.connected ? (
-          canDisconnect ? (
-            <button
-              type="button"
-              onClick={() => setAsking(true)}
-              className="border-pw-border-strong hover:bg-pw-muted rounded-[10px] border px-4 py-2 text-[14px] font-semibold"
-            >
-              Disconnect
-            </button>
-          ) : null
+          <div className="flex flex-wrap gap-2">
+            {ads.customer_id ? (
+              <button
+                type="button"
+                onClick={refresh}
+                disabled={reading}
+                className="border-pw-border-strong hover:bg-pw-muted rounded-[10px] border px-4 py-2 text-[14px] font-semibold disabled:opacity-60"
+              >
+                {reading ? "Reading…" : "Refresh now"}
+              </button>
+            ) : null}
+            {canDisconnect ? (
+              <button
+                type="button"
+                onClick={() => setAsking(true)}
+                className="border-pw-border-strong hover:bg-pw-muted rounded-[10px] border px-4 py-2 text-[14px] font-semibold"
+              >
+                Disconnect
+              </button>
+            ) : null}
+          </div>
         ) : (
           <ConnectButton />
         )}
       </div>
+
+      {ads.connected && ads.customer_id ? (
+        <p className="text-pw-ink-400 mt-3 text-[13px] leading-[19px]">{lastLook(sync, reading)}</p>
+      ) : null}
 
       {asking ? (
         <div className="border-pw-warn-border bg-pw-warn-bg mt-4 rounded-[12px] border p-4">
@@ -95,6 +143,37 @@ export function ConnectionCard({
       ) : null}
     </PwCard>
   );
+}
+
+type SyncState = {
+  run?: { status: string; stage: string; counts: Record<string, number>; trouble: string } | null;
+  last_done_at?: string | null;
+  held?: Record<string, number>;
+};
+
+/* When we last looked, and what we hold — or why the last look did not work. */
+function lastLook(sync: SyncState | null, reading: boolean): string {
+  if (reading || sync?.run?.status === "running") {
+    return sync?.run?.stage ? `${sync.run.stage}…` : "Reading the account…";
+  }
+  if (sync?.run?.status === "failed" && sync.run.trouble) {
+    return `The last read did not work: ${sync.run.trouble}`;
+  }
+  if (!sync?.last_done_at) return "Not read yet. The first read happens within fifteen minutes.";
+  const held = counted(sync.held ?? {});
+  return `Last read ${ago(sync.last_done_at)}${held ? `. We hold ${held}` : ""}.`;
+}
+
+function ago(when: string): string {
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(when).getTime()) / 60000));
+  if (minutes < 1) return "just now";
+  if (minutes === 1) return "a minute ago";
+  if (minutes < 60) return `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours === 1) return "an hour ago";
+  if (hours < 24) return `${hours} hours ago`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? "yesterday" : `${days} days ago`;
 }
 
 function pretty(id: string): string {

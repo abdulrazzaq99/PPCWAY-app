@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { AccountPicker } from "@/components/pw/account-picker";
 import { ConnectButton } from "@/components/pw/connect-button";
+import { FirstLook } from "@/components/pw/first-look";
 import { Header, PwCard, PwPage } from "@/components/pw/shell";
 import { ask } from "@/lib/pw-fetch";
 
@@ -26,23 +27,10 @@ export default async function WelcomePage() {
               {ads.customer_name || "Your account"} is connected
             </h2>
             <p className="text-pw-ink-500 mt-2 max-w-[640px] text-[16px] leading-[25px]">
-              We read it and nothing more. Your home screen now shows what it spent, what it brought
+              We read it and nothing more. Your home screen shows what it spent, what it brought
               back, and where the money went.
             </p>
-            <div className="mt-5 flex flex-wrap gap-3">
-              <Link
-                href="/home"
-                className="bg-pw-blue hover:bg-pw-blue-hover rounded-[10px] px-4 py-2 text-[14px] font-semibold text-white"
-              >
-                Go to your dashboard
-              </Link>
-              <Link
-                href="/campaigns"
-                className="border-pw-border-strong hover:bg-pw-muted rounded-[10px] border px-4 py-2 text-[14px] font-semibold"
-              >
-                See your campaigns
-              </Link>
-            </div>
+            <FirstLook />
           </PwCard>
         ) : (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
