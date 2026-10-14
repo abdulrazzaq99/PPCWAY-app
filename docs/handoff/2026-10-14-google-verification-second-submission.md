@@ -18,9 +18,10 @@ record, and what to send.
 
 There are two separate things, and only one of them is a scope grant.
 
-**Sign in with Google** uses Google Identity Services. It returns an ID token
-and nothing else: `openid`, `userinfo.email` and `userinfo.profile`, all
-non-sensitive. `web/components/auth/google-button.tsx`.
+**Sign in with Google** uses Google Identity Services in its ID-token form —
+`google.accounts.id.initialize` in `web/components/auth/google-button.tsx`. It
+returns a signed JWT saying who the person is. It is not an OAuth grant and it
+requests no scopes, which is why nothing has to be declared for it.
 
 **Connect Google Ads** is the OAuth grant, and it asks for exactly one scope:
 
@@ -43,19 +44,24 @@ in its left sidebar.
 
     console.cloud.google.com/auth/scopes?project=ppcway-509313
 
-The list must be exactly these four and nothing else:
+Checked on 14 October, and it is already right:
 
-| Scope | Kind |
-| --- | --- |
-| `openid` | non-sensitive |
-| `https://www.googleapis.com/auth/userinfo.email` | non-sensitive |
-| `https://www.googleapis.com/auth/userinfo.profile` | non-sensitive |
-| `https://www.googleapis.com/auth/adwords` | **sensitive** |
+| Section | What it holds | Correct? |
+| --- | --- | --- |
+| Non-sensitive | nothing | yes — the sign-in button grants no scopes |
+| Sensitive | `.../auth/adwords` | yes — the one scope the app requests |
+| Restricted | nothing | yes |
 
-Anything else listed there has to be removed before replying. A scope declared
-and not demonstrated is the most common cause of this exact rejection: the
-reviewer cannot see a justification for it in the video, so the whole submission
-is returned.
+**Nothing is to be added here.** An earlier draft of this note said `openid`,
+`userinfo.email` and `userinfo.profile` should be listed as well. They should
+not: the sign-in button uses the ID-token flow, which asks for no scopes, so
+declaring them would widen the request beyond what the app makes — the opposite
+of the least privilege this rejection is about.
+
+One scope requested, one scope declared, nothing spare. That is what "scope
+matching" means in the rejection email, and this project already satisfies it.
+A scope declared and not demonstrated is the usual cause of this rejection, and
+we have none.
 
 ## 2. The test account
 
@@ -78,7 +84,9 @@ their own, which is the flow being reviewed.
 ## 3. The video
 
 Unlisted on YouTube, no edits, no cuts, one take, screen and cursor visible. Six
-or seven minutes is ample. What matters is that every item below is legible on
+or seven minutes is ample. It goes in **two** places when it is done: the
+**Demo video** field at the foot of the Data Access page, and the reply to the
+email. The reviewer reads the console; the thread is how they know to look. What matters is that every item below is legible on
 screen — pause on each one rather than scrolling past it.
 
 **Before recording:** sign out everywhere, clear the browser, and use a Google
