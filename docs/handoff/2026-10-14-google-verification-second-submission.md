@@ -37,8 +37,13 @@ can ask for.
 
 ### What the Cloud Console must say
 
-Console → APIs & Services → OAuth consent screen → **Data access**. The list
-must be exactly these four and nothing else:
+The console has moved this. It is no longer under APIs & Services: it is its own
+product, **Google Auth Platform**, and the scopes are the **Data Access** item
+in its left sidebar.
+
+    console.cloud.google.com/auth/scopes?project=ppcway-509313
+
+The list must be exactly these four and nothing else:
 
 | Scope | Kind |
 | --- | --- |
@@ -152,7 +157,45 @@ and the credentials filled in.
 >
 > Please let me know if anything further is needed.
 
-## 5. Before sending, check these four
+## 5. One thing the console flagged while we were in there
+
+The Project Checkup on the Google Auth Platform overview says:
+
+> **Use secure flows.** Your app is not configured to use secure OAuth flows and
+> may be vulnerable to impersonation. The following production Web OAuth clients
+> are allowing loopback IP redirects: PPCWay web.
+
+It is true and it is ours. The production client carries the live redirect
+
+    https://app.ppcway.com/ads/callback
+
+and, beside it, the localhost ones this project uses in development:
+
+    http://localhost:3001/ads/callback
+    http://localhost:3001/api/oauth/google/callback
+
+A loopback redirect on a production client is a known impersonation path:
+anything running on the developer's machine can receive an authorisation code
+meant for the app. It is not what Google rejected us for, and it does not block
+the reply — but it is the sort of thing a reviewer looking at a security warning
+may ask about, and it should not be true of a production client anyway.
+
+**The fix, and the order matters.** Make a second OAuth client for development
+first, then clean the production one:
+
+1. Google Auth Platform → **Clients** → **Create client** → Web application,
+   named `PPCWay web (local)`. Give it the two localhost redirect URIs above.
+2. Put its client id and secret in `web/.env` for local development. It sits in
+   the same project, so it shares this consent screen and its branding.
+3. Only then: open **PPCWay web** and remove the two `http://localhost:3001`
+   redirect URIs, leaving `https://app.ppcway.com/ads/callback` alone.
+
+**Do not touch the production redirect URI.** Changing or removing
+`https://app.ppcway.com/ads/callback` breaks Connect Google Ads for every
+merchant with `redirect_uri_mismatch`, which this project has already lost an
+afternoon to once.
+
+## 6. Before sending, check these four
 
 - [ ] The Data access list in the Console is exactly the four scopes above.
 - [ ] The video shows the consent screen expanded and readable.
