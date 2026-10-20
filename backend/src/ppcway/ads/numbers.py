@@ -33,10 +33,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ppcway.ads.mirror import (
+    MICRO,
     CampaignDay,
     ExternalChange,
     MirrorAd,
+    MirrorAdGroup,
     MirrorCampaign,
+    MirrorKeyword,
     SyncRun,
 )
 
@@ -476,3 +479,328 @@ def _needs(
             )
         )
     return needs
+
+
+@dataclass
+class CampaignHeld:
+    """One campaign, as its five tabs need it, read from the mirror.
+
+    The numbers, the day-by-day trend and the comparison with the period before
+    are ours. So are the keywords, the ads and the change history. What is not
+    ours yet is the per-keyword and per-ad performance and the search terms:
+    those are Google's own reporting, read live and merged on top of this, and
+    the page says so when they cannot be read rather than showing a zero.
+    """
+
+    read: bool = False
+    trouble: str = ""
+    campaign_id: str = ""
+    name: str = ""
+    status: str = ""
+    currency: str = ""
+    days: int = 30
+    budget: float = 0.0
+    starts_at: str = ""
+    gone: bool = False
+    leads: float = 0.0
+    calls: float = 0.0
+    forms: float = 0.0
+    cost: float = 0.0
+    clicks: int = 0
+    impressions: int = 0
+    leads_before: float = 0.0
+    cost_before: float = 0.0
+    cost_per_lead_before: float = 0.0
+    series: list[Day] = field(default_factory=list)
+    keywords: list[dict[str, Any]] = field(default_factory=list)
+    ads: list[dict[str, Any]] = field(default_factory=list)
+    groups: list[dict[str, Any]] = field(default_factory=list)
+    history: list[Change] = field(default_factory=list)
+    #: Google's live reporting, merged on by the endpoint when it answers.
+    terms: list[dict[str, Any]] = field(default_factory=list)
+    lost_to_budget: float = 0.0
+    lost_to_rank: float = 0.0
+    impression_share: float = 0.0
+    #: False when Google's own reporting could not be read, so the tabs that
+    #: need it can say that instead of showing nothing and implying zero.
+    metrics_read: bool = False
+
+    @property
+    def cost_per_lead(self) -> float:
+        return round(self.cost / self.leads, 2) if self.leads else 0.0
+
+    @property
+    def lead_rate(self) -> float:
+        """Clicks that became an enquiry, as a percentage."""
+        return round((self.leads / self.clicks) * 100, 1) if self.clicks else 0.0
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "read": self.read,
+            "trouble": self.trouble,
+            "campaign_id": self.campaign_id,
+            "name": self.name,
+            "status": self.status,
+            "currency": self.currency,
+            "days": self.days,
+            "budget": round(self.budget, 2),
+            "starts_at": self.starts_at,
+            "gone": self.gone,
+            "leads": round(self.leads, 2),
+            "calls": round(self.calls, 2),
+            "forms": round(self.forms, 2),
+            "cost": round(self.cost, 2),
+            "clicks": self.clicks,
+            "impressions": self.impressions,
+            "cost_per_lead": self.cost_per_lead,
+            "lead_rate": self.lead_rate,
+            "leads_before": round(self.leads_before, 2),
+            "cost_before": round(self.cost_before, 2),
+            "cost_per_lead_before": self.cost_per_lead_before,
+            "lost_to_budget": self.lost_to_budget,
+            "lost_to_rank": self.lost_to_rank,
+            "impression_share": self.impression_share,
+            "series": [d.as_dict() for d in self.series],
+            "keywords": self.keywords,
+            "ads": self.ads,
+            "groups": self.groups,
+            "terms": self.terms,
+            "history": [c.as_dict() for c in self.history],
+            "metrics_read": self.metrics_read,
+            "source": "mirror",
+        }
+
+
+def campaign_numbers(
+    session: Session,
+    customer_id: str,
+    campaign_id: str,
+    *,
+    days: int = 30,
+    currency: str = "",
+    today: date | None = None,
+) -> CampaignHeld:
+    """One campaign out of the mirror: its numbers, its parts and its history."""
+    now = today or datetime.now(UTC).date()
+    last = now - timedelta(days=1)
+    start = now - timedelta(days=days)
+    was_start = start - timedelta(days=days)
+
+    held = CampaignHeld(campaign_id=campaign_id, currency=currency, days=days)
+    campaign = session.scalars(
+        select(MirrorCampaign).where(
+            MirrorCampaign.customer_id == customer_id,
+            MirrorCampaign.campaign_id == campaign_id,
+        )
+    ).first()
+    if campaign is None:
+        held.trouble = "We have not read that campaign yet."
+        return held
+
+    held.name = campaign.name
+    held.status = campaign.status
+    held.budget = campaign.budget
+    held.starts_at = campaign.starts_at
+    held.gone = campaign.gone_at is not None
+
+    rows = session.scalars(
+        select(CampaignDay)
+        .where(
+            CampaignDay.customer_id == customer_id,
+            CampaignDay.campaign_id == campaign_id,
+            CampaignDay.day >= was_start,
+            CampaignDay.day <= last,
+        )
+        .order_by(CampaignDay.day)
+    )
+    for row in rows:
+        if was_start <= row.day < start:
+            held.leads_before += row.calls + row.forms
+            held.cost_before += row.cost
+            continue
+        held.series.append(
+            Day(
+                date=row.day.isoformat(),
+                calls=row.calls,
+                forms=row.forms,
+                cost=row.cost,
+                clicks=row.clicks,
+                impressions=row.impressions,
+            )
+        )
+    held.calls = round(sum(d.calls for d in held.series), 2)
+    held.forms = round(sum(d.forms for d in held.series), 2)
+    held.leads = round(held.calls + held.forms, 2)
+    held.cost = round(sum(d.cost for d in held.series), 2)
+    held.clicks = sum(d.clicks for d in held.series)
+    held.impressions = sum(d.impressions for d in held.series)
+    held.leads_before = round(held.leads_before, 2)
+    held.cost_before = round(held.cost_before, 2)
+    held.cost_per_lead_before = (
+        round(held.cost_before / held.leads_before, 2) if held.leads_before else 0.0
+    )
+
+    groups = {
+        row.ad_group_id: row
+        for row in session.scalars(
+            select(MirrorAdGroup).where(
+                MirrorAdGroup.customer_id == customer_id,
+                MirrorAdGroup.campaign_id == campaign_id,
+            )
+        )
+    }
+    held.groups = [
+        {
+            "ad_group_id": row.ad_group_id,
+            "name": row.name,
+            "status": row.status,
+            "bid": round(row.cpc_bid_micros / MICRO, 2),
+            "gone": row.gone_at is not None,
+        }
+        for row in sorted(groups.values(), key=lambda g: g.name)
+    ]
+
+    keywords = session.scalars(
+        select(MirrorKeyword).where(
+            MirrorKeyword.customer_id == customer_id,
+            MirrorKeyword.campaign_id == campaign_id,
+            MirrorKeyword.gone_at.is_(None),
+        )
+    )
+    held.keywords = [
+        {
+            "keyword": row.text,
+            "match": row.match_type.title() if row.match_type else "",
+            "status": row.status,
+            "negative": row.negative,
+            "quality_score": row.quality_score,
+            "bid": round(row.cpc_bid_micros / MICRO, 2),
+            "ad_group": groups[row.ad_group_id].name if row.ad_group_id in groups else "",
+            # Google's own reporting fills these in; the mirror does not hold them.
+            "clicks": 0,
+            "leads": 0.0,
+            "cost": 0.0,
+            "cost_per_lead": 0.0,
+        }
+        for row in sorted(keywords, key=lambda k: (k.negative, k.text))
+    ]
+
+    ads = session.scalars(
+        select(MirrorAd).where(
+            MirrorAd.customer_id == customer_id,
+            MirrorAd.campaign_id == campaign_id,
+            MirrorAd.gone_at.is_(None),
+        )
+    )
+    held.ads = [
+        {
+            "ad_id": row.ad_id,
+            "ad_group": groups[row.ad_group_id].name if row.ad_group_id in groups else "",
+            "headlines": [h for h in (row.headlines or []) if h],
+            "descriptions": [d for d in (row.descriptions or []) if d],
+            "final_urls": [u for u in (row.final_urls or []) if u],
+            "approval": row.approval,
+            "status": row.status,
+            "impressions": 0,
+            "clicks": 0,
+            "click_rate": 0.0,
+        }
+        for row in ads
+    ]
+
+    held.history = [
+        Change(kind=c.kind, label=c.label, summary=c.summary, when=c.noticed_at)
+        for c in session.scalars(
+            select(ExternalChange)
+            .where(
+                ExternalChange.customer_id == customer_id,
+                ExternalChange.campaign_id == campaign_id,
+            )
+            .order_by(ExternalChange.noticed_at.desc())
+            .limit(50)
+        )
+    ]
+    held.read = True
+    return held
+
+
+def merge_live(held: CampaignHeld, live: dict[str, Any]) -> CampaignHeld:
+    """Lay Google's own reporting over what we hold.
+
+    The mirror knows what a campaign is made of; Google knows what each part of
+    it did. The two are matched on what a person sees — the keyword and its
+    match type, the ad group and the ad's headlines — because Google's reporting
+    views do not return the resource names the mirror is keyed on.
+
+    Nothing is overwritten by a refusal. If Google will not answer, the page
+    keeps the campaign's own numbers and the tabs that need Google's reporting
+    say they could not be read, which is worth more than a zero.
+    """
+    if not live.get("read"):
+        return held
+
+    held.metrics_read = True
+    held.terms = list(live.get("terms") or [])
+    held.lost_to_budget = float(live.get("lost_to_budget") or 0)
+    held.lost_to_rank = float(live.get("lost_to_rank") or 0)
+    held.impression_share = float(live.get("impression_share") or 0)
+    held.currency = held.currency or str(live.get("currency") or "")
+
+    # The first sync may not have reached the day table yet. Google's totals are
+    # better than zeros for the minute that lasts.
+    if not held.series:
+        held.leads = float(live.get("leads") or 0)
+        held.cost = float(live.get("cost") or 0)
+        held.clicks = int(live.get("clicks") or 0)
+        held.impressions = int(live.get("impressions") or 0)
+
+    did = {
+        (str(word.get("keyword", "")).lower(), str(word.get("match", ""))): word
+        for word in live.get("keywords") or []
+    }
+    for word in held.keywords:
+        found = did.get((str(word["keyword"]).lower(), str(word["match"])))
+        if found is None:
+            continue
+        word["clicks"] = found.get("clicks", 0)
+        word["leads"] = found.get("leads", 0.0)
+        word["cost"] = found.get("cost", 0.0)
+        word["cost_per_lead"] = found.get("cost_per_lead", 0.0)
+        # Google's quality score is fresher in its own reporting than in ours.
+        word["quality_score"] = found.get("quality_score") or word["quality_score"]
+    already = {(str(w["keyword"]).lower(), str(w["match"])) for w in held.keywords}
+    for key, found in did.items():
+        if key in already:
+            continue
+        # Reported by Google and not yet mirrored: a keyword added minutes ago.
+        held.keywords.append(
+            {
+                "keyword": found.get("keyword", ""),
+                "match": found.get("match", ""),
+                "status": "",
+                "negative": False,
+                "quality_score": found.get("quality_score", 0),
+                "bid": 0.0,
+                "ad_group": "",
+                "clicks": found.get("clicks", 0),
+                "leads": found.get("leads", 0.0),
+                "cost": found.get("cost", 0.0),
+                "cost_per_lead": found.get("cost_per_lead", 0.0),
+            }
+        )
+    held.keywords.sort(key=lambda w: (-float(w.get("cost") or 0), str(w.get("keyword", ""))))
+
+    ran = {
+        (str(ad.get("ad_group", "")), tuple(str(h) for h in (ad.get("headlines") or [])[:3])): ad
+        for ad in live.get("ads") or []
+    }
+    for ad in held.ads:
+        found = ran.get((str(ad["ad_group"]), tuple(str(h) for h in ad["headlines"][:3])))
+        if found is None:
+            continue
+        ad["impressions"] = found.get("impressions", 0)
+        ad["clicks"] = found.get("clicks", 0)
+        ad["click_rate"] = found.get("click_rate", 0.0)
+        ad["approval"] = found.get("approval") or ad["approval"]
+    held.ads.sort(key=lambda a: -int(a.get("impressions") or 0))
+    return held

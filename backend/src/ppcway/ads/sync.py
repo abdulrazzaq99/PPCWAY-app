@@ -199,6 +199,7 @@ def _upsert(
                         customer_id=customer_id,
                         kind=kind,
                         resource_name=resource_name,
+                        campaign_id=str(fields.get("campaign_id", "")),
                         label=label,
                         summary=line,
                         before={k: before.get(k) for k in fields},
@@ -218,7 +219,23 @@ def _upsert(
             # The thing is gone from Google's answer, so this time its name has
             # to come from what we hold rather than from what was returned.
             name = getattr(row, "name", "") or getattr(row, "text", "") or resource_name
-            changes.append(f"{name} is no longer in the account")
+            said = f"{name} is no longer in the account"
+            changes.append(said)
+            # Deleting something is a change made in Google Ads like any other,
+            # and the one a person is most likely to come looking for.
+            session.add(
+                ExternalChange(
+                    customer_id=customer_id,
+                    kind=kind,
+                    resource_name=resource_name,
+                    campaign_id=str(getattr(row, "campaign_id", "") or ""),
+                    label=name,
+                    summary=said,
+                    before={"gone": False},
+                    after={"gone": True},
+                    noticed_at=now,
+                )
+            )
 
     return len(seen), changes
 

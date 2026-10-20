@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -115,6 +115,20 @@ class Summary:
         }
 
 
+def _during(days: int, today: date | None = None) -> str:
+    """Google's own words for the window, including the ones it has no preset for.
+
+    `LAST_90_DAYS` does not exist in GAQL, and quietly falling back to thirty is
+    how a ninety-day screen ends up showing thirty days of keywords beside
+    ninety days of totals. Where there is no preset, the dates are spelled out.
+    """
+    if days in (7, 14, 30):
+        return f"DURING LAST_{days}_DAYS"
+    now = today or datetime.now(UTC).date()
+    first, last = now - timedelta(days=days), now - timedelta(days=1)
+    return f"BETWEEN '{first.isoformat()}' AND '{last.isoformat()}'"
+
+
 def _micros(value: Any) -> float:
     try:
         return round(int(value) / MICRO, 2)
@@ -168,7 +182,7 @@ def account_summary(
     c = client or httpx.Client(timeout=httpx.Timeout(60))
     now = today or datetime.now(UTC)
     found = Summary(customer_id=customer_id, days=days)
-    window = f"LAST_{days}_DAYS" if days in (7, 14, 30) else "LAST_30_DAYS"
+    window = _during(days)
     ask = {
         "access_token": access_token,
         "developer_token": developer_token,
@@ -188,7 +202,7 @@ def account_summary(
             f"""
             SELECT segments.date, metrics.cost_micros, metrics.clicks,
                    metrics.impressions, customer.currency_code
-            FROM customer WHERE segments.date DURING {window}
+            FROM customer WHERE segments.date {window}
             """,
             **ask,  # type: ignore[arg-type]
         )
@@ -210,7 +224,7 @@ def account_summary(
             customer_id,
             f"""
             SELECT segments.date, segments.conversion_action_category, metrics.conversions
-            FROM customer WHERE segments.date DURING {window}
+            FROM customer WHERE segments.date {window}
             """,
             **ask,  # type: ignore[arg-type]
         )
@@ -236,7 +250,7 @@ def account_summary(
             SELECT campaign.id, campaign.name, campaign.status,
                    campaign_budget.amount_micros, metrics.conversions, metrics.cost_micros
             FROM campaign
-            WHERE segments.date DURING {window} AND campaign.status != 'REMOVED'
+            WHERE segments.date {window} AND campaign.status != 'REMOVED'
             ORDER BY metrics.cost_micros DESC
             """,
             **ask,  # type: ignore[arg-type]
@@ -363,7 +377,7 @@ def campaign_detail(
     """
     own = client is None
     c = client or httpx.Client(timeout=httpx.Timeout(60))
-    window = f"LAST_{days}_DAYS" if days in (7, 14, 30) else "LAST_30_DAYS"
+    window = _during(days)
     found = Detail(campaign_id=campaign_id, days=days)
     where = f"campaign.id = {campaign_id}"
     ask = {
@@ -382,7 +396,7 @@ def campaign_detail(
                    metrics.clicks, metrics.impressions,
                    metrics.search_budget_lost_impression_share,
                    metrics.search_rank_lost_impression_share, metrics.search_impression_share
-            FROM campaign WHERE {where} AND segments.date DURING {window}
+            FROM campaign WHERE {where} AND segments.date {window}
             """,
             **ask,  # type: ignore[arg-type]
         )
@@ -413,7 +427,7 @@ def campaign_detail(
             SELECT ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type,
                    ad_group_criterion.quality_info.quality_score,
                    metrics.clicks, metrics.conversions, metrics.cost_micros
-            FROM keyword_view WHERE {where} AND segments.date DURING {window}
+            FROM keyword_view WHERE {where} AND segments.date {window}
             ORDER BY metrics.cost_micros DESC
             """,
             **ask,  # type: ignore[arg-type]
@@ -442,7 +456,7 @@ def campaign_detail(
             f"""
             SELECT search_term_view.search_term, metrics.clicks, metrics.conversions,
                    metrics.cost_micros
-            FROM search_term_view WHERE {where} AND segments.date DURING {window}
+            FROM search_term_view WHERE {where} AND segments.date {window}
               AND metrics.cost_micros > 0
             ORDER BY metrics.cost_micros DESC
             """,
@@ -468,7 +482,7 @@ def campaign_detail(
             SELECT ad_group.name, ad_group_ad.ad.responsive_search_ad.headlines,
                    ad_group_ad.policy_summary.approval_status, ad_group_ad.status,
                    metrics.impressions, metrics.clicks, metrics.conversions
-            FROM ad_group_ad WHERE {where} AND segments.date DURING {window}
+            FROM ad_group_ad WHERE {where} AND segments.date {window}
             ORDER BY metrics.impressions DESC
             """,
             **ask,  # type: ignore[arg-type]

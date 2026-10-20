@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from ppcway.ads.accounts import accessible_accounts
 from ppcway.ads.mirror import CampaignDay, ExternalChange, MirrorCampaign, SyncRun
 from ppcway.ads.models import AdsConnection, ConsentTrip
-from ppcway.ads.numbers import account_numbers
+from ppcway.ads.numbers import account_numbers, campaign_numbers, merge_live
 from ppcway.ads.oauth import (
     AdsConnectionRefused,
     TokenVault,
@@ -1105,7 +1105,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         days: int = 30,
         x_session_token: Annotated[str | None, Header()] = None,
     ) -> dict[str, Any]:
-        """One campaign: its numbers, keywords, search terms and ads."""
+        """One campaign: its numbers, its parts, its change history and its ads.
+
+        Both at once. What the campaign is made of and what it did day by day
+        are ours, out of the mirror; what each keyword and each ad did is
+        Google's own reporting, read live and laid on top. Either half can fail
+        without taking the page with it: a campaign that shows its keywords and
+        says it could not read the search terms is more use than an error.
+        """
         if not campaign_id.isdigit():
             raise HTTPException(404, "No campaign with that id.")
         account = _signed_in(session, x_session_token)
@@ -1118,39 +1125,58 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "choose": True,
                 "trouble": "Choose which of your Google Ads accounts we read.",
             }
-        if settings.google_ads_developer_token is None:
-            return {"read": False, "trouble": "Reading Google Ads is not set up yet."}
-        client_id, secret = _ads_ready()
-        try:
-            vault = TokenVault(
-                settings.google_oauth_token_key.get_secret_value()
-                if settings.google_oauth_token_key
-                else None
-            )
-            access = fresh_access_token(
-                vault.unlock(connection.ciphertext), client_id=client_id, client_secret=secret
-            )
-            found = campaign_detail(
-                connection.customer_id,
-                campaign_id,
-                access_token=access,
-                developer_token=settings.google_ads_developer_token.get_secret_value(),
-                days=days if days in (7, 30, 90) else 30,
-                api_version=settings.google_ads_api_version,
-                login_customer_id=settings.google_ads_login_customer_id,
-            )
-        except (AdsConnectionRefused, VaultUnavailable) as exc:
-            log.warning("campaign %s unreadable for %s: %s", campaign_id, account.id, exc)
-            if _permission_is_gone(exc):
-                connection.revoked_at = datetime.now(UTC)
-                session.commit()
-                return {
-                    "read": False,
-                    "reconnect": True,
-                    "trouble": "Google has ended this permission.",
-                }
-            return {"read": False, "trouble": "We could not read that campaign."}
-        return found.as_dict()
+        window = days if days in (7, 30, 90) else 30
+        held = campaign_numbers(
+            session,
+            connection.customer_id,
+            campaign_id,
+            days=window,
+            currency=connection.currency,
+        )
+
+        live: dict[str, Any] = {}
+        gone = False
+        if settings.google_ads_developer_token is not None:
+            client_id, secret = _ads_ready()
+            try:
+                vault = TokenVault(
+                    settings.google_oauth_token_key.get_secret_value()
+                    if settings.google_oauth_token_key
+                    else None
+                )
+                access = fresh_access_token(
+                    vault.unlock(connection.ciphertext), client_id=client_id, client_secret=secret
+                )
+                live = campaign_detail(
+                    connection.customer_id,
+                    campaign_id,
+                    access_token=access,
+                    developer_token=settings.google_ads_developer_token.get_secret_value(),
+                    days=window,
+                    api_version=settings.google_ads_api_version,
+                    login_customer_id=settings.google_ads_login_customer_id,
+                ).as_dict()
+            except (AdsConnectionRefused, VaultUnavailable) as exc:
+                log.warning("campaign %s unreadable for %s: %s", campaign_id, account.id, exc)
+                if _permission_is_gone(exc):
+                    connection.revoked_at = datetime.now(UTC)
+                    session.commit()
+                    gone = True
+
+        if held.read:
+            answer = merge_live(held, live).as_dict()
+        elif live.get("read"):
+            answer = {**live, "source": "live", "metrics_read": True}
+        else:
+            answer = {
+                "read": False,
+                "campaign_id": campaign_id,
+                "trouble": held.trouble or "We could not read that campaign.",
+            }
+        if gone:
+            answer["reconnect"] = True
+            answer["trouble"] = "Google has ended this permission."
+        return answer
 
     @app.post("/v1/ads/choose", response_model=AdsStatusOut)
     def choose_account(

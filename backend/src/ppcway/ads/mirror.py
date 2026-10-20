@@ -218,6 +218,9 @@ class ExternalChange(Base):
     #: "campaign", "ad_group", "keyword" or "ad".
     kind: Mapped[str] = mapped_column(String(20))
     resource_name: Mapped[str] = mapped_column(String(255), index=True)
+    #: Which campaign it happened in, so a campaign can show its own history
+    #: without matching resource names against everything we hold.
+    campaign_id: Mapped[str] = mapped_column(String(20), default="", index=True)
     #: What the thing is called, so the record reads without a second lookup.
     label: Mapped[str] = mapped_column(String(255), default="")
     #: One line a person can read: "Daily budget raised from $5.00 to $12.00".
