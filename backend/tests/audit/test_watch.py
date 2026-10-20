@@ -18,7 +18,9 @@ from ppcway.auth.models import UserAccount  # noqa: F401 - a request points at o
 from ppcway.db.base import Base
 from ppcway.org.models import Organization
 
-SITE = "https://alphaplumbing.ca"
+#: Already tidy, which is how a run is stored: the endpoint that starts an audit
+#: normalises the address before writing it. Only the request keeps the typing.
+SITE = "https://alphaplumbing.ca/"
 NOW = datetime(2026, 10, 20, 2, 0, tzinfo=UTC)
 
 
@@ -168,3 +170,15 @@ def test_a_run_interrupted_hours_ago_stops_blocking_its_site(db: DbSession) -> N
     due = due_audits(db, now=NOW)
 
     assert [d.site for d in due] == [SITE]
+
+
+def test_one_website_typed_two_ways_is_one_audit(db: DbSession) -> None:
+    # Somebody pasted their own address out of a Google Ads report, with the
+    # tracking parameter still on it. It is the same website.
+    org = place(db)
+    asked_for(db, org, site="alpha-plumbing.ca/?utm_campaign=gmb")
+    asked_for(db, org, site="https://alpha-plumbing.ca")
+
+    due = due_audits(db, now=NOW)
+
+    assert [d.site for d in due] == ["https://alpha-plumbing.ca/"]

@@ -522,6 +522,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             pages_read=run.pages_read,
             place_id=asked.place_id if asked else "",
             city=asked.city if asked else "",
+            # The listing carries the score; one run on its own carried null,
+            # which made the same audit answer two different ways.
+            score=_score_of(run),
         )
 
     @app.get("/v1/audits/{run_id}/screenshot/{kind}")

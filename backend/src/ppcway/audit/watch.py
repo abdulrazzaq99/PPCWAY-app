@@ -30,6 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ppcway.audit.models import AuditRequest, AuditRun
+from ppcway.audit.runner import normalise_site
 
 #: The website, once a day.
 EVERY_DAY = 1
@@ -76,16 +77,25 @@ def due_audits(
 
     # The most recent request per site per business, which is what carries the
     # town, the trade and the listing the audit needs to run again.
+    #
+    # Keyed on the tidied address, not the typed one. Somebody who pasted their
+    # own website out of a Google Ads report typed
+    # `alpha-plumbing.ca/?utm_campaign=gmb`, and somebody else typed
+    # `alpha-plumbing.ca`. Those are one website, and grouping on the raw string
+    # audits it twice a night for ever and splits its history in half.
     asked: dict[tuple[str, uuid.UUID | None], AuditRequest] = {}
     for request in session.scalars(
         select(AuditRequest)
         .where(AuditRequest.organization_id.is_not(None))
         .order_by(AuditRequest.created_at)
     ):
-        asked[(request.site, request.organization_id)] = request
+        asked[(normalise_site(request.site), request.organization_id)] = request
 
     out: list[Due] = []
     for (site, organization_id), request in asked.items():
+        # Runs are matched on the tidied address, which is what they are already
+        # written with: the endpoint that starts an audit normalises the address
+        # before storing it. Only the request keeps what somebody typed.
         runs = list(
             session.scalars(
                 select(AuditRun)

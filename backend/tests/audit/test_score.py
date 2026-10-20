@@ -36,3 +36,17 @@ def test_a_run_with_nothing_to_judge_has_no_score() -> None:
     assert _score_of(run_with(None)) is None
     assert _score_of(run_with([])) is None
     assert _score_of(run_with([{"status": "unknown"}])) is None
+
+
+def test_the_same_run_scores_the_same_on_its_own_as_in_a_listing() -> None:
+    # `/v1/audits/{id}` left the score out, so a finished audit read on its own
+    # answered null while the listing answered a number.
+    run = run_with(
+        [
+            {"status": "good", "key": "a"},
+            {"status": "needs_you", "key": "b"},
+            {"status": "unknown", "key": "c"},
+        ]
+    )
+
+    assert _score_of(run) == 50
