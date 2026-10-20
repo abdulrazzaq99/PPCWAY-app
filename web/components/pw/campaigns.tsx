@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { CampaignDetail, type Detail } from "@/components/pw/campaign-detail";
 import { Chip, Pill, PillGroup, PwCard } from "@/components/pw/shell";
+import { Sparkline } from "@/components/pw/sparkline";
+import type { AdsSummary } from "@/lib/ads";
 import { cn } from "@/lib/cn";
+import { LEARNING_DAYS, learning } from "@/lib/when";
 
 /*
   Campaigns, laid out as the handoff draws them: the filter pills, a table with
@@ -13,25 +16,7 @@ import { cn } from "@/lib/cn";
 
   Every figure is read from the merchant's own Google Ads account.
 */
-type Row = {
-  campaign_id: string;
-  name: string;
-  status: string;
-  leads: number;
-  cost: number;
-  cost_per_lead: number;
-  budget: number;
-};
-
-type Summary = {
-  read: boolean;
-  trouble?: string;
-  reconnect?: boolean;
-  choose?: boolean;
-  currency?: string;
-  days?: number;
-  campaigns?: Row[];
-};
+type Summary = AdsSummary;
 
 const FILTERS = ["All", "Active", "Paused"] as const;
 
@@ -82,7 +67,6 @@ export function CampaignList({ initial, days: initialDays }: { initial: Summary;
     return row.name.toLowerCase().includes(find.trim().toLowerCase());
   });
   const currency = summary.currency ?? "";
-  const most = Math.max(1, ...rows.map((r) => r.cost));
 
   return (
     <>
@@ -149,12 +133,16 @@ export function CampaignList({ initial, days: initialDays }: { initial: Summary;
                 <th className="px-3 py-3 text-right font-semibold">Spend</th>
                 <th className="px-3 py-3 text-right font-semibold">Leads</th>
                 <th className="px-3 py-3 text-right font-semibold">Cost per lead</th>
-                <th className="px-5 py-3 font-semibold sm:px-6">Share of spend</th>
+                <th className="px-5 py-3 font-semibold sm:px-6">Leads a day</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => {
                 const here = chosen === row.campaign_id;
+                // Google's bidding needs about a week of a campaign's own data
+                // before its cost per lead means anything. Saying so is the
+                // difference between a judgement and a guess.
+                const day = learning(row.starts_at);
                 return (
                   <tr
                     key={row.campaign_id}
@@ -170,7 +158,15 @@ export function CampaignList({ initial, days: initialDays }: { initial: Summary;
                         here && "border-pw-blue border-l-[3px] pl-[17px] sm:pl-[21px]",
                       )}
                     >
-                      {row.name}
+                      <span className="flex items-center gap-2">
+                        <span className="truncate">{row.name}</span>
+                        {day ? (
+                          <Chip tone="info">
+                            Learning · day {day} of {LEARNING_DAYS}
+                          </Chip>
+                        ) : null}
+                        {row.gone ? <Chip tone="neutral">Gone</Chip> : null}
+                      </span>
                     </td>
                     <td className="px-3 py-3">
                       <Chip tone={row.status === "ENABLED" ? "good" : "neutral"}>
@@ -190,17 +186,14 @@ export function CampaignList({ initial, days: initialDays }: { initial: Summary;
                       {row.cost_per_lead ? money(row.cost_per_lead, currency) : "—"}
                     </td>
                     <td className="px-5 py-3 sm:px-6">
-                      {/* A day-by-day trend needs the local mirror; until then
-                          this shows where the money actually went. */}
-                      <span
-                        aria-label={`${Math.round((row.cost / most) * 100)}% of the largest spend`}
-                        className="bg-pw-track block h-[8px] w-[120px] overflow-hidden rounded-full"
-                      >
-                        <span
-                          className="bg-pw-blue block h-full rounded-full"
-                          style={{ width: `${Math.max(3, (row.cost / most) * 100)}%` }}
-                        />
-                      </span>
+                      {/* One bar a day, from our own mirror. A trend answers
+                          "which way is this going", which a share of spend
+                          never could. */}
+                      <Sparkline
+                        days={row.days}
+                        by="leads"
+                        label={`${Math.round(row.leads)} leads over ${days} days in ${row.name}`}
+                      />
                     </td>
                   </tr>
                 );

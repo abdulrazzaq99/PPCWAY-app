@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { ConnectButton } from "@/components/pw/connect-button";
 import { counted } from "@/components/pw/first-sync";
 import { Chip, PwCard } from "@/components/pw/shell";
+import { ago } from "@/lib/when";
 
 /*
   The Google Ads connection, and the way out of it. Disconnecting tells Google
@@ -162,18 +163,6 @@ function lastLook(sync: SyncState | null, reading: boolean): string {
   if (!sync?.last_done_at) return "Not read yet. The first read happens within fifteen minutes.";
   const held = counted(sync.held ?? {});
   return `Last read ${ago(sync.last_done_at)}${held ? `. We hold ${held}` : ""}.`;
-}
-
-function ago(when: string): string {
-  const minutes = Math.max(0, Math.round((Date.now() - new Date(when).getTime()) / 60000));
-  if (minutes < 1) return "just now";
-  if (minutes === 1) return "a minute ago";
-  if (minutes < 60) return `${minutes} minutes ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours === 1) return "an hour ago";
-  if (hours < 24) return `${hours} hours ago`;
-  const days = Math.round(hours / 24);
-  return days === 1 ? "yesterday" : `${days} days ago`;
 }
 
 function pretty(id: string): string {

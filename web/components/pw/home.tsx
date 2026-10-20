@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { ConnectButton, ResendConfirmation } from "@/components/pw/connect-button";
 import { Chip, Kpi, PwCard } from "@/components/pw/shell";
+import { Sparkline } from "@/components/pw/sparkline";
+import type { AdsNeed, AdsSummary } from "@/lib/ads";
 import { cn } from "@/lib/cn";
+import { ago } from "@/lib/when";
 
 /*
   Dashboard home, from the client's handoff: "is it working, and what needs me?"
@@ -13,34 +16,43 @@ import { cn } from "@/lib/cn";
   than showing the handoff's sample numbers, which belong to a plumber in
   Toronto who does not exist.
 */
-export type Summary = {
-  read: boolean;
-  trouble?: string;
-  /** Google has ended the permission; the only way forward is to grant it again. */
-  reconnect?: boolean;
-  /** Connected, but they have not said which of their accounts to read. */
-  choose?: boolean;
-  currency?: string;
-  days?: number;
-  leads?: number;
-  calls?: number;
-  forms?: number;
-  cost?: number;
-  cost_per_lead?: number;
-  month_cost?: number;
-  month_day?: number;
-  month_days?: number;
-  monthly_budget?: number;
-  series?: { date: string; calls: number; forms: number; leads: number }[];
-  campaigns?: {
-    campaign_id: string;
-    name: string;
-    status: string;
-    leads: number;
-    cost: number;
-    cost_per_lead: number;
-  }[];
-};
+export type Summary = AdsSummary;
+
+/*
+  The same window immediately before this one, which is the only honest way to
+  read a figure like this: forty leads is good news or bad news depending
+  entirely on what the forty days before it brought. A live read could not
+  afford the second question; our own mirror answers both in one query.
+*/
+function movement(
+  now: number,
+  before: number,
+  better: "up" | "down",
+): { tone: "good" | "warn" | "neutral"; words: string } | null {
+  if (!before) return null;
+  const diff = now - before;
+  const share = Math.abs(diff) / before;
+  if (share < 0.02) return { tone: "neutral", words: "about the same" };
+  const good = better === "up" ? diff > 0 : diff < 0;
+  return {
+    tone: good ? "good" : "warn",
+    words: `${Math.round(share * 100)}% ${diff > 0 ? "up" : "down"}`,
+  };
+}
+
+function Movement({ now, before, better }: { now: number; before: number; better: "up" | "down" }) {
+  const found = movement(now, before, better);
+  return found ? <Chip tone={found.tone}>{found.words}</Chip> : null;
+}
+
+/** "Against 31 leads in the 30 days before." Nothing, when there is no before. */
+function against(
+  before: number | undefined,
+  days: number,
+  say: (n: number) => string,
+): string | undefined {
+  return before ? `Against ${say(before)} in the ${days} days before.` : undefined;
+}
 
 export type LatestAudit = { id: string; site: string; score: number | null; when: string } | null;
 
@@ -89,13 +101,22 @@ export function Home({
           note={`Last ${days} days`}
           value={summary.read ? String(Math.round(summary.leads ?? 0)) : "—"}
           chip={
-            summary.read && (summary.leads ?? 0) > 0 ? (
-              <span className="text-pw-ink-500 text-[13px]">
-                {Math.round(summary.calls ?? 0)} calls · {Math.round(summary.forms ?? 0)} forms
-              </span>
+            summary.read ? (
+              <>
+                <Movement now={summary.leads ?? 0} before={summary.leads_before ?? 0} better="up" />
+                {(summary.leads ?? 0) > 0 ? (
+                  <span className="text-pw-ink-500 text-[13px]">
+                    {Math.round(summary.calls ?? 0)} calls · {Math.round(summary.forms ?? 0)} forms
+                  </span>
+                ) : null}
+              </>
             ) : null
           }
-          foot={summary.read ? undefined : "Connect your account to count these."}
+          foot={
+            summary.read
+              ? against(summary.leads_before, days, (n) => `${Math.round(n)} leads`)
+              : "Connect your account to count these."
+          }
         />
         <Kpi
           label="Cost per lead"
@@ -105,10 +126,19 @@ export function Home({
               ? money(summary.cost_per_lead ?? 0, currency)
               : "—"
           }
+          chip={
+            summary.read ? (
+              <Movement
+                now={summary.cost_per_lead ?? 0}
+                before={summary.cost_per_lead_before ?? 0}
+                better="down"
+              />
+            ) : null
+          }
           foot={
             summary.read && (summary.leads ?? 0) === 0 && (summary.cost ?? 0) > 0
               ? `${money(summary.cost ?? 0, currency)} spent and nothing counted yet.`
-              : undefined
+              : against(summary.cost_per_lead_before, days, (n) => money(n, currency))
           }
         />
         <Kpi
@@ -135,12 +165,15 @@ export function Home({
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_1fr]">
         <LeadsByDay summary={summary} />
-        <NeedsYou connected={connected} />
+        <NeedsYou connected={connected} summary={summary} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_1fr]">
         <Campaigns summary={summary} currency={currency} days={days} />
-        <WhatOttoDid />
+        <div className="flex flex-col gap-4">
+          <WhatOttoDid />
+          <Activity summary={summary} />
+        </div>
       </div>
 
       <AskOtto firstName={firstName} business={business} />
@@ -302,15 +335,93 @@ function LeadsByDay({ summary }: { summary: Summary }) {
   );
 }
 
-function NeedsYou({ connected }: { connected: boolean }) {
+/*
+  "Needs you" is the second half of the home screen's one question. Everything
+  in it is read from the mirror and written as a sentence by the backend, so a
+  person who has never opened Google Ads can act on it without translation.
+
+  It is deliberately not Otto's inbox. These are facts about the account as it
+  stands today; Otto's proposals arrive in week three and will sit above them.
+*/
+function NeedsYou({ connected, summary }: { connected: boolean; summary: Summary }) {
+  const needs = summary.needs ?? [];
   return (
     <PwCard className="p-5 sm:p-6">
-      <h2 className="text-[17px] leading-[22px] font-semibold">Needs you</h2>
-      <Empty>
-        {connected
-          ? "Otto is not watching this account yet. When it is, the changes worth making appear here for you to approve, one tap each, and nothing is applied without your yes."
-          : "Once your account is connected and Otto starts watching it, the changes worth making appear here for your approval."}
-      </Empty>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-[17px] leading-[22px] font-semibold">Needs you</h2>
+        {needs.length ? <Chip tone="warn">{needs.length}</Chip> : null}
+      </div>
+      {needs.length === 0 ? (
+        <Empty>
+          {connected
+            ? "Nothing in this account needs you today. When Otto starts watching it, the changes worth making appear here for you to approve, one tap each, and nothing is applied without your yes."
+            : "Once your account is connected and Otto starts watching it, the changes worth making appear here for your approval."}
+        </Empty>
+      ) : (
+        <ul className="divide-pw-divider mt-3 divide-y">
+          {needs.slice(0, 6).map((need, i) => (
+            <Need key={`${need.kind}-${need.label}-${i}`} need={need} />
+          ))}
+        </ul>
+      )}
+    </PwCard>
+  );
+}
+
+function Need({ need }: { need: AdsNeed }) {
+  const tone =
+    need.kind === "ad_refused" ? "bad" : need.kind === "spend_no_leads" ? "warn" : "info";
+  const word =
+    need.kind === "ad_refused"
+      ? "Ad refused"
+      : need.kind === "spend_no_leads"
+        ? "No leads"
+        : "Changed by hand";
+  return (
+    <li className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0">
+      <div className="flex flex-wrap items-center gap-2">
+        <Chip tone={tone}>{word}</Chip>
+        <span className="min-w-0 truncate text-[15px] font-semibold">{need.label}</span>
+      </div>
+      <p className="text-pw-ink-500 text-[14px] leading-[21px]">{need.what}</p>
+      {need.campaign_id ? (
+        <Link href="/campaigns" className="text-pw-blue text-[13px] font-semibold">
+          Open the campaign →
+        </Link>
+      ) : null}
+    </li>
+  );
+}
+
+/*
+  What somebody changed in Google Ads itself. The requirements ask that a change
+  made outside PPCway is noticed, recorded as theirs, and never silently
+  overwritten; this is where a merchant sees that happening.
+*/
+function Activity({ summary }: { summary: Summary }) {
+  const changes = summary.activity ?? [];
+  return (
+    <PwCard className="p-5 sm:p-6">
+      <h2 className="text-[17px] leading-[22px] font-semibold">Changed in Google Ads</h2>
+      {changes.length === 0 ? (
+        <Empty>
+          Nothing has changed in this account since we started watching it. When somebody edits a
+          campaign in Google Ads directly, it is listed here: we notice it, we record it as theirs,
+          and nothing of ours writes over it.
+        </Empty>
+      ) : (
+        <ul className="divide-pw-divider mt-3 divide-y">
+          {changes.slice(0, 5).map((change, i) => (
+            <li key={`${change.summary}-${i}`} className="py-3 first:pt-0 last:pb-0">
+              <p className="text-[15px] leading-[21px]">{change.summary}</p>
+              <p className="text-pw-ink-400 mt-[2px] text-[13px]">
+                {change.label}
+                {change.when ? ` · ${ago(change.when)}` : ""}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
     </PwCard>
   );
 }
@@ -350,6 +461,7 @@ function Campaigns({
               <th className="px-5 py-2 font-semibold sm:px-6">Campaign</th>
               <th className="px-3 py-2 text-right font-semibold">Leads</th>
               <th className="px-3 py-2 text-right font-semibold">Cost per lead</th>
+              <th className="px-3 py-2 font-semibold">Leads a day</th>
               <th className="px-5 py-2 font-semibold sm:px-6">Status</th>
             </tr>
           </thead>
@@ -366,6 +478,13 @@ function Campaigns({
                 <td className="pw-num px-3 py-3 text-right text-[15px]">
                   {row.cost_per_lead > 0 ? money(row.cost_per_lead, currency) : "—"}
                 </td>
+                <td className="px-3 py-3">
+                  <Sparkline
+                    days={row.days}
+                    by="leads"
+                    label={`${Math.round(row.leads)} leads over ${days} days in ${row.name}`}
+                  />
+                </td>
                 <td className="px-5 py-3 sm:px-6">
                   <Chip tone={row.status === "ENABLED" ? "good" : "neutral"}>
                     {row.status === "ENABLED" ? "Active" : "Paused"}
@@ -378,7 +497,8 @@ function Campaigns({
       )}
       {rows.length ? (
         <p className="text-pw-ink-400 px-5 pt-3 pb-5 text-[12px] sm:px-6">
-          Last {days} days, read from your Google Ads account.
+          Last {days} days, from your Google Ads account
+          {summary.looked_at ? `, as we last read it ${ago(summary.looked_at)}` : ""}.
         </p>
       ) : null}
     </PwCard>

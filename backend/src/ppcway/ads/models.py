@@ -31,6 +31,9 @@ class AdsConnection(Base):
     #: Which advertising account they chose, once they have chosen.
     customer_id: Mapped[str] = mapped_column(String(20), default="")
     customer_name: Mapped[str] = mapped_column(String(200), default="")
+    #: What that account spends, as Google writes it: "CAD", "USD", "EUR". Kept
+    #: here because the mirror holds micros, which carry no currency of their own.
+    currency: Mapped[str] = mapped_column(String(3), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     #: Set when they disconnect. The row stays as a record that it happened.
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

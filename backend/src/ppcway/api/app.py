@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from ppcway.ads.accounts import accessible_accounts
 from ppcway.ads.mirror import CampaignDay, ExternalChange, MirrorCampaign, SyncRun
 from ppcway.ads.models import AdsConnection, ConsentTrip
+from ppcway.ads.numbers import account_numbers
 from ppcway.ads.oauth import (
     AdsConnectionRefused,
     TokenVault,
@@ -1036,9 +1037,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         """The numbers the dashboard home is built from, for the chosen account.
 
-        Live, because there is no local mirror yet. A merchant with no connection
-        or no chosen account gets `read: false` and a sentence, not an error: the
-        home screen has plenty to show without it.
+        Our own mirror answers this, not Google: one pass over a local table
+        instead of four round trips to California, which is what makes the
+        two-second dashboard in the requirements reachable and what pays for the
+        comparison with the period before.
+
+        Google is asked only when the mirror holds nothing — the minutes between
+        connecting an account and the first sync finishing. A merchant with no
+        connection or no chosen account gets `read: false` and a sentence, not an
+        error: the home screen has plenty to show without it.
         """
         account = _signed_in(session, x_session_token)
         connection = _connection(session, account)
@@ -1050,6 +1057,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "choose": True,
                 "trouble": "Choose which of your Google Ads accounts we read.",
             }
+        window = days if days in (7, 30, 90) else 30
+        held = account_numbers(
+            session, connection.customer_id, days=window, currency=connection.currency
+        )
+        if held.read:
+            return held.as_dict()
         if settings.google_ads_developer_token is None:
             return {"read": False, "trouble": "Reading Google Ads is not set up yet."}
         client_id, secret = _ads_ready()
@@ -1066,7 +1079,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 connection.customer_id,
                 access_token=access,
                 developer_token=settings.google_ads_developer_token.get_secret_value(),
-                days=days if days in (7, 30, 90) else 30,
+                days=window,
                 api_version=settings.google_ads_api_version,
                 login_customer_id=settings.google_ads_login_customer_id,
             )
@@ -1082,7 +1095,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "trouble": "Google has ended this permission. Connect again to carry on.",
                 }
             return {"read": False, "trouble": "We could not read your Google Ads account."}
-        return found.as_dict()
+        return {**found.as_dict(), "source": "live"}
 
     @app.get("/v1/ads/campaigns/{campaign_id}")
     def ads_campaign(
@@ -1182,6 +1195,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "That account is not one Google says you can reach.")
         connection.customer_id = picked.customer_id
         connection.customer_name = picked.name
+        connection.currency = picked.currency
         session.commit()
         return AdsStatusOut(
             connected=True,
