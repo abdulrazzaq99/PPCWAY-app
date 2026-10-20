@@ -85,8 +85,12 @@ export function LandingPages({ pages }: { pages: LandingPage[] }) {
               <Chip tone={page.phone_in_view ? "good" : "warn"}>
                 {page.phone_in_view ? "Phone in view" : "Phone below the fold"}
               </Chip>
-              <Chip tone={page.has_form ? "good" : "warn"}>
-                {page.has_form ? "Has a form" : "No form"}
+              <Chip tone={page.has_form || page.call_to_action?.length ? "good" : "warn"}>
+                {page.has_form
+                  ? "Has a form"
+                  : page.call_to_action?.length
+                    ? `Button: ${page.call_to_action[0]}`
+                    : "Nothing to do"}
               </Chip>
               <Chip tone={page.fits_a_phone ? "good" : "warn"}>
                 {page.fits_a_phone ? "Fits a phone" : "Does not fit a phone"}

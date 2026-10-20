@@ -190,3 +190,36 @@ def test_only_so_many_pages_are_opened() -> None:
     check_pages(pages, Settings(), most=3, render_page=draw)
 
     assert len(opened) == 3
+
+
+def test_a_button_counts_as_something_to_do() -> None:
+    # A tool whose whole job is an upload button has no form element in it and
+    # is not broken. The first run against a real account found exactly this.
+    check = judge(
+        page(html="<html><body></body></html>", tel_links=[], ctas_above_fold=["Upload a PDF"]),
+        "https://pdfezy.com/en/sign-pdf",
+        ["pdfezy - signpdf"],
+    )
+
+    assert check.call_to_action == ["Upload a PDF"]
+    assert not any("nothing to do" in job for job in check.jobs)
+
+
+def test_a_page_with_no_way_to_act_at_all_still_says_so() -> None:
+    check = judge(
+        page(html="<html><body></body></html>", tel_links=[], ctas_above_fold=[]),
+        "https://alphaplumbing.ca/emergency",
+        [],
+    )
+
+    assert any("nothing to do" in job for job in check.jobs)
+
+
+def test_a_page_with_no_phone_number_is_not_told_to_move_it_up() -> None:
+    check = judge(
+        page(tel_links=[], phone_above_fold=False, ctas_above_fold=["Get a quote"]),
+        "https://alphaplumbing.ca/emergency",
+        [],
+    )
+
+    assert not any("not visible until you scroll" in job for job in check.jobs)

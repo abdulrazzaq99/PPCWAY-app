@@ -43,6 +43,8 @@ export type LandingPage = {
   headline: string;
   phone_in_view: boolean;
   has_form: boolean;
+  /** The buttons above the fold, when there is no form. */
+  call_to_action?: string[];
   conversion_tag: boolean;
   tag_fired: boolean;
   overlay: string | null;

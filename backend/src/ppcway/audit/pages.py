@@ -90,6 +90,9 @@ class PageCheck:
     headline: str = ""
     phone_in_view: bool = False
     has_form: bool = False
+    #: The buttons above the fold, when there is no form: a tool whose job is an
+    #: upload button is not a page with nothing to do on it.
+    call_to_action: list[str] = field(default_factory=list)
     #: A Google Ads conversion id is on the page.
     conversion_tag: bool = False
     #: And it actually sent something when the page loaded.
@@ -113,6 +116,7 @@ class PageCheck:
             "headline": self.headline,
             "phone_in_view": self.phone_in_view,
             "has_form": self.has_form,
+            "call_to_action": self.call_to_action,
             "conversion_tag": self.conversion_tag,
             "tag_fired": self.tag_fired,
             "overlay": self.overlay,
@@ -133,7 +137,11 @@ def judge(page: Rendering, url: str, campaigns: list[str]) -> PageCheck:
     check.fits_a_phone = page.viewport_meta and not page.overflow_x
 
     html = page.html or ""
-    check.has_form = "<form" in html.lower() or bool(page.tel_links)
+    # Something to do when you arrive: a form, a tappable number, or a button
+    # that is plainly the next step. A tool whose whole job is an upload button
+    # has no `<form>` in it and is not broken, so the call to action counts.
+    check.has_form = "<form" in html.lower()
+    check.call_to_action = [c for c in page.ctas_above_fold if c][:3]
     tags = classify_tags(
         requests=page.requests,
         scripts=page.scripts,
@@ -153,12 +161,15 @@ def judge(page: Rendering, url: str, campaigns: list[str]) -> PageCheck:
             "The Google Ads tag is on this page but sent nothing when the page opened. "
             "It is usually a consent banner holding it back, or an id that no longer exists."
         )
-    if not check.has_form and not page.tel_links:
+    if not check.has_form and not page.tel_links and not check.call_to_action:
         check.jobs.append(
-            "There is no form and no tappable phone number on this page, so somebody "
-            "who arrives ready to buy has nothing to do."
+            "There is no form, no tappable phone number and no clear button on this "
+            "page, so somebody who arrives ready to buy has nothing to do."
         )
-    elif not check.phone_in_view:
+    elif page.tel_links and not check.phone_in_view:
+        # Only when there is a number to hide. "Your phone number is not visible"
+        # on a page that has no phone number is the kind of finding that teaches
+        # somebody the whole report is guessing.
         check.jobs.append(
             "The phone number is not visible until you scroll. On a phone that is the "
             "difference between a call and a closed tab."
