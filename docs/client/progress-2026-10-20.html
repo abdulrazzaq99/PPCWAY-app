@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PPCway build status</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Outfit:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  @page { size: A4; margin: 17mm 15mm 15mm; }
+  :root {
+    --blue: #2F5BEA; --otto: #7138E2; --ink: #15112A; --muted: #4A4560; --faint: #8A8599;
+    --line: #E8E5DF; --soft: #F6F5F2; --good: #15803D; --warn: #B45309; --bad: #B91C1C;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink); font-size: 9.5pt; line-height: 1.5; margin: 0;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  h1, h2, h3, h4 { font-family: "Outfit", "DM Sans", sans-serif; margin: 0; }
+  h1 { font-size: 27pt; line-height: 1.1; letter-spacing: -0.4pt; }
+  h2 { font-size: 15pt; margin: 20pt 0 7pt; padding-top: 9pt; border-top: 2px solid var(--ink); break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 15pt 0 5pt; break-after: avoid; }
+  h4 { font-size: 9.5pt; margin: 10pt 0 3pt; color: var(--muted); break-after: avoid; }
+  p { margin: 0 0 7pt; }
+  .lede { font-size: 11pt; line-height: 1.55; color: var(--muted); max-width: 152mm; }
+  .cover { padding: 22mm 0 0; break-after: page; }
+  .eyebrow { font-size: 8pt; font-weight: 700; letter-spacing: 1.1pt; text-transform: uppercase; color: var(--blue); margin-bottom: 8pt; }
+  table { width: 100%; border-collapse: collapse; margin: 8pt 0 12pt; font-size: 8.7pt; }
+  th { text-align: left; font-weight: 700; font-size: 7.5pt; letter-spacing: 0.5pt; text-transform: uppercase;
+       color: var(--faint); border-bottom: 1.5px solid var(--line); padding: 5pt 7pt 4pt; vertical-align: bottom; }
+  td { padding: 6pt 7pt; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr { break-inside: avoid; }
+  code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8.2pt; background: var(--soft); padding: 1pt 3.5pt; border-radius: 3pt; }
+  .tag { display: inline-block; font-size: 7.3pt; font-weight: 700; letter-spacing: 0.4pt; text-transform: uppercase;
+         padding: 2pt 6pt; border-radius: 20pt; color: #fff; white-space: nowrap; }
+  .done { background: var(--good); } .part { background: var(--warn); } .todo { background: #6B6680; }
+  .note { background: var(--soft); border-left: 3px solid var(--blue); padding: 9pt 11pt; margin: 10pt 0 12pt; break-inside: avoid; }
+  .note p:last-child { margin-bottom: 0; }
+  .warnnote { background: #FFF8EE; border-left: 3px solid var(--warn); padding: 9pt 11pt; margin: 10pt 0 12pt; break-inside: avoid; }
+  .warnnote p:last-child { margin-bottom: 0; }
+  ul { margin: 4pt 0 8pt; padding-left: 14pt; }
+  li { margin-bottom: 3pt; }
+  .small { font-size: 8.3pt; color: var(--muted); }
+  .pagebreak { break-before: page; }
+  .footer-note { margin-top: 16pt; padding-top: 8pt; border-top: 1px solid var(--line); font-size: 8.2pt; color: var(--faint); }
+  .bar { height: 7pt; background: var(--soft); border-radius: 4pt; overflow: hidden; margin-top: 3pt; }
+  .bar span { display: block; height: 100%; background: var(--blue); }
+  .screen { border: 1px solid var(--line); border-radius: 6pt; padding: 10pt 12pt; margin: 0 0 9pt; break-inside: avoid; }
+  .screen h3 { margin-top: 0; }
+  .screen .where { float: right; font-size: 8.2pt; font-weight: 700; color: var(--blue); font-family: "SF Mono", Menlo, monospace; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <p class="eyebrow">Prepared for the client &middot; 20 October 2026 &middot; Build status</p>
+  <h1>What is built</h1>
+  <p class="lede" style="margin-top:12pt">
+    The four-week delivery plan of 13 October promised two milestones a week. Weeks one and
+    two are complete and deployed to production. This document says what a business owner can
+    do in PPCway today, what runs without anybody touching it, what is not built yet, and the
+    four things the project now waits on the client for.
+  </p>
+  <p class="lede">
+    Nothing below is a plan. Every line is in production at <strong>app.ppcway.com</strong> and
+    can be opened and checked. Where a figure is quoted, it was read from the live system on
+    20 October, not estimated.
+  </p>
+
+  <table style="margin-top:12mm">
+    <tr><td style="width:34%"><strong>Measured against</strong></td>
+        <td>The four-week delivery plan of 13 October 2026, itself drawn from Developer Requirements v1.0</td></tr>
+    <tr><td><strong>Weeks one and two</strong></td><td><span class="tag done">complete</span> &nbsp;deployed 20 October</td></tr>
+    <tr><td><strong>Live at</strong></td><td>app.ppcway.com &mdash; both services in Montreal, Canada</td></tr>
+    <tr><td><strong>Running versions</strong></td><td>Application 00048, website 00043</td></tr>
+    <tr><td><strong>Automated tests passing</strong></td><td>731, run before every release</td></tr>
+    <tr><td><strong>Jobs running on a clock</strong></td><td>6, all enabled and verified</td></tr>
+    <tr><td><strong>Week three begins</strong></td><td>Otto&rsquo;s recommendation engine &mdash; the part that decides what to change</td></tr>
+  </table>
+
+  <p class="footer-note">
+    One caution when judging progress by looking at the app: no screen shows invented numbers.
+    Where the design draws something the machinery cannot yet fill, the screen says which week
+    it arrives instead. Figures on the dashboard are the connected account&rsquo;s real figures.
+  </p>
+</section>
+
+<h2>The four phases of the requirements</h2>
+
+<p>
+  The requirements set out four phases. The first is built in full and is now sitting out the
+  soak period the requirements themselves impose. The second is most of the way in: everything
+  that reads and explains is done, and what remains is the part that recommends.
+</p>
+
+<table>
+  <thead><tr><th style="width:17%">Phase</th><th style="width:42%">What it covers</th><th style="width:13%">Built</th><th>What is left</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>1. Foundation</strong></td>
+      <td>Sign-in, a business with people and roles, secrets, a real Google Ads connection, and a copy of the account in our own database kept in step with Google</td>
+      <td><span class="tag done">100%</span><div class="bar"><span style="width:100%"></span></div></td>
+      <td>Nothing to build. The exit gate is a waiting period, counted below.</td>
+    </tr>
+    <tr>
+      <td><strong>2. Read and recommend</strong></td>
+      <td>The dashboard, campaigns, reports, the website audit as a living tool, the weekly email and alerts, and Otto proposing changes without applying them</td>
+      <td><span class="tag part">80%</span><div class="bar"><span style="width:80%"></span></div></td>
+      <td>Otto&rsquo;s recommendation engine &mdash; week three</td>
+    </tr>
+    <tr>
+      <td><strong>3. Approve and write</strong></td>
+      <td>Proposed changes, the approval inbox, guardrails, undo, editing campaigns, the expert console</td>
+      <td><span class="tag todo">0%</span><div class="bar"><span style="width:0%"></span></div></td>
+      <td>All of it. <strong>Nothing in PPCway writes to a Google Ads account today.</strong></td>
+    </tr>
+    <tr>
+      <td><strong>4. New advertisers</strong></td>
+      <td>Creating an account for a business that has none, billing, the campaign builder</td>
+      <td><span class="tag todo">0%</span><div class="bar"><span style="width:0%"></span></div></td>
+      <td>All of it</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Phase 1&rsquo;s exit gate, counted rather than claimed</h3>
+
+<p>
+  The requirements will not let PPCway write to anybody&rsquo;s account until five accounts have
+  synced cleanly for seven consecutive days. PPCway counts this itself and reports it, so the
+  gate cannot be declared passed because nobody checked. Read from the live system today:
+</p>
+
+<div class="warnnote">
+  <p>
+    <strong>0 of the 5 accounts the gate asks for have 7 clean days. It is running on 1
+    connected account. The gate is not passed.</strong>
+  </p>
+  <p class="small" style="margin-top:6pt">
+    That one account, Byte9, has 5 clean days out of the last 7 across 752 sync runs. It names
+    its own two bad days: 13 October, when no sync ran, and 14 October, when a query asked
+    Google for two fields it had renamed &mdash; since fixed. Byte9 alone reaches seven clean
+    days on <strong>22 October</strong>.
+  </p>
+</div>
+
+<p>
+  <strong>What this needs is four more Google Ads accounts to read, not more code.</strong> Any
+  live account will do, and connecting one takes about a minute. Until there are five, the gate
+  is arithmetic that cannot complete.
+</p>
+
+<h2 class="pagebreak">What a business owner can do today</h2>
+
+<div class="screen">
+  <p class="where">app.ppcway.com</p>
+  <h3>Get in, and connect their advertising</h3>
+  <ul>
+    <li>Sign up and sign in two ways: with Google, or with an email address and a password, with
+        a confirmation link and a reset that both send real email.</li>
+    <li>Invite their own people, with five roles &mdash; owner, admin, member, expert, client
+        viewer &mdash; enforced in the system, not just hidden in the interface.</li>
+    <li>Connect their Google Ads account by granting permission to Google directly. They choose
+        which single account PPCway may read, and they can disconnect inside the product at any
+        time, which destroys the stored permission immediately.</li>
+  </ul>
+</div>
+
+<div class="screen">
+  <p class="where">/home</p>
+  <h3>See what their advertising did, in plain words</h3>
+  <ul>
+    <li>Leads, phone calls, form fills, money spent, clicks and views for the last 30 days, with
+        a sentence before every number.</li>
+    <li>Each figure carries the change against the period before it &mdash; &ldquo;up 18%&rdquo;,
+        &ldquo;down 4%&rdquo; &mdash; so a figure is never shown without saying whether it is
+        better or worse than last time.</li>
+    <li><strong>Needs you</strong>: a short list of real problems, in the owner&rsquo;s language.
+        &ldquo;This campaign has spent $240 and brought no leads.&rdquo; &ldquo;An ad was refused
+        by Google.&rdquo;</li>
+    <li><strong>Changed in Google Ads</strong>: anything edited directly in Google in the last
+        seven days, so no change happens behind the product&rsquo;s back.</li>
+    <li>A trend line beside each campaign, and the website&rsquo;s Visibility Score over time.</li>
+  </ul>
+</div>
+
+<div class="screen">
+  <p class="where">/campaigns</p>
+  <h3>Look into any campaign</h3>
+  <ul>
+    <li>Every campaign with its spend, leads, clicks and cost per lead, and the dates covered
+        printed on the screen so the figure can be checked against Google Ads and will match.</li>
+    <li>Open one campaign for five tabs: overview, ad groups, keywords, ads, and the history of
+        what changed and who changed it.</li>
+    <li>A campaign still learning says so, and counts the days until it has learned.</li>
+  </ul>
+</div>
+
+<div class="screen">
+  <p class="where">/reports</p>
+  <h3>Get a report worth sending to somebody</h3>
+  <ul>
+    <li>Thirty days, ninety days, or this year against last year.</li>
+    <li>Every figure gets a verdict <strong>in words, not an arrow</strong>: a real change, normal
+        variation, or too little data to tell yet. The verdict is calculated, so normal weekly
+        noise is never sold as a win.</li>
+    <li>A definitions panel that explains each term in one sentence.</li>
+    <li><strong>Share this report</strong> builds a private link that opens with no login and no
+        account. It expires after fourteen days, can be revoked at any moment, and shows that one
+        report and nothing else.</li>
+  </ul>
+</div>
+
+<div class="screen">
+  <p class="where">/tools/audit</p>
+  <h3>Find out what is wrong with their website, repeatedly</h3>
+  <ul>
+    <li>Fourteen public checks on the Google listing, the website and the competition, with a real
+        crawler, a real browser and a live mobile speed test. A score out of 100 and specific,
+        fixable findings.</li>
+    <li>It now <strong>runs again every night by itself</strong>, so the score is current rather
+        than a snapshot of the day somebody asked.</li>
+    <li><strong>Score over time</strong>, and <strong>what changed since last time</strong> &mdash;
+        what was fixed, and what broke.</li>
+    <li><strong>Page by page</strong>: the actual pages the ads send people to are opened and
+        judged. Is there a form, a tappable phone number, a clear button? How fast does it load
+        on a phone?</li>
+    <li>The fix list can be sent to a web developer as a link that needs no login.</li>
+  </ul>
+</div>
+
+<div class="screen">
+  <p class="where">by email</p>
+  <h3>Hear from PPCway without logging in</h3>
+  <ul>
+    <li><strong>Monday morning:</strong> a summary of the week &mdash; what was spent, how many
+        leads, what changed, what needs attention.</li>
+    <li><strong>When something is wrong:</strong> spend has suddenly doubled, leads have stopped,
+        an ad was refused, our access to the account was lost, the sync keeps failing, or the
+        website score dropped. Six conditions, and at most one email per issue per day, so the
+        alerts stay worth opening.</li>
+  </ul>
+</div>
+
+<div class="screen">
+  <h3>Free tools, open to visitors who have not signed up</h3>
+  <ul>
+    <li>The website audit, a budget calculator, a cost-per-lead and ROAS calculator, and an ad
+        copy checker.</li>
+    <li>Google&rsquo;s own search volumes turned into a money line &mdash; &ldquo;about 11,280
+        searches a month for what you do in Oakville, $18 to $53 a click&rdquo;.</li>
+    <li>An audit run before signing up follows the person into their account afterwards.</li>
+  </ul>
+</div>
+
+<h2 class="pagebreak">What runs without anybody touching it</h2>
+
+<p>
+  Six jobs run on a clock in Canada. All six are enabled and have been seen to work. This is the
+  difference between a dashboard somebody has to refresh and a service that watches an account.
+</p>
+
+<table>
+  <thead><tr><th style="width:27%">Job</th><th style="width:21%">When</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Structure sync</strong></td><td>every 15 minutes</td>
+        <td>Notices campaigns, ad groups, keywords and ads added, changed or removed in Google Ads</td></tr>
+    <tr><td><strong>Today&rsquo;s figures</strong></td><td>every hour</td>
+        <td>Brings today&rsquo;s spend, clicks and leads up to date</td></tr>
+    <tr><td><strong>Nightly catch-up</strong></td><td>03:15 Toronto</td>
+        <td>Re-reads the last three days, because Google revises recent figures for a day or two</td></tr>
+    <tr><td><strong>Website audit</strong></td><td>02:00 Toronto</td>
+        <td>Re-audits every website in the system so the score stays current</td></tr>
+    <tr><td><strong>Alerts</strong></td><td>every hour</td>
+        <td>Checks the six conditions above and emails only when one is genuinely met</td></tr>
+    <tr><td><strong>The Monday post</strong></td><td>Mondays 08:00 Toronto</td>
+        <td>Sends the weekly summary. First send: <strong>Monday 26 October</strong></td></tr>
+  </tbody>
+</table>
+
+<div class="note">
+  <p>
+    <strong>The alerts job has run every hour today and sent nothing.</strong> That is the correct
+    answer, not a failure: the connected account met none of the six conditions. A system that
+    emails when there is nothing to say trains people to ignore it.
+  </p>
+</div>
+
+<h2>Proved against the live account, not assumed</h2>
+
+<p>
+  Four things were run against production on 20 October rather than taken on trust:
+</p>
+
+<ul>
+  <li><strong>The gate answers with real data</strong>, naming its own two bad days rather than
+      rounding them away.</li>
+  <li><strong>A full scheduled audit ran by itself</strong>: 11 findings, the search-demand
+      figures, the account&rsquo;s own four checks, and one real landing page opened and judged
+      &mdash; a page taken from the live campaign that sends people there.</li>
+  <li><strong>Both login-free links work</strong>, and an unknown link is refused in the same
+      words as an expired one, so a wrong guess learns nothing.</li>
+  <li><strong>Two faults the first live run found were fixed the same day:</strong> one website was
+      queued for audit twice because it had been saved once with a tracking tag on the address and
+      once without; and a finished audit read on its own reported no score while the same audit in
+      a list reported a number.</li>
+</ul>
+
+<h2>What is not built yet</h2>
+
+<table>
+  <thead><tr><th style="width:30%">What</th><th style="width:14%">When</th><th>Why it is not done</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Otto&rsquo;s recommendations</strong></td><td>week three</td>
+        <td>The part that decides what to change: pause this keyword, move this budget, add this
+            negative. The reading it depends on is now all in place.</td></tr>
+    <tr><td><strong>The approval inbox</strong></td><td>week four</td>
+        <td>Approve or reject each proposed change, with guardrails and undo. Blocked on two
+            client decisions, below.</td></tr>
+    <tr><td><strong>Writing to Google Ads</strong></td><td>week four, then a 30-day gate</td>
+        <td>Nothing writes today. The requirements impose a thirty-day waiting period before
+            automatic changes are allowed, ending 6 December.</td></tr>
+    <tr><td><strong>Chat with Otto</strong></td><td>after week four</td>
+        <td>The screen exists and says so plainly rather than pretending.</td></tr>
+    <tr><td><strong>New advertisers</strong></td><td>to 20 November</td>
+        <td>Businesses with no Google Ads account at all, plans and billing, the phone layout.</td></tr>
+  </tbody>
+</table>
+
+<h2>The four things the project waits on</h2>
+
+<table>
+  <thead><tr><th style="width:30%">What is needed</th><th style="width:14%">By when</th><th>What it blocks</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Four more Google Ads accounts connected</strong></td><td>as soon as possible</td>
+        <td>Phase 1&rsquo;s exit gate, which is five accounts syncing cleanly for seven days. One
+            is connected. This is access, not development.</td></tr>
+    <tr><td><strong>Which change types may apply automatically</strong></td><td><strong>Fri 23 Oct</strong></td>
+        <td>Week three&rsquo;s first morning. A fortnight&rsquo;s delay here costs more than
+            everything else on the risk list put together.</td></tr>
+    <tr><td><strong>The data residency answer</strong></td><td><strong>Fri 23 Oct</strong></td>
+        <td>The same. Both services already run in Canada; the question is what must be promised
+            in writing.</td></tr>
+    <tr><td><strong>A demonstration video for Google</strong></td><td>this week</td>
+        <td>Google&rsquo;s app verification. Google accepted our permission request; the rejection
+            was paperwork. Until it clears, merchants see an &ldquo;unverified app&rdquo; warning
+            and the project is capped at 100 connected Google accounts for its lifetime.</td></tr>
+  </tbody>
+</table>
+
+<p class="footer-note">
+  PPCway build status, 20 October 2026. Figures read from the live system the same day:
+  application revision 00048, website revision 00043, 731 automated tests passing, 6 scheduled
+  jobs enabled, 1 Google Ads account connected with 752 sync runs behind it.
+</p>
+
+</body>
+</html>
