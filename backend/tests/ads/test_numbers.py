@@ -325,3 +325,16 @@ def test_the_currency_is_the_one_the_account_was_chosen_with(db: DbSession) -> N
 
     assert held.currency == "CAD"
     assert held.as_dict()["currency"] == "CAD"
+
+
+def test_the_window_carries_the_dates_it_covers(db: DbSession) -> None:
+    # The screen used to work these out for itself and got "to today" over a
+    # window that ends yesterday.
+    campaign(db)
+    day(db, date(2026, 10, 14), cost=10.0)
+
+    held = account_numbers(db, "1", days=30, today=TODAY)
+
+    assert held.starts_on == "2026-09-15"
+    assert held.ends_on == "2026-10-14"
+    assert held.as_dict()["ends_on"] == "2026-10-14"

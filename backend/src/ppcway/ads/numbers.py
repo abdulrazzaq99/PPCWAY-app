@@ -173,6 +173,11 @@ class Held:
     customer_id: str = ""
     currency: str = ""
     days: int = 30
+    #: The window these figures cover, as dates. On the screen rather than
+    #: computed there: a header that says "to today" over a window that ends
+    #: yesterday is a small lie that costs somebody an afternoon.
+    starts_on: str = ""
+    ends_on: str = ""
     leads: float = 0.0
     calls: float = 0.0
     forms: float = 0.0
@@ -209,6 +214,8 @@ class Held:
             "customer_id": self.customer_id,
             "currency": self.currency,
             "days": self.days,
+            "starts_on": self.starts_on,
+            "ends_on": self.ends_on,
             "leads": round(self.leads, 2),
             "calls": round(self.calls, 2),
             "forms": round(self.forms, 2),
@@ -272,6 +279,8 @@ def account_numbers(
         customer_id=customer_id,
         currency=currency,
         days=days,
+        starts_on=start.isoformat(),
+        ends_on=last.isoformat(),
         month_day=now.day,
         month_days=_month_length(now),
     )

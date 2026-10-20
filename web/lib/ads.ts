@@ -59,6 +59,9 @@ export type AdsSummary = {
   choose?: boolean;
   currency?: string;
   days?: number;
+  /** The window the figures cover, as the backend worked it out. */
+  starts_on?: string;
+  ends_on?: string;
   leads?: number;
   calls?: number;
   forms?: number;
