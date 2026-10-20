@@ -38,7 +38,36 @@ is three more Google Ads accounts to read, not more code.**
 | The audit as a living tool: scheduled re-runs, score history with markers, "what changed since last time", per-page checks on every page the ads send people to | **done** |
 | The post: the weekly summary every Monday, the alerts, "send the fix list to my web person" with a link that needs no login | **done in code**, needs the three commands below to run on the clock |
 
-## What has to be run against production
+## Deployed, 20 October
+
+| What | State |
+| --- | --- |
+| `ppcway-api` | revision **00046**, all six migrations run on start |
+| `ppcway-web` | revision **00040** |
+| `ppcway-post-weekly` | Mondays 08:00 Toronto, enabled. First fire: **Monday 26 October** |
+| `ppcway-alerts` | every hour at :30, enabled |
+| `ppcway-audit-nightly` | 02:00 Toronto, enabled |
+
+Proved against production rather than assumed:
+
+- `GET /v1/internal/gate` answers with real data — Byte9 at **5 clean days of 7**,
+  naming the 13 October gap and the 14 October `campaign.start_date` failure.
+  It reaches seven on 22 October.
+- `POST /v1/internal/audit` ran a full scheduled audit: 11 findings, the demand
+  block, the account's own four checks, and **one landing page opened and judged**
+  — `pdfezy.com/en/sign-pdf`, taken from the live campaign that sends people there.
+- `/r/<token>` and `/fixes/<token>` answer with no session and refuse an unknown
+  token with the same words they refuse an expired one.
+
+Two faults the first production run found, both fixed and redeployed:
+
+- The nightly pass queued the same website twice, because one request had been
+  stored with a tracking parameter on the address and another without. The
+  schedule groups on the tidied address now.
+- A finished audit read on its own answered a null score while the same audit in
+  a listing answered a number.
+
+## How it was deployed, for next time
 
 Nothing here changes behaviour until the API is redeployed: the new endpoints,
 the six new tables and columns, and the scheduler's three new doors all arrive
