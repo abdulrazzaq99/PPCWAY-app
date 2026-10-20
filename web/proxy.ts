@@ -84,8 +84,6 @@ async function expectedToken(password: string): Promise<string> {
   out anyway — which is the bug this pairs with, not a separate nicety.
 */
 function keepSignedIn(request: NextRequest, reply: NextResponse): NextResponse {
-  // The path, for a server component that needs to know where it is.
-  reply.headers.set("x-pathname", request.nextUrl.pathname + request.nextUrl.search);
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   if (token) {
     reply.cookies.set(SESSION_COOKIE, token, {
@@ -97,6 +95,20 @@ function keepSignedIn(request: NextRequest, reply: NextResponse): NextResponse {
     });
   }
   return reply;
+}
+
+/*
+  Carry the path on to the page.
+
+  It has to go on the REQUEST, not the reply: `headers()` in a server component
+  reads what came in, so a header set on the way out is invisible to it. Setting
+  it on the reply is why the sidebar marked Home on every screen — the layout
+  asked where it was, got nothing, and fell back to Home.
+*/
+function onward(request: NextRequest): NextResponse {
+  const asked = new Headers(request.headers);
+  asked.set("x-pathname", request.nextUrl.pathname + request.nextUrl.search);
+  return NextResponse.next({ request: { headers: asked } });
 }
 
 export async function proxy(request: NextRequest) {
@@ -135,7 +147,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  return keepSignedIn(request, NextResponse.next());
+  return keepSignedIn(request, onward(request));
 }
 
 export const config = {

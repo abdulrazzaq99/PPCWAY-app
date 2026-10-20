@@ -52,10 +52,24 @@ const TOOLS = [
   },
 ];
 
+/** What the proxy said this request was for, or nothing if it did not say. */
+async function asked(): Promise<string> {
+  const head = await headers();
+  return head.get("x-pathname") ?? head.get("x-invoke-path") ?? "";
+}
+
 /** Where the visitor was going, so signing in returns them to it with its query. */
 async function here(): Promise<string> {
-  const head = await headers();
-  return head.get("x-pathname") ?? head.get("x-invoke-path") ?? "/home";
+  return (await asked()) || "/home";
+}
+
+/*
+  Which screen they are on, for the sidebar to mark. Empty rather than "/home"
+  when the proxy did not say: marking nothing is honest, and marking Home on
+  every screen is exactly the bug this had.
+*/
+async function where(): Promise<string> {
+  return (await asked()).split("?")[0];
 }
 
 type Run = { status: string; score?: number | null };
@@ -105,8 +119,7 @@ export default async function PwLayout({ children }: { children: ReactNode }) {
     item.href === "/tools/audit" && score !== null ? { ...item, badge: score } : item,
   );
 
-  // Which screen they are on, so the sidebar marks it rather than always Home.
-  const path = (await here()).split("?")[0];
+  const path = await where();
 
   return (
     <div className="bg-pw-ground text-pw-ink flex min-h-dvh">
