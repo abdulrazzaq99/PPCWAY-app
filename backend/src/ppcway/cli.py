@@ -2,6 +2,9 @@
 
 `python -m ppcway.cli audit <site>`: run the eight checks and print the report.
 `python -m ppcway.cli find "<business name>" ["<town>"]`: list the Google Maps matches.
+`python -m ppcway.cli post [--dry]`: the weekly summary. `--dry` prints what each
+person would be told and sends nothing, which is how the words get read before a
+hundred people read them.
 """
 
 from __future__ import annotations
@@ -12,6 +15,8 @@ import sys
 from ppcway.audit.places import PlacesError, find_businesses
 from ppcway.audit.runner import run_audit
 from ppcway.config import load_settings
+from ppcway.db.session import session_factory
+from ppcway.mail.weekly import candidates, post_weekly
 
 
 def find(name: str, city: str) -> int:
@@ -40,12 +45,44 @@ def find(name: str, city: str) -> int:
     return 0
 
 
+def post(dry: bool) -> int:
+    """The Monday summary: read it, or send it."""
+    settings = load_settings()
+    with session_factory()() as session:
+        if not dry:
+            counts = post_weekly(session, settings)
+            print(f"sent {counts['sent']}, failed {counts['failed']}, skipped {counts['skipped']}")
+            return 1 if counts["failed"] else 0
+
+        waiting = False
+        for who in candidates(session, settings):
+            waiting = True
+            who_for = who.connection.customer_name or who.connection.customer_id
+            if who.letter is None:
+                print(f"- {who_for}: no post, {who.skip}")
+                continue
+            print(f"\n--- {who_for} ---")
+            print(f"To: {who.letter.to}")
+            print(f"Subject: {who.letter.subject}\n")
+            print(who.letter.text)
+        if not waiting:
+            print(
+                "Nothing to send: either no account is connected, or every one "
+                "already has this week's post."
+            )
+    return 0
+
+
 def main(argv: list[str]) -> int:
+    if argv and argv[0] == "post":
+        return post("--dry" in argv)
     if len(argv) >= 2 and argv[0] == "find":
         return find(argv[1], argv[2] if len(argv) > 2 else "")
     if len(argv) < 2 or argv[0] != "audit":
         print(
-            'usage: python -m ppcway.cli audit <site> [--json]\n       python -m ppcway.cli find "<name>" ["<town>"]'
+            "usage: python -m ppcway.cli audit <site> [--json]\n"
+            '       python -m ppcway.cli find "<name>" ["<town>"]\n'
+            "       python -m ppcway.cli post [--dry]"
         )
         return 2
     report = run_audit(argv[1], load_settings())

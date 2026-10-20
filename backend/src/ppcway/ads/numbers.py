@@ -232,6 +232,18 @@ class Held:
         }
 
 
+def plain_money(amount: float, currency: str = "") -> str:
+    """Money as the account's own country writes it.
+
+    Here rather than in a screen or a letter, because the same sentence is read
+    on the dashboard and in the Monday email, and the two must not disagree
+    about what a dollar looks like.
+    """
+    if not currency or currency in {"CAD", "USD"}:
+        return f"${amount:,.2f}"
+    return f"{amount:,.2f} {currency}"
+
+
 def _month_length(day: date) -> int:
     """How many days this month has, found by stepping into the next and back."""
     next_month = day.replace(day=28) + timedelta(days=4)
@@ -400,7 +412,6 @@ def _needs(
 ) -> list[Need]:
     """What wants a person, in the order a person would care about it."""
     needs: list[Need] = []
-    money = held.currency and f" {held.currency}" or ""
 
     for row in held.campaigns:
         if row.gone or row.leads or row.cost < WORTH_SAYING:
@@ -410,7 +421,7 @@ def _needs(
                 kind="spend_no_leads",
                 label=row.name,
                 what=(
-                    f"Spent {row.cost:,.2f}{money} over {held.days} days "
+                    f"Spent {plain_money(row.cost, held.currency)} over {held.days} days "
                     "and counted no calls or forms."
                 ),
                 campaign_id=row.campaign_id,

@@ -71,6 +71,7 @@ from ppcway.config import Settings, load_settings
 from ppcway.db.session import get_session, session_factory
 from ppcway.mail.letters import invitation, reset_password, verify_email
 from ppcway.mail.send import NotSent, Post, send
+from ppcway.mail.weekly import post_weekly
 from ppcway.org.models import CAN, Organization, Role
 from ppcway.org.places import (
     NotAllowed,
@@ -1322,6 +1323,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not expected or not x_sync_key or not compare_digest(x_sync_key, expected):
             raise HTTPException(403, "Not for you.")
         return {"kind": kind, **sync_everyone(settings, session_factory(), kind=kind)}
+
+    @app.post("/v1/internal/post")
+    def scheduled_post(
+        x_sync_key: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """The weekly summary, for the Monday morning scheduler.
+
+        Safe to call twice: one row a week per account is written, and an
+        account that already has this week's post is passed over. The same key
+        as the sync, compared in constant time.
+        """
+        expected = settings.sync_key.get_secret_value() if settings.sync_key else ""
+        if not expected or not x_sync_key or not compare_digest(x_sync_key, expected):
+            raise HTTPException(403, "Not for you.")
+        with session_factory()() as own:
+            return post_weekly(own, settings)
 
     @app.get("/v1/places/suggest", response_model=list[ListingOut])
     def suggest_businesses(

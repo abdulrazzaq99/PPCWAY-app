@@ -17,6 +17,7 @@ import ppcway.ads.mirror
 import ppcway.ads.models
 import ppcway.audit.models
 import ppcway.auth.models
+import ppcway.mail.models
 import ppcway.org.models  # noqa: F401
 from ppcway.config import load_settings
 from ppcway.db.base import Base
