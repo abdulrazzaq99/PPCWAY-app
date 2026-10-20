@@ -1,17 +1,23 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { LandingPages } from "@/components/pw/landing-pages";
+import { ScoreOverTime, WhatChanged } from "@/components/pw/score-history";
+import { SendFixes } from "@/components/pw/send-fixes";
 import { Chip, Header, HeaderLink, PwCard, PwPage } from "@/components/pw/shell";
+import type { History, LandingPage } from "@/lib/audit";
 import { ask } from "@/lib/pw-fetch";
 
 export const metadata: Metadata = { title: "Website audit · PPCway" };
 
 /*
   The audit, in the handoff's shape: the score, the four parts it is made of,
-  and every check with what to do about it.
+  every check with what to do about it, and now the two panels that make it a
+  tool rather than a document.
 
-  Two of the handoff's panels are missing rather than faked. "Score over time"
-  needs runs on a schedule, and "page by page" needs the per-page checks; both
-  are week four of the plan, and each says so where it will sit.
+  "Score over time" is the history of the nightly runs, with a marker on the day
+  each fix landed. "Page by page" is every page the ads actually send people to,
+  taken from the mirror rather than guessed at. Both are read from what is
+  already stored, so this page costs a database query.
 */
 type Finding = {
   key: string;
@@ -28,7 +34,7 @@ type Run = {
   site: string;
   status: string;
   score?: number | null;
-  report?: { findings?: Finding[] } | null;
+  report?: { findings?: Finding[]; pages?: LandingPage[] } | null;
 };
 
 /** The three families the public report already groups its checks into. */
@@ -68,6 +74,12 @@ export default async function AuditToolPage() {
   // The listing carries the score; the checks themselves live on the run.
   const full = latest ? await ask<Run | null>(`/v1/audits/${latest.id}`, null) : null;
   const findings = full?.report?.findings ?? [];
+  const pages = full?.report?.pages ?? [];
+  const history = await ask<History>("/v1/audits/history", {
+    site: "",
+    points: [],
+    changed: null,
+  });
   const score = latest?.score ?? null;
   const site = latest ? latest.site.replace(/^https?:\/\//, "").replace(/\/$/, "") : "";
 
@@ -154,17 +166,7 @@ export default async function AuditToolPage() {
             </div>
           </PwCard>
 
-          <PwCard className="p-6">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-[17px] leading-[22px] font-semibold">Score over time</h2>
-              <Chip tone="neutral">Not switched on</Chip>
-            </div>
-            <p className="text-pw-ink-500 mt-3 text-[15px] leading-[23px]">
-              The audit does not re-run on its own yet, so there is one reading rather than a line.
-              Scheduled checks and the history chart are the next piece of this tool; when they
-              land, every past run appears here with the fixes marked on it.
-            </p>
-          </PwCard>
+          <ScoreOverTime points={history.points} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -189,6 +191,10 @@ export default async function AuditToolPage() {
             );
           })}
         </div>
+
+        <WhatChanged changed={history.changed} site={history.site || latest.site} />
+
+        <LandingPages pages={pages} />
 
         <PwCard className="overflow-hidden">
           <h2 className="px-5 py-5 text-[17px] leading-[22px] font-semibold sm:px-6">
@@ -224,10 +230,15 @@ export default async function AuditToolPage() {
           </ul>
         </PwCard>
 
+        <PwCard className="p-5 sm:p-6">
+          <SendFixes runId={latest.id} jobs={problems.length} />
+        </PwCard>
+
         <PwCard className="flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6">
-          <p className="text-pw-ink-500 text-[15px] leading-[23px]">
-            Page-by-page checks, the fix list by email and an alert when the score drops are part of
-            the same week&rsquo;s work as the history above.
+          <p className="text-pw-ink-500 max-w-[720px] text-[15px] leading-[23px]">
+            This audit now re-runs on its own every night. If a check that was passing stops
+            passing, you get an email the same day — a website change is the usual cause, and the
+            person who made it will not know it happened.
           </p>
           {done.length > 1 ? (
             <Link href="/audit/mine" className="text-pw-blue text-[15px] font-semibold">

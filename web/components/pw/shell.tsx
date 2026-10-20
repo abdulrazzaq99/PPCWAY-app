@@ -299,6 +299,34 @@ export function PillGroup({ children }: { children: ReactNode }) {
   return <div className="bg-pw-muted flex rounded-[12px] p-[4px]">{children}</div>;
 }
 
+/*
+  The same pill as a link, for a screen that changes the period by changing the
+  address. A server-rendered page has no state to set, and an address somebody
+  can bookmark or send to their accountant is worth more than one that cannot.
+*/
+export function PillLink({
+  active,
+  href,
+  children,
+}: {
+  active?: boolean;
+  href: string;
+  children: ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "rounded-[9px] px-3 py-[7px] text-[14px] font-semibold whitespace-nowrap",
+        active ? "bg-pw-card text-pw-ink shadow-sm" : "text-pw-ink-500 hover:text-pw-ink",
+      )}
+    >
+      {children}
+    </Link>
+  );
+}
+
 export function Pill({
   active,
   children,

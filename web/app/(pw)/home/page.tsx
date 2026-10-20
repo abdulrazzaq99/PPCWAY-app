@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import type { Metadata } from "next";
 import { Home, type LatestAudit, type Summary } from "@/components/pw/home";
+import type { History } from "@/lib/audit";
 import { AskOttoButton, Header, PwPage } from "@/components/pw/shell";
 import { SESSION_COOKIE } from "@/lib/session";
 
@@ -28,7 +29,7 @@ export default async function HomePage() {
     }
   };
 
-  const [person, summary, runs, ads] = await Promise.all([
+  const [person, summary, runs, ads, history] = await Promise.all([
     ask<{ email: string; name: string; email_verified?: boolean }>("/v1/auth/me", {
       email: "",
       name: "",
@@ -36,6 +37,7 @@ export default async function HomePage() {
     ask<Summary>("/v1/ads/summary?days=30", { read: false }),
     ask<Run[]>("/v1/audits/mine", []),
     ask<{ connected: boolean; customer_name?: string }>("/v1/ads/status", { connected: false }),
+    ask<History>("/v1/audits/history", { site: "", points: [], changed: null }),
   ]);
 
   const done = runs.find((r) => r.status === "done");
@@ -62,6 +64,7 @@ export default async function HomePage() {
           audit={audit}
           connected={Boolean(ads.connected)}
           emailVerified={person.email_verified !== false}
+          scores={history.points}
         />
       </PwPage>
     </>

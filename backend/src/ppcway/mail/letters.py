@@ -127,3 +127,46 @@ def audit_ready(*, to: str, business: str, score: int, link: str) -> Letter:
         ("Read the audit", link),
     )
     return Letter(to=to, subject=f"Your PPCway audit of {business}", text=text, html=html)
+
+
+def fix_list(
+    *,
+    to: str,
+    business: str,
+    site: str,
+    link: str,
+    jobs: int,
+    from_name: str = "",
+) -> Letter:
+    """The website fix list, sent to whoever looks after the website.
+
+    This one goes to somebody who has never heard of PPCway and did not ask for
+    an email, so it says in the first line who it is from, what it is, and that
+    there is nothing to sign into. A developer who thinks they have been sent a
+    marketing login will not open it.
+    """
+    who = from_name or business
+    plain = site.replace("https://", "").replace("http://", "").rstrip("/")
+    count = f"{jobs} thing{'' if jobs == 1 else 's'}"
+    subject = f"{plain}: {count} to fix, from {business}"
+    text = (
+        "Hello,\n\n"
+        f"{who} had {plain} checked for how well it works with Google Ads, and asked "
+        f"us to send you the results. There are {count} worth fixing.\n\n"
+        f"The list is here, with what to change and why. There is nothing to sign "
+        f"into and no account to make:\n\n{link}\n\n"
+        "The link works for a fortnight. Every item says what was found, which pages "
+        "it affects and what a fix looks like.\n\n"
+        f"{FOOT}"
+    )
+    html = _wrap(
+        f"{count} to fix on {plain}",
+        f"<p>Hello,</p><p>{who} had <strong>{plain}</strong> checked for how well it "
+        f"works with Google Ads, and asked us to send you the results. There are "
+        f"<strong>{count}</strong> worth fixing.</p>"
+        "<p>The list says what was found, which pages it affects and what a fix looks "
+        "like. There is nothing to sign into and no account to make, and the link works "
+        "for a fortnight.</p>",
+        ("See the list", link),
+    )
+    return Letter(to=to, subject=subject, text=text, html=html)

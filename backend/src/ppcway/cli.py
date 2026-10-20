@@ -5,6 +5,8 @@
 `python -m ppcway.cli post [--dry]`: the weekly summary. `--dry` prints what each
 person would be told and sends nothing, which is how the words get read before a
 hundred people read them.
+`python -m ppcway.cli gate`: where the phase-one gate stands — seven days of clean
+sync on five accounts — counted rather than claimed.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ from __future__ import annotations
 import json
 import sys
 
+from ppcway.ads.gate import gate_report
 from ppcway.audit.places import PlacesError, find_businesses
 from ppcway.audit.runner import run_audit
 from ppcway.config import load_settings
@@ -73,7 +76,30 @@ def post(dry: bool) -> int:
     return 0
 
 
+def gate() -> int:
+    """Where the phase-one gate stands, account by account."""
+    with session_factory()() as session:
+        standing = gate_report(session)
+    print(standing.said)
+    print()
+    for account in standing.accounts:
+        mark = "pass" if account.passing else "    "
+        print(
+            f"{mark}  {account.name or account.customer_id:<24} "
+            f"{account.clean_days}/{standing.days} clean days, {account.runs} runs"
+        )
+        if account.silent_days:
+            print(f"        no read at all on: {', '.join(account.silent_days)}")
+        if account.failed_days:
+            print(f"        failed on: {', '.join(account.failed_days)}")
+        if account.trouble:
+            print(f"        {account.trouble}")
+    return 0 if standing.passed else 1
+
+
 def main(argv: list[str]) -> int:
+    if argv and argv[0] == "gate":
+        return gate()
     if argv and argv[0] == "post":
         return post("--dry" in argv)
     if len(argv) >= 2 and argv[0] == "find":
@@ -82,7 +108,8 @@ def main(argv: list[str]) -> int:
         print(
             "usage: python -m ppcway.cli audit <site> [--json]\n"
             '       python -m ppcway.cli find "<name>" ["<town>"]\n'
-            "       python -m ppcway.cli post [--dry]"
+            "       python -m ppcway.cli post [--dry]\n"
+            "       python -m ppcway.cli gate"
         )
         return 2
     report = run_audit(argv[1], load_settings())

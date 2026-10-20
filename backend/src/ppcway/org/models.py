@@ -48,13 +48,16 @@ CAN: dict[Role, frozenset[str]] = {
             "invite",
             "billing",
             "thresholds",
+            "share",
         }
     ),
-    Role.ADMIN: frozenset({"view", "propose", "approve", "connect", "disconnect", "invite"}),
-    Role.MEMBER: frozenset({"view", "propose"}),
+    Role.ADMIN: frozenset(
+        {"view", "propose", "approve", "connect", "disconnect", "invite", "share"}
+    ),
+    Role.MEMBER: frozenset({"view", "propose", "share"}),
     # An expert signs off high-risk changes and logs hours; they do not own the
     # account and cannot connect or disconnect it.
-    Role.EXPERT: frozenset({"view", "propose", "approve", "sign_off", "log_hours"}),
+    Role.EXPERT: frozenset({"view", "propose", "approve", "sign_off", "log_hours", "share"}),
     # An agency's client sees their own results and nothing else.
     Role.CLIENT_VIEWER: frozenset({"view"}),
 }

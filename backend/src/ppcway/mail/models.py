@@ -35,3 +35,33 @@ class WeeklyPost(Base):
     #: The subject line, kept so support can see what somebody was told.
     subject: Mapped[str] = mapped_column(String(255), default="")
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AlertSent(Base):
+    """One alert, to one business, about one thing, on one day.
+
+    Alerts are the part of a product that teaches people to ignore it. The row
+    is what stops that: an hourly watcher can notice the same refused ad twelve
+    times and send one letter.
+    """
+
+    __tablename__ = "mail_alert_sent"
+    __table_args__ = (
+        UniqueConstraint("account_id", "kind", "about", "day", name="one_alert_a_day"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("account.id"), index=True)
+    customer_id: Mapped[str] = mapped_column(String(20), default="", index=True)
+    #: "spend_jump", "leads_stopped", "ad_refused", "permission_gone",
+    #: "sync_failing" or "score_dropped".
+    kind: Mapped[str] = mapped_column(String(20), index=True)
+    #: What within that kind: a campaign id, a check's key, or empty when the
+    #: kind is about the whole account.
+    about: Mapped[str] = mapped_column(String(100), default="")
+    day: Mapped[date] = mapped_column(Date, index=True)
+    to_address: Mapped[str] = mapped_column(String(320), default="")
+    subject: Mapped[str] = mapped_column(String(255), default="")
+    status: Mapped[str] = mapped_column(String(10), default="sent")
+    trouble: Mapped[str] = mapped_column(Text, default="")
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -14,7 +14,12 @@ import { NextResponse, type NextRequest } from "next/server";
   has every reason to refuse us. They are also the three pages with nothing on
   them worth hiding.
 */
-const OPEN = ["/gate", "/api/gate", "/", "/privacy", "/terms"];
+/*
+  Open without a session. The first three are the pages Google's reviewers read;
+  `/r` and `/fixes` are the shared links, which exist precisely so that somebody
+  with no account — an accountant, a web developer — can read one thing.
+*/
+const OPEN = ["/gate", "/api/gate", "/", "/privacy", "/terms", "/r", "/fixes"];
 
 /*
   The signed-in screens. Without a session they send people to sign in rather than

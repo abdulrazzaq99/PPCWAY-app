@@ -63,6 +63,9 @@ class AuditRun(Base):
     )
     site: Mapped[str] = mapped_column(String(500), index=True)
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    #: "asked" for a run somebody started, "scheduled" for one on the clock. The
+    #: history chart needs to tell them apart to explain a gap in the line.
+    kind: Mapped[str] = mapped_column(String(12), default="asked")
     #: Which stage is running, so the waiting screen can say what is happening.
     stage: Mapped[str] = mapped_column(String(20), default="")
     #: Pages read so far, which climbs while the crawl runs.

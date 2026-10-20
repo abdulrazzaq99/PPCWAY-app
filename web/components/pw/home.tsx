@@ -3,6 +3,7 @@ import { ConnectButton, ResendConfirmation } from "@/components/pw/connect-butto
 import { Chip, Kpi, PwCard } from "@/components/pw/shell";
 import { Sparkline } from "@/components/pw/sparkline";
 import type { AdsNeed, AdsSummary } from "@/lib/ads";
+import type { Point } from "@/lib/audit";
 import { cn } from "@/lib/cn";
 import { ago } from "@/lib/when";
 
@@ -68,6 +69,7 @@ export function Home({
   audit,
   connected,
   emailVerified = true,
+  scores = [],
 }: {
   firstName: string;
   business: string;
@@ -75,6 +77,8 @@ export function Home({
   audit: LatestAudit;
   connected: boolean;
   emailVerified?: boolean;
+  /** Every past reading of the Visibility Score, oldest first. */
+  scores?: Point[];
 }) {
   const days = summary.days ?? 30;
   const currency = summary.currency ?? "";
@@ -160,7 +164,7 @@ export function Home({
               : undefined
           }
         />
-        <ScoreCard audit={audit} />
+        <ScoreCard audit={audit} scores={scores} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_1fr]">
@@ -240,7 +244,7 @@ function GoneBanner() {
   );
 }
 
-function ScoreCard({ audit }: { audit: LatestAudit }) {
+function ScoreCard({ audit, scores = [] }: { audit: LatestAudit; scores?: Point[] }) {
   const score = audit?.score ?? null;
   const ring = score === null ? 0 : score * 3.6;
   const colour =
@@ -263,6 +267,7 @@ function ScoreCard({ audit }: { audit: LatestAudit }) {
             <p className="text-pw-ink-500 mt-1 truncate text-[13px] leading-[17px]">
               {audit.site.replace(/^https?:\/\//, "").replace(/\/$/, "")}
             </p>
+            <ScoreLine scores={scores} />
             <Link
               href={`/audit/${audit.id}`}
               className="text-pw-blue mt-1 inline-block text-[13px] font-semibold"
@@ -277,6 +282,45 @@ function ScoreCard({ audit }: { audit: LatestAudit }) {
         )}
       </div>
     </PwCard>
+  );
+}
+
+/*
+  The Visibility Score over time, small enough for the corner of a card. The
+  number says where the website stands; the line says which way it is going,
+  which is the part somebody acts on.
+*/
+function ScoreLine({ scores }: { scores: Point[] }) {
+  const points = scores.filter((p) => p.score !== null);
+  if (points.length < 2) return null;
+  const span = Math.max(1, points.length - 1);
+  const path = points.map((p, i) => `${(i / span) * 100},${100 - (p.score ?? 0)}`).join(" ");
+  const first = points[0].score ?? 0;
+  const last = points[points.length - 1].score ?? 0;
+  const way = last === first ? "level" : last > first ? "up" : "down";
+  return (
+    <span className="mt-[6px] flex items-center gap-2">
+      <svg
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        className="h-[22px] w-[74px]"
+        role="img"
+        aria-label={`Visibility score ${way} from ${first} to ${last} over ${points.length} readings.`}
+      >
+        <polyline
+          points={path}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="6"
+          vectorEffect="non-scaling-stroke"
+          className={way === "down" ? "text-pw-bad" : "text-pw-blue"}
+        />
+      </svg>
+      <span className="text-pw-ink-400 text-[12px]">
+        {way === "level" ? "level" : `${way} ${Math.abs(last - first)}`} over {points.length}{" "}
+        readings
+      </span>
+    </span>
   );
 }
 

@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from ppcway.ads.accounts import accessible_accounts
+from ppcway.ads.gate import gate_report
 from ppcway.ads.mirror import CampaignDay, ExternalChange, MirrorCampaign, SyncRun
 from ppcway.ads.models import AdsConnection, ConsentTrip
 from ppcway.ads.numbers import account_numbers, campaign_numbers, merge_live
@@ -36,10 +37,13 @@ from ppcway.ads.oauth import (
     revoke_permission,
 )
 from ppcway.ads.planner import demand_for
+from ppcway.ads.reports import report_for
 from ppcway.ads.runner import sync_everyone, sync_one
 from ppcway.ads.stats import read_account
 from ppcway.ads.summary import account_summary, campaign_detail
+from ppcway.audit.history import score_history, score_of, what_changed
 from ppcway.audit.models import AuditRequest, AuditRun
+from ppcway.audit.pages import check_pages, landing_pages
 from ppcway.audit.places import (
     Listing,
     PlacesError,
@@ -48,6 +52,7 @@ from ppcway.audit.places import (
     place_details,
 )
 from ppcway.audit.runner import normalise_site, run_audit
+from ppcway.audit.watch import due_audits
 from ppcway.auth.accounts import (
     AlreadyHere,
     finish_reset,
@@ -69,7 +74,8 @@ from ppcway.auth.sessions import (
 )
 from ppcway.config import Settings, load_settings
 from ppcway.db.session import get_session, session_factory
-from ppcway.mail.letters import invitation, reset_password, verify_email
+from ppcway.mail.alerts import post_alerts
+from ppcway.mail.letters import fix_list, invitation, reset_password, verify_email
 from ppcway.mail.send import NotSent, Post, send
 from ppcway.mail.weekly import post_weekly
 from ppcway.org.models import CAN, Organization, Role
@@ -84,6 +90,8 @@ from ppcway.org.places import (
     remove,
     role_of,
 )
+from ppcway.share.links import make_link, open_link, revoke
+from ppcway.share.models import ShareLink
 
 log = logging.getLogger(__name__)
 
@@ -265,6 +273,25 @@ class AdsAccountOut(BaseModel):
     #: False when Google refused to read it; `trouble` says why, in plain words.
     readable: bool = True
     trouble: str = ""
+
+
+class ShareIn(BaseModel):
+    """How long a shared link should live."""
+
+    days: int = Field(default=14, ge=1, le=90)
+
+
+class FixListIn(ShareIn):
+    """And who to send it to, when it is being sent rather than copied."""
+
+    email: EmailStr | None = None
+
+
+class ShareOut(BaseModel):
+    id: str
+    url: str
+    expires_at: datetime
+    emailed: bool = False
 
 
 class SyncOut(BaseModel):
@@ -1334,6 +1361,310 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ],
         )
 
+    @app.get("/v1/reports")
+    def account_report(
+        session: Annotated[Session, Depends(get_session)],
+        days: int = 30,
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """The report: this period, the one before, and the same period a year ago.
+
+        All three come out of the mirror, so year on year costs a query rather
+        than a round trip, and every figure carries a verdict in plain words
+        instead of an arrow.
+        """
+        account = _signed_in(session, x_session_token)
+        connection = _connection(session, account)
+        if connection is None:
+            return {"read": False, "trouble": "No Google Ads account is connected yet."}
+        if not connection.customer_id:
+            return {
+                "read": False,
+                "choose": True,
+                "trouble": "Choose which of your Google Ads accounts we read.",
+            }
+        window = days if days in (7, 30, 90) else 30
+        report = report_for(
+            session, connection.customer_id, days=window, currency=connection.currency
+        )
+        answer = report.as_dict()
+        answer["business"] = connection.customer_name
+        answer["shares"] = [
+            {
+                "id": str(link.id),
+                "expires_at": link.expires_at.isoformat(),
+                "opened": link.opened,
+                "sent_to": link.sent_to,
+            }
+            for link in session.scalars(
+                select(ShareLink).where(
+                    ShareLink.kind == "report",
+                    ShareLink.subject == connection.customer_id,
+                    ShareLink.revoked_at.is_(None),
+                )
+            )
+        ]
+        return answer
+
+    @app.post("/v1/reports/share", response_model=ShareOut, status_code=201)
+    def share_report(
+        body: ShareIn,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> ShareOut:
+        """A link to this account's report that needs no login and expires."""
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "share")
+        connection = _connection(session, account)
+        if connection is None or not connection.customer_id:
+            raise HTTPException(404, "No Google Ads account is connected.")
+        link, token = make_link(
+            session,
+            kind="report",
+            subject=connection.customer_id,
+            days=body.days,
+            organization_id=place.id,
+            made_by=account.id,
+        )
+        return ShareOut(
+            url=f"{settings.app_base_url.rstrip('/')}/r/{token}",
+            expires_at=link.expires_at,
+            id=str(link.id),
+        )
+
+    @app.delete("/v1/reports/share/{link_id}", status_code=204)
+    def stop_sharing(
+        link_id: UUID,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> None:
+        """Stop a shared link working, keeping the record that it existed."""
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "share")
+        link = session.get(ShareLink, link_id)
+        if link is None or link.organization_id != place.id:
+            raise HTTPException(404, "No such link.")
+        revoke(session, link)
+
+    @app.get("/v1/public/report/{token}")
+    def shared_report(
+        token: str,
+        session: Annotated[Session, Depends(get_session)],
+    ) -> dict[str, Any]:
+        """A shared report, to whoever holds the link. Nobody signs in here.
+
+        It answers with the report and the business name and nothing else: no
+        addresses, no people, no other accounts. A token that is wrong, expired
+        or revoked gets the same flat refusal, because saying which would be
+        telling somebody about a link they do not hold.
+        """
+        link = open_link(session, token, kind="report")
+        if link is None:
+            raise HTTPException(404, "That link has expired or does not exist.")
+        connection = session.scalars(
+            select(AdsConnection).where(AdsConnection.customer_id == link.subject).limit(1)
+        ).first()
+        report = report_for(
+            session,
+            link.subject,
+            days=30,
+            currency=connection.currency if connection else "",
+        )
+        answer = report.as_dict()
+        answer["business"] = connection.customer_name if connection else ""
+        answer["shared"] = True
+        answer["expires_at"] = link.expires_at.isoformat()
+        return answer
+
+    @app.post("/v1/audits/{run_id}/share", response_model=ShareOut, status_code=201)
+    def share_fixes(
+        run_id: UUID,
+        body: FixListIn,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> ShareOut:
+        """Send the fix list to whoever looks after the website.
+
+        The person who has to do the work almost never has a PPCway account, so
+        this is a link that needs no login, and the letter says plainly that it
+        is a list of findings about a website rather than anything to sign into.
+        """
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "share")
+        run = session.get(AuditRun, run_id)
+        if run is None or run.status != "done":
+            raise HTTPException(404, "No finished audit with that id.")
+        link, token = make_link(
+            session,
+            kind="fixes",
+            subject=str(run.id),
+            days=body.days,
+            organization_id=place.id,
+            made_by=account.id,
+            sent_to=body.email or "",
+        )
+        url = f"{settings.app_base_url.rstrip('/')}/fixes/{token}"
+        emailed = False
+        if body.email:
+            jobs = _fix_count(run)
+            try:
+                send(
+                    _post(),
+                    fix_list(
+                        to=body.email,
+                        business=place.name,
+                        site=run.site,
+                        link=url,
+                        jobs=jobs,
+                        from_name=account.name or account.email,
+                    ),
+                )
+                emailed = True
+            except NotSent as exc:
+                log.warning("the fix list did not go to %s: %s", body.email, exc)
+        return ShareOut(url=url, expires_at=link.expires_at, id=str(link.id), emailed=emailed)
+
+    @app.get("/v1/public/fixes/{token}")
+    def shared_fixes(
+        token: str,
+        session: Annotated[Session, Depends(get_session)],
+    ) -> dict[str, Any]:
+        """The fix list behind a shared link. Nobody signs in here either."""
+        link = open_link(session, token, kind="fixes")
+        if link is None:
+            raise HTTPException(404, "That link has expired or does not exist.")
+        run = session.get(AuditRun, UUID(link.subject))
+        if run is None or not run.report:
+            raise HTTPException(404, "That audit is no longer here.")
+        findings = (run.report or {}).get("findings") or []
+        return {
+            "site": run.site,
+            "checked_at": run.finished_at.isoformat() if run.finished_at else None,
+            "score": _score_of(run),
+            "expires_at": link.expires_at.isoformat(),
+            "jobs": [
+                {
+                    "title": f.get("title", ""),
+                    "summary": f.get("summary", ""),
+                    "detail": f.get("detail") or [],
+                    "fix": f.get("fix", ""),
+                }
+                for f in findings
+                if f.get("status") == "needs_you"
+            ],
+            "fine": [
+                {"title": f.get("title", ""), "summary": f.get("summary", "")}
+                for f in findings
+                if f.get("status") == "good"
+            ],
+        }
+
+    @app.get("/v1/audits/history")
+    def audit_history(
+        session: Annotated[Session, Depends(get_session)],
+        site: str = "",
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Every reading for one site, and what changed since last time.
+
+        Scoped to the business, because two businesses can audit the same
+        address — an agency and its client often do — and neither should see the
+        other's history.
+        """
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        wanted = normalise_site(site) if site else ""
+        if not wanted:
+            latest = session.scalars(
+                select(AuditRun)
+                .join(AuditRequest, AuditRun.request_id == AuditRequest.id)
+                .where(
+                    AuditRequest.organization_id == place.id,
+                    AuditRun.status == "done",
+                )
+                .order_by(AuditRun.finished_at.desc())
+                .limit(1)
+            ).first()
+            if latest is None:
+                return {"site": "", "points": [], "changed": None}
+            wanted = latest.site
+        points = score_history(session, wanted, organization_id=place.id)
+        return {
+            "site": wanted,
+            "points": [p.as_dict() for p in points],
+            "changed": what_changed(session, wanted, organization_id=place.id).as_dict(),
+        }
+
+    @app.post("/v1/internal/audit")
+    def scheduled_audit(
+        tasks: BackgroundTasks,
+        x_sync_key: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Re-run every audit that is due, for the nightly scheduler.
+
+        The website is read daily; the parts Google charges for are re-read
+        weekly and carried forward in between. A site with a run already in
+        flight is left alone, so calling this twice starts nothing twice.
+        """
+        expected = settings.sync_key.get_secret_value() if settings.sync_key else ""
+        if not expected or not x_sync_key or not compare_digest(x_sync_key, expected):
+            raise HTTPException(403, "Not for you.")
+        factory = session_factory()
+        started: list[dict[str, Any]] = []
+        with factory() as own:
+            for due in due_audits(own):
+                run = AuditRun(
+                    request_id=due.request_id,
+                    site=due.site,
+                    status="queued",
+                    kind="scheduled",
+                )
+                own.add(run)
+                own.commit()
+                tasks.add_task(_run, run.id, settings, with_demand=due.with_demand)
+                started.append(
+                    {
+                        "run_id": str(run.id),
+                        "site": due.site,
+                        "because": due.because,
+                        "with_demand": due.with_demand,
+                    }
+                )
+        return {"started": len(started), "runs": started}
+
+    @app.post("/v1/internal/alerts")
+    def scheduled_alerts(
+        x_sync_key: Annotated[str | None, Header()] = None,
+    ) -> dict[str, int]:
+        """The things worth interrupting somebody for, for the hourly watcher.
+
+        One letter per thing per day per business, so calling this every hour
+        sends one email about the same refused ad rather than twelve.
+        """
+        expected = settings.sync_key.get_secret_value() if settings.sync_key else ""
+        if not expected or not x_sync_key or not compare_digest(x_sync_key, expected):
+            raise HTTPException(403, "Not for you.")
+        with session_factory()() as own:
+            return post_alerts(own, settings)
+
+    @app.get("/v1/internal/gate")
+    def phase_one_gate(
+        x_sync_key: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Where the seven-days-on-five-accounts gate stands, counted.
+
+        Behind the sync key rather than open: it names every connected account
+        and why its syncing failed, which is nobody's business but ours.
+        """
+        expected = settings.sync_key.get_secret_value() if settings.sync_key else ""
+        if not expected or not x_sync_key or not compare_digest(x_sync_key, expected):
+            raise HTTPException(403, "Not for you.")
+        with session_factory()() as own:
+            return gate_report(own).as_dict()
+
     @app.post("/v1/internal/sync")
     def scheduled_sync(
         kind: Annotated[str, Query(pattern="^(structure|today|backfill)$")] = "structure",
@@ -1453,31 +1784,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-def _score_of(run: AuditRun) -> int | None:
-    """The run's score, or None when it has no answered checks.
-
-    The same arithmetic the report rings: of the checks that have an answer, how
-    many are good. Unknowable checks do not count against a business.
-    """
-    findings = (run.report or {}).get("findings") if run.report else None
-    if not findings:
-        return None
-    known = [f for f in findings if f.get("status") != "unknown"]
-    if not known:
-        return None
-    good = sum(1 for f in known if f.get("status") == "good")
-    return round((good / len(known)) * 100)
+def _fix_count(run: AuditRun) -> int:
+    """How many findings are asking for work, for the letter's first line."""
+    findings = (run.report or {}).get("findings") or []
+    return sum(1 for f in findings if f.get("status") == "needs_you")
 
 
-def _their_ads(
-    run_id: UUID, settings: Settings, factory: sessionmaker[Session]
-) -> dict[str, Any] | None:
-    """Their Google Ads account, if they connected one and said which.
+#: The arithmetic lives with the audit rather than with the API, because the
+#: history chart and the shared fix list need the same number. Kept under this
+#: name because every screen here and its test already asks for it by it.
+_score_of = score_of
 
-    None means there is nothing to read, which is the ordinary case: not signed
-    in, not connected, or connected without choosing an account yet. A refusal
-    from Google is also None here; the report still goes out, and the reason is
-    in the log rather than in a failed audit.
+
+def _behind(run_id: UUID, factory: sessionmaker[Session]) -> tuple[str, str] | None:
+    """The Google Ads account behind an audit run: its id and stored permission.
+
+    None is the ordinary case rather than a fault: not signed in, not connected,
+    or connected without choosing an account yet.
     """
     with factory() as session:
         run = session.get(AuditRun, run_id)
@@ -1494,7 +1817,49 @@ def _their_ads(
         ).first()
         if connection is None or not connection.customer_id:
             return None
-        customer_id, ciphertext = connection.customer_id, connection.ciphertext
+        return connection.customer_id, connection.ciphertext
+
+
+def _their_pages(
+    run_id: UUID, settings: Settings, factory: sessionmaker[Session]
+) -> list[dict[str, Any]] | None:
+    """Every page their ads send people to, opened and judged.
+
+    The list comes out of the mirror, so these are the pages Google itself sends
+    the traffic to rather than a guess about which pages matter. Nothing is read
+    from Google here at all.
+    """
+    behind = _behind(run_id, factory)
+    if behind is None:
+        return None
+    customer_id, _ = behind
+    with factory() as session:
+        pages = landing_pages(session, customer_id)
+    if not pages:
+        return None
+    try:
+        checked = check_pages(pages, settings)
+    except Exception:
+        # The report goes out without this part rather than failing entirely.
+        log.exception("audit %s could not check the landing pages", run_id)
+        return None
+    return [page.as_dict() for page in checked]
+
+
+def _their_ads(
+    run_id: UUID, settings: Settings, factory: sessionmaker[Session]
+) -> dict[str, Any] | None:
+    """Their Google Ads account, if they connected one and said which.
+
+    None means there is nothing to read, which is the ordinary case: not signed
+    in, not connected, or connected without choosing an account yet. A refusal
+    from Google is also None here; the report still goes out, and the reason is
+    in the log rather than in a failed audit.
+    """
+    behind = _behind(run_id, factory)
+    if behind is None:
+        return None
+    customer_id, ciphertext = behind
 
     if not (settings.google_oauth_client_id and settings.google_oauth_client_secret):
         return None
@@ -1524,6 +1889,33 @@ def _their_ads(
         return None
 
     return reading.as_dict()
+
+
+def _last_demand(run_id: UUID, factory: sessionmaker[Session]) -> dict[str, Any] | None:
+    """What the searching was worth, from the last run that paid to find out.
+
+    Carried forward rather than dropped: a nightly run that leaves the panel
+    empty would read as "we no longer know", when what is true is that we asked
+    on Monday and the answer does not change by Tuesday.
+    """
+    with factory() as session:
+        run = session.get(AuditRun, run_id)
+        if run is None:
+            return None
+        for earlier in session.scalars(
+            select(AuditRun)
+            .where(
+                AuditRun.site == run.site,
+                AuditRun.status == "done",
+                AuditRun.id != run.id,
+            )
+            .order_by(AuditRun.created_at.desc())
+            .limit(10)
+        ):
+            found = (earlier.report or {}).get("demand")
+            if found:
+                return dict(found)
+    return None
 
 
 def _worth(
@@ -1612,7 +2004,7 @@ def _sync(run_id: UUID, connection_id: UUID, settings: Settings, kind: str) -> N
     sync_one(connection_id, settings, session_factory(), kind=kind, run_id=run_id)
 
 
-def _run(run_id: UUID, settings: Settings) -> None:
+def _run(run_id: UUID, settings: Settings, *, with_demand: bool = True) -> None:
     factory = session_factory()
     with factory() as session:
         run = session.get(AuditRun, run_id)
@@ -1641,15 +2033,24 @@ def _run(run_id: UUID, settings: Settings) -> None:
             (folder / f"{kind}.jpg").write_bytes(data)
             report.screenshot_urls[kind] = f"/v1/audits/{run_id}/screenshot/{kind}"
         written = report.as_dict()
-        worth = _worth(run_id, settings, factory)
+        # What the searching is worth here, which does not need their account.
+        # Google charges per call for it and a town's search volume does not move
+        # daily, so a scheduled run asks for it weekly rather than every night.
+        worth = _worth(run_id, settings, factory) if with_demand else None
         if worth is not None:
-            # What the searching is worth here, which does not need their account.
             written["demand"] = worth
+        elif not with_demand:
+            written["demand"] = _last_demand(run_id, factory)
         theirs = _their_ads(run_id, settings, factory)
         if theirs is not None:
             # Their own account, read with the permission they gave, beside what
             # the public checks found. Four locked cards open when this is here.
             written["ads"] = theirs
+        pages = _their_pages(run_id, settings, factory)
+        if pages is not None:
+            # And the handful of pages the ads actually send people to, which is
+            # where a missing conversion tag costs the most.
+            written["pages"] = pages
         with factory() as session:
             run = session.get(AuditRun, run_id)
             if run is None:
