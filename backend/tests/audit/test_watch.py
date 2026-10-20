@@ -154,3 +154,17 @@ def test_only_so_many_are_started_in_one_pass(db: DbSession) -> None:
         asked_for(db, place(db, f"Business {n}"), site=f"https://site{n}.ca")
 
     assert len(due_audits(db, now=NOW, most=3)) == 3
+
+
+def test_a_run_interrupted_hours_ago_stops_blocking_its_site(db: DbSession) -> None:
+    # A Cloud Run instance recycled mid-audit leaves a row saying "running" that
+    # nothing will finish. Without this the site is never audited again, and the
+    # only symptom is silence.
+    org = place(db)
+    request = asked_for(db, org)
+    ran(db, request, when=NOW - timedelta(days=3))
+    ran(db, request, when=NOW - timedelta(hours=5), status="running")
+
+    due = due_audits(db, now=NOW)
+
+    assert [d.site for d in due] == [SITE]

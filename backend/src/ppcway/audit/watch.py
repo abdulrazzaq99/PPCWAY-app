@@ -41,6 +41,12 @@ LISTING_EVERY = 7
 #: become a hundred browsers at one minute past midnight.
 MOST = 20
 
+#: How long a run may sit unfinished before it stops counting as "in flight".
+#: A Cloud Run instance recycled mid-audit leaves a row saying "running" that
+#: nothing will ever finish, and without this that site would never be audited
+#: again — the worst kind of bug, because the symptom is silence.
+STUCK_AFTER_HOURS = 2
+
 
 @dataclass
 class Due:
@@ -93,16 +99,25 @@ def due_audits(
                 .limit(10)
             )
         )
-        # Something is already in flight, so leave it alone.
-        if any(run.status in ("running", "queued") for run in runs):
-            continue
-        done = [run for run in runs if run.status == "done"]
-        latest = done[0] if done else None
 
         def moment(run: AuditRun) -> datetime:
             when = run.finished_at or run.created_at
             return when if when.tzinfo else when.replace(tzinfo=UTC)
 
+        def started(run: AuditRun) -> datetime:
+            when = run.created_at
+            return when if when.tzinfo else when.replace(tzinfo=UTC)
+
+        # Something is already in flight, so leave it alone — unless it has been
+        # in flight for hours, which means the instance running it is gone.
+        if any(
+            run.status in ("running", "queued")
+            and started(run) > at - timedelta(hours=STUCK_AFTER_HOURS)
+            for run in runs
+        ):
+            continue
+        done = [run for run in runs if run.status == "done"]
+        latest = done[0] if done else None
         if latest is not None and moment(latest) > stale:
             continue
 
