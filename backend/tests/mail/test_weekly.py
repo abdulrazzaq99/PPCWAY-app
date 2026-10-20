@@ -22,13 +22,13 @@ from ppcway.ads.numbers import account_numbers
 from ppcway.auth.models import UserAccount
 from ppcway.config import Settings
 from ppcway.db.base import Base
-
-# A connection points at the business it belongs to, so that table has to exist
-# before this one can be created.
 from ppcway.mail.models import WeeklyPost
 from ppcway.mail.send import Post
-from ppcway.org.models import Organization  # noqa: F401
 from ppcway.mail.weekly import post_weekly, weekly_letter
+
+# A connection points at the business it belongs to, so that table has to be
+# registered before the rest can be created.
+from ppcway.org.models import Organization  # noqa: F401
 
 #: A Monday, which is when the post goes out.
 NOW = datetime(2026, 10, 19, 8, 0, tzinfo=UTC)
