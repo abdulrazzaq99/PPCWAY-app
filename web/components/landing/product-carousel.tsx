@@ -15,11 +15,23 @@ export type Slide = { name: string; card: ReactNode };
 
 const EVERY = 3200;
 
+/*
+  The turntable needs room either side for the neighbours to stand in. It has
+  that from `lg` up, where the frame bleeds past the column and a gradient mask
+  softens where they leave — see the section's own classes.
+
+  Below that there is no room and no mask, so a neighbour at translateX(50%)
+  does not stand beside the front card, it stands on it: two cards legible at
+  once, 70% opacity each, which on a phone reads as a rendering fault rather
+  than as depth. So the neighbours only appear where they fit. Narrower than
+  that, the cards cross-fade in place, which is what reduced motion already
+  does and what the eye expects of one card at a time.
+*/
 const POSITIONS: Record<string, string> = {
-  "0": "z-20 opacity-100 [transform:perspective(1400px)_translateX(0)_translateZ(0)_rotateY(0)]",
-  "-1": "z-10 opacity-70 blur-[1.5px] [transform:perspective(1400px)_translateX(-46%)_translateZ(-240px)_rotateY(36deg)]",
-  "1": "z-10 opacity-70 blur-[1.5px] [transform:perspective(1400px)_translateX(50%)_translateZ(-240px)_rotateY(-36deg)]",
-  "2": "z-0 opacity-0 blur-[3px] [transform:perspective(1400px)_translateX(0)_translateZ(-420px)_rotateY(0)]",
+  "0": "z-20 opacity-100 lg:[transform:perspective(1400px)_translateX(0)_translateZ(0)_rotateY(0)]",
+  "-1": "z-10 opacity-0 lg:opacity-70 lg:blur-[1.5px] lg:[transform:perspective(1400px)_translateX(-46%)_translateZ(-240px)_rotateY(36deg)]",
+  "1": "z-10 opacity-0 lg:opacity-70 lg:blur-[1.5px] lg:[transform:perspective(1400px)_translateX(50%)_translateZ(-240px)_rotateY(-36deg)]",
+  "2": "z-0 opacity-0 lg:blur-[3px] lg:[transform:perspective(1400px)_translateX(0)_translateZ(-420px)_rotateY(0)]",
 };
 
 export function ProductCarousel({ slides, label }: { slides: Slide[]; label: string }) {
