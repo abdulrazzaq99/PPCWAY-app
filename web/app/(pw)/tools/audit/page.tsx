@@ -120,6 +120,7 @@ export default async function AuditToolPage() {
         title="Website audit"
         right={
           <>
+            <HeaderLink href={`/api/audit/${latest.id}/pdf`}>Download PDF</HeaderLink>
             <HeaderLink href={`/audit/${latest.id}`}>Open the full report</HeaderLink>
             <Link
               href="/audit"

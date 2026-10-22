@@ -44,6 +44,7 @@ from ppcway.ads.summary import account_summary, campaign_detail
 from ppcway.audit.history import score_history, score_of, what_changed
 from ppcway.audit.models import AuditRequest, AuditRun
 from ppcway.audit.pages import check_pages, landing_pages
+from ppcway.audit.paper import NotPrinted, to_pdf
 from ppcway.audit.places import (
     Listing,
     PlacesError,
@@ -77,6 +78,7 @@ from ppcway.db.session import get_session, session_factory
 from ppcway.mail.alerts import post_alerts
 from ppcway.mail.letters import (
     audit_ready,
+    file_name,
     fix_list,
     invitation,
     reset_password,
@@ -554,6 +556,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "No screenshot for this audit.")
         return FileResponse(
             path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"}
+        )
+
+    @app.get("/v1/audits/{run_id}/pdf")
+    def audit_paper(
+        run_id: UUID,
+        session: Annotated[Session, Depends(get_session)],
+    ) -> FileResponse:
+        """The report as a PDF, to keep, print or forward.
+
+        Open to anybody holding the id, exactly as the report itself is: the
+        link in the email has to work for the person who asked for it, and a
+        PDF of a page they can already read gives nothing away.
+        """
+        run = session.get(AuditRun, run_id)
+        if run is None or run.status != "done":
+            raise HTTPException(404, "No finished audit with that id.")
+        asked = session.get(AuditRequest, run.request_id) if run.request_id else None
+        name = (asked.business_name if asked else "") or run.site
+        try:
+            path = _paper(run_id, settings)
+        except NotPrinted as exc:
+            log.warning("audit %s would not print: %s", run_id, exc)
+            raise HTTPException(503, "The report could not be made into a PDF just now.") from exc
+        return FileResponse(
+            path,
+            media_type="application/pdf",
+            filename=f"PPCWay audit - {file_name(name)}.pdf",
+            headers={"Cache-Control": "private, max-age=3600"},
         )
 
     def _maps_key() -> str:
@@ -1861,6 +1891,31 @@ def _fix_count(run: AuditRun) -> int:
 _score_of = score_of
 
 
+def _paper(run_id: UUID, settings: Settings) -> Path:
+    """The report as a PDF, printed once and kept beside its screenshots.
+
+    Cloud Run gives every instance its own disk, so "kept" means kept here: a
+    request that lands on another instance prints it again rather than failing.
+    Printing happens when the run finishes, so in the ordinary case it is
+    already on the disk of the instance that asked for it.
+    """
+    path = Path(settings.audit_shots_dir) / str(run_id) / "report.pdf"
+    if path.exists() and path.stat().st_size > 0:
+        return path
+    made = to_pdf(f"{settings.app_base_url.rstrip('/')}/audit/{run_id}?paper=1")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(made)
+    return path
+
+
+def _print_it(run_id: UUID, settings: Settings) -> None:
+    """Print now, so that whoever asks for the PDF first does not wait for it."""
+    try:
+        _paper(run_id, settings)
+    except (NotPrinted, OSError) as exc:
+        log.warning("audit %s could not be printed: %s", run_id, exc)
+
+
 def _mailer(settings: Settings) -> Post:
     """How this deployment sends email, from settings alone.
 
@@ -1893,7 +1948,14 @@ def _audit_letter(
     """
     business = (asked.business_name if asked else "") or run.site
     link = f"{settings.app_base_url.rstrip('/')}/audit/{run.id}"
-    return audit_ready(to=to, business=business, score=score, link=link)
+    paper = b""
+    try:
+        paper = _paper(run.id, settings).read_bytes()
+    except (NotPrinted, OSError) as exc:
+        # A letter with a link and no attachment is still the report. Losing
+        # the email over a printer would be the worse trade.
+        log.warning("the audit of %s went without its PDF: %s", run.site, exc)
+    return audit_ready(to=to, business=business, score=score, link=link, paper=paper)
 
 
 def _tell_them(run: AuditRun, session: Session, settings: Settings) -> None:
@@ -2182,6 +2244,7 @@ def _run(run_id: UUID, settings: Settings, *, with_demand: bool = True) -> None:
             run.pages_read = report.pages_read
             run.finished_at = datetime.now(UTC)
             session.commit()
+            _print_it(run.id, settings)
             _tell_them(run, session, settings)
     except Exception as exc:
         log.exception("audit %s failed", run_id)

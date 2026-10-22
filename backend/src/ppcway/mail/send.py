@@ -12,6 +12,7 @@ received it never knew.
 
 from __future__ import annotations
 
+import base64
 import logging
 import smtplib
 from dataclasses import dataclass
@@ -29,6 +30,24 @@ class NotSent(RuntimeError):
 
 
 @dataclass(frozen=True)
+class Attachment:
+    """A file that travels with the letter.
+
+    Held as bytes rather than a path: what is sent should not depend on a file
+    still being on the disk of whichever machine sends it.
+    """
+
+    filename: str
+    content: bytes
+    media_type: str = "application/pdf"
+
+    @property
+    def parts(self) -> tuple[str, str]:
+        kind, _, sub = self.media_type.partition("/")
+        return kind or "application", sub or "octet-stream"
+
+
+@dataclass(frozen=True)
 class Letter:
     """One message. Plain text always; HTML when it is worth the trouble."""
 
@@ -36,6 +55,7 @@ class Letter:
     subject: str
     text: str
     html: str = ""
+    attachments: tuple[Attachment, ...] = ()
 
     def as_email(self, sender: str) -> EmailMessage:
         message = EmailMessage()
@@ -45,6 +65,12 @@ class Letter:
         message.set_content(self.text)
         if self.html:
             message.add_alternative(self.html, subtype="html")
+        for file in self.attachments:
+            kind, sub = file.parts
+            # On a message that already has a text and an HTML part this turns
+            # the whole thing into multipart/mixed, which is what a reader needs
+            # to show the words and offer the file.
+            message.add_attachment(file.content, maintype=kind, subtype=sub, filename=file.filename)
         return message
 
 
@@ -94,6 +120,15 @@ def _by_resend(post: Post, letter: Letter, *, client: httpx.Client | None = None
         }
         if letter.html:
             body["html"] = letter.html
+        if letter.attachments:
+            body["attachments"] = [
+                {
+                    "filename": file.filename,
+                    "content": base64.b64encode(file.content).decode("ascii"),
+                    "content_type": file.media_type,
+                }
+                for file in letter.attachments
+            ]
         reply = c.post(
             RESEND_ENDPOINT,
             headers={"Authorization": f"Bearer {post.api_key}"},

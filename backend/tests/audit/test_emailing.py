@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import UUID
 
 import pytest
@@ -25,6 +26,10 @@ from ppcway.config import Settings
 from ppcway.db.base import Base
 from ppcway.db.session import get_session
 from ppcway.mail.send import Letter
+
+#: What the stubbed printer hands back, and every page it was asked to print.
+PDF = b"%PDF-1.4 a report"
+printed: list[str] = []
 
 REPORT = {
     "findings": [
@@ -51,6 +56,7 @@ REPORT = {
 @pytest.fixture
 def app_db_post(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> Iterator[tuple[FastAPI, sessionmaker[Session], list[Letter]]]:
     engine = sa.create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=sa.pool.StaticPool
@@ -73,9 +79,20 @@ def app_db_post(
     posted: list[Letter] = []
     monkeypatch.setattr(api_module, "send", lambda post, letter, **k: posted.append(letter))
 
+    # No browser in a test. What matters here is which page it is asked to
+    # print and that what comes back travels; the printing is Chromium's job.
+    printed.clear()
+
+    def pretend(url: str, **k: object) -> bytes:
+        printed.append(url)
+        return PDF
+
+    monkeypatch.setattr(api_module, "to_pdf", pretend)
+
     settings = Settings(
         google_signin_client_id="test-client",
         app_base_url="https://app.ppcway.com",
+        audit_shots_dir=str(tmp_path),
     )
     app = create_app(settings)
 
@@ -239,3 +256,59 @@ def test_a_run_nobody_left_an_address_for_posts_nothing(
         api_module._tell_them(run, session, settings)
 
     assert posted == []
+
+
+def test_the_letter_carries_the_report_as_a_pdf(
+    app_db_post: tuple[FastAPI, sessionmaker[Session], list[Letter]],
+) -> None:
+    """A link is no use to somebody who wants to print it or keep it."""
+    app, factory, posted = app_db_post
+    with TestClient(app) as client:
+        token = client.post("/v1/auth/google", json={"credential": "d" * 40}).json()["token"]
+        run_id = an_audit(factory)
+
+        client.post(f"/v1/audits/{run_id}/email", json={}, headers={"x-session-token": token})
+
+        assert len(posted[0].attachments) == 1
+        paper = posted[0].attachments[0]
+        assert paper.filename == "PPCWay audit - Alpha Plumbing.pdf"
+        assert paper.content == PDF
+        assert paper.media_type == "application/pdf"
+        assert "attached as a PDF" in posted[0].text
+
+
+def test_the_printed_page_is_the_one_without_the_furniture(
+    app_db_post: tuple[FastAPI, sessionmaker[Session], list[Letter]],
+) -> None:
+    app, factory, _ = app_db_post
+    with TestClient(app) as client:
+        run_id = an_audit(factory)
+
+        said = client.get(f"/v1/audits/{run_id}/pdf")
+
+        assert said.status_code == 200, said.text
+        assert said.headers["content-type"] == "application/pdf"
+        assert said.content == PDF
+        assert printed == [f"https://app.ppcway.com/audit/{run_id}?paper=1"]
+
+
+def test_a_pdf_is_printed_once_and_then_kept(
+    app_db_post: tuple[FastAPI, sessionmaker[Session], list[Letter]],
+) -> None:
+    app, factory, _ = app_db_post
+    with TestClient(app) as client:
+        run_id = an_audit(factory)
+        client.get(f"/v1/audits/{run_id}/pdf")
+        client.get(f"/v1/audits/{run_id}/pdf")
+        assert len(printed) == 1
+
+
+def test_an_unfinished_audit_has_no_pdf(
+    app_db_post: tuple[FastAPI, sessionmaker[Session], list[Letter]],
+) -> None:
+    app, factory, _ = app_db_post
+    with TestClient(app) as client:
+        run_id = an_audit(factory, status="running")
+        said = client.get(f"/v1/audits/{run_id}/pdf")
+        assert said.status_code == 404
+        assert printed == []

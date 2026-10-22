@@ -7,7 +7,7 @@ jobs should know in one line whether it needs them.
 
 from __future__ import annotations
 
-from ppcway.mail.send import Letter
+from ppcway.mail.send import Attachment, Letter
 
 #: The signature on every message, so a reader knows who is writing.
 FOOT = "PPCway · Mississauga, Ontario"
@@ -110,12 +110,23 @@ def reset_password(*, to: str, name: str, link: str) -> Letter:
     return Letter(to=to, subject="Set a new PPCway password", text=text, html=html)
 
 
-def audit_ready(*, to: str, business: str, score: int, link: str) -> Letter:
-    """The free audit, when somebody asked for it by email."""
+def audit_ready(*, to: str, business: str, score: int, link: str, paper: bytes = b"") -> Letter:
+    """The free audit, when somebody asked for it by email.
+
+    The PDF rides along when there is one. A link alone is no use to somebody
+    who wants to forward the report to their web person, print it, or still
+    have it in a year; and an attachment nobody opens costs them nothing.
+    """
+    kept = (
+        "The whole report is attached as a PDF, and it is also at the address below.\n\n"
+        if paper
+        else ""
+    )
     text = (
         f"Your PPCway audit of {business} is ready.\n\n"
         f"It scores {score} out of 100 on how you look to somebody searching Google "
         "right now, with every check explained and the ones that cost you money first.\n\n"
+        f"{kept}"
         f"{link}\n\n"
         f"{FOOT}"
     )
@@ -123,10 +134,27 @@ def audit_ready(*, to: str, business: str, score: int, link: str) -> Letter:
         f"Your audit of {business} is ready",
         f"<p>It scores <strong>{score} out of 100</strong> on how you look to somebody "
         "searching Google right now, with every check explained and the ones that cost "
-        "you money first.</p>",
+        "you money first.</p>" + ("<p>The whole report is attached as a PDF.</p>" if paper else ""),
         ("Read the audit", link),
     )
-    return Letter(to=to, subject=f"Your PPCway audit of {business}", text=text, html=html)
+    files = (
+        (Attachment(filename=f"PPCWay audit - {file_name(business)}.pdf", content=paper),)
+        if paper
+        else ()
+    )
+    return Letter(
+        to=to,
+        subject=f"Your PPCway audit of {business}",
+        text=text,
+        html=html,
+        attachments=files,
+    )
+
+
+def file_name(name: str) -> str:
+    """A business name a file system and a mail reader will both accept."""
+    kept = "".join(c for c in name if c.isalnum() or c in " -_&.").strip()
+    return kept[:60] or "report"
 
 
 def fix_list(

@@ -16,7 +16,7 @@ import { AuditPage } from "./shell";
   The listing is read here rather than stored, which is what Google's terms
   require: we keep the place id and nothing else.
 */
-export function LiveReport({ id }: { id: string }) {
+export function LiveReport({ id, paper }: { id: string; paper?: boolean }) {
   const [run, setRun] = useState<Run | null>(null);
   const [status, setStatus] = useState<"queued" | "running" | "done" | "failed" | "lost">("queued");
   const [listing, setListing] = useState<Listing | null>(null);
@@ -108,5 +108,5 @@ export function LiveReport({ id }: { id: string }) {
     );
   }
 
-  return <ScoreReport sample={reportFromRun(run, listing, rivals)} runId={id} />;
+  return <ScoreReport sample={reportFromRun(run, listing, rivals)} runId={id} paper={paper} />;
 }

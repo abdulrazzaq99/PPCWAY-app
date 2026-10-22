@@ -28,21 +28,34 @@ export function AuditNav({ left }: { left?: ReactNode }) {
   );
 }
 
+/*
+  `bare` is the printed page: no navigation, no sign-in, no floating bar, and
+  white under it rather than the warm canvas, because a PDF is read on paper or
+  on a white screen and the colour only costs ink.
+*/
 export function AuditPage({
   children,
   wide,
   navLeft,
+  bare,
 }: {
   children: ReactNode;
   wide?: boolean;
   navLeft?: ReactNode;
+  bare?: boolean;
 }) {
   return (
-    <div className="site bg-canvas text-ink min-h-dvh">
-      <AuditNav left={navLeft} />
+    <div
+      className={cn("site text-ink min-h-dvh", bare ? "bg-white" : "bg-canvas")}
+      // The warm ground is the website's; paper is white. Inline because the
+      // `site` palette sets its own background and would otherwise win.
+      style={bare ? { background: "#fff" } : undefined}
+    >
+      {!bare && <AuditNav left={navLeft} />}
       <main
         className={cn(
-          "mx-auto px-5 pt-12 pb-20 sm:px-8 lg:pt-16",
+          "mx-auto px-5 pb-20 sm:px-8",
+          bare ? "pt-8 pb-8" : "pt-12 lg:pt-16",
           wide ? "max-w-[1200px]" : "max-w-[860px]",
         )}
       >

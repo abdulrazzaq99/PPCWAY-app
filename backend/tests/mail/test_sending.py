@@ -6,13 +6,14 @@ the sender waits, and the person who should have received it never knew.
 
 from __future__ import annotations
 
+import base64
 import json
 
 import httpx
 import pytest
 
 from ppcway.mail.letters import audit_ready, invitation, verify_email
-from ppcway.mail.send import Letter, NotSent, Post, send
+from ppcway.mail.send import Attachment, Letter, NotSent, Post, send
 
 LIVE = Post(sender="PPCway <hello@ppcway.com>", provider="resend", api_key="key")
 
@@ -100,3 +101,45 @@ def test_an_invitation_says_what_the_role_can_do() -> None:
     )
     assert "sign off" in letter.text
     assert "Alpha Plumbing" in letter.subject
+
+
+def test_an_attachment_travels_base64_to_the_provider() -> None:
+    """The provider takes bytes as text, so they have to be encoded on the way."""
+    c, sent = provider()
+    with c:
+        send(
+            LIVE,
+            Letter(
+                to="dana@alphaplumbing.ca",
+                subject="Your audit",
+                text="It is attached.",
+                attachments=(Attachment(filename="audit.pdf", content=b"%PDF-1.4 hello"),),
+            ),
+            client=c,
+        )
+    files = sent[0]["body"]["attachments"]  # type: ignore[index]
+    assert files == [
+        {
+            "filename": "audit.pdf",
+            "content": base64.b64encode(b"%PDF-1.4 hello").decode("ascii"),
+            "content_type": "application/pdf",
+        }
+    ]
+
+
+def test_a_letter_with_an_attachment_is_still_readable_as_a_message() -> None:
+    """Text, HTML and the file: three parts, and the words come first."""
+    message = Letter(
+        to="dana@alphaplumbing.ca",
+        subject="Your audit",
+        text="It is attached.",
+        html="<p>It is attached.</p>",
+        attachments=(Attachment(filename="audit.pdf", content=b"%PDF-1.4 hello"),),
+    ).as_email("PPCway <hello@ppcway.com>")
+
+    assert message.get_content_type() == "multipart/mixed"
+    carried = list(message.iter_attachments())
+    assert [part.get_filename() for part in carried] == ["audit.pdf"]
+    assert carried[0].get_content_type() == "application/pdf"
+    assert message.get_body(("plain",)) is not None
+    assert message.get_body(("html",)) is not None

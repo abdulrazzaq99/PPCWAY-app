@@ -47,6 +47,15 @@ const SOURCES: [string, string][] = [
   ["Disapprovals (locked)", "Your ads and their policy status"],
 ];
 
+/*
+  "(locked)" is true until the account is connected, and a lie afterwards: the
+  four rows it marks are printed in full further up this same report.
+*/
+function sources(connected: boolean): [string, string][] {
+  if (!connected) return SOURCES;
+  return SOURCES.map(([what, where]) => [what.replace(" (locked)", ""), where]);
+}
+
 function badgeOf(line: AuditLine): Badge {
   if (line.verdict === "good") return "pass";
   if (line.verdict === "cost") return "fail";
@@ -102,10 +111,23 @@ function Check({ line, source }: { line: AuditLine; source: string }) {
 
 /*
   `runId` is what makes this a real report rather than the drawn one: with it,
-  the audit can be emailed, because there is an audit to email. The sample has
-  no id and so offers to run a real one instead of pretending to send it.
+  the audit can be emailed and printed, because there is an audit to email and
+  print. The sample has no id and so offers to run a real one instead of
+  pretending to send it.
+
+  `paper` is the same report on its way into a PDF: the furniture comes off,
+  because a navigation bar, a sign-up panel and a floating button are all
+  things to click, and nobody clicks paper.
 */
-export function ScoreReport({ sample, runId }: { sample: AuditSample; runId?: string }) {
+export function ScoreReport({
+  sample,
+  runId,
+  paper,
+}: {
+  sample: AuditSample;
+  runId?: string;
+  paper?: boolean;
+}) {
   const checks: { line: AuditLine; source: string }[] = sample.panels.flatMap((panel: AuditPanel) =>
     panel.lines.map((line) => ({ line, source: panel.title.replace(/^Your /, "") })),
   );
@@ -118,10 +140,27 @@ export function ScoreReport({ sample, runId }: { sample: AuditSample; runId?: st
   const colour = ringColour(sample.readiness);
 
   return (
-    <AuditPage wide>
-      <p className="text-brand text-[13px] leading-4 font-semibold tracking-[0.08em] uppercase">
-        {sample.date}
-      </p>
+    <AuditPage wide bare={paper}>
+      {paper && (
+        <style>{`
+          html, body { background: #fff; }
+          /* A check cut in half by a page break reads as two broken checks. */
+          li, tr { break-inside: avoid; }
+        `}</style>
+      )}
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-brand text-[13px] leading-4 font-semibold tracking-[0.08em] uppercase">
+          {sample.date}
+        </p>
+        {runId && !paper && (
+          <a
+            href={`/api/audit/${encodeURIComponent(runId)}/pdf`}
+            className="border-line text-ink hover:bg-line-soft inline-flex h-[38px] shrink-0 items-center rounded-[10px] border px-4 text-[14px] font-semibold"
+          >
+            Download PDF
+          </a>
+        )}
+      </div>
       <h1 className="mt-3 text-[34px] leading-[40px] font-semibold text-balance sm:text-[44px] sm:leading-[52px]">
         {sample.business}
       </h1>
@@ -209,10 +248,12 @@ export function ScoreReport({ sample, runId }: { sample: AuditSample; runId?: st
                   to nobody else, so we cannot see them and neither can your competitors.
                 </p>
               </div>
-              <LinkButton href="/signup" size="sm">
-                Connect Google Ads, read only
-                <ArrowRight aria-hidden size={15} weight="bold" />
-              </LinkButton>
+              {!paper && (
+                <LinkButton href="/signup" size="sm">
+                  Connect Google Ads, read only
+                  <ArrowRight aria-hidden size={15} weight="bold" />
+                </LinkButton>
+              )}
             </div>
             <ul className="divide-line-soft divide-y">
               {LOCKED.map((row) => (
@@ -243,11 +284,13 @@ export function ScoreReport({ sample, runId }: { sample: AuditSample; runId?: st
                 </li>
               ))}
             </ul>
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <LinkButton href="/signup" size="sm" variant="secondary">
-                See all {sample.locked.total} with a free account
-              </LinkButton>
-            </div>
+            {!paper && (
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <LinkButton href="/signup" size="sm" variant="secondary">
+                  See all {sample.locked.total} with a free account
+                </LinkButton>
+              </div>
+            )}
           </Card>
         </section>
       ) : null}
@@ -267,7 +310,7 @@ export function ScoreReport({ sample, runId }: { sample: AuditSample; runId?: st
             <div className="bg-panel-alt text-faint border-line-soft hidden border-b px-5 py-3 text-[13px] font-semibold tracking-[0.06em] uppercase sm:block sm:px-7">
               Where it comes from
             </div>
-            {SOURCES.map(([what, where]) => (
+            {sources(Boolean(sample.fromAds)).map(([what, where]) => (
               <div key={what} className="contents">
                 <div className="border-line-soft border-t px-5 pt-4 pb-1 text-[15px] leading-[21px] font-semibold sm:px-7 sm:py-4">
                   {what}
@@ -281,36 +324,45 @@ export function ScoreReport({ sample, runId }: { sample: AuditSample; runId?: st
         </Card>
       </section>
 
-      <section id="close" className="bg-night mt-10 rounded-[26px] p-6 text-white sm:p-9">
-        <div className="flex flex-col gap-7 lg:flex-row lg:items-center lg:justify-between">
-          <div className="max-w-[640px]">
-            <h2 className="display text-[26px] leading-[32px] font-semibold sm:text-[32px] sm:leading-[38px]">
-              Get this audit every day, not just once.
-            </h2>
-            <p className="text-night-faint mt-3 text-[15px] leading-[23px]">
-              {sample.close.body} We rerun these checks every morning and propose the fixes you
-              approve in one tap.
-            </p>
+      {!paper && (
+        <section id="close" className="bg-night mt-10 rounded-[26px] p-6 text-white sm:p-9">
+          <div className="flex flex-col gap-7 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-[640px]">
+              <h2 className="display text-[26px] leading-[32px] font-semibold sm:text-[32px] sm:leading-[38px]">
+                Get this audit every day, not just once.
+              </h2>
+              <p className="text-night-faint mt-3 text-[15px] leading-[23px]">
+                {sample.close.body} We rerun these checks every morning and propose the fixes you
+                approve in one tap.
+              </p>
+            </div>
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row lg:w-[240px] lg:flex-col">
+              <LinkButton href="/signup" full>
+                Fix these for me
+              </LinkButton>
+              {runId ? (
+                <EmailThisAudit runId={runId} />
+              ) : (
+                <Link
+                  href="/audit"
+                  className="border-night-line hover:bg-night-raised inline-flex h-[46px] items-center justify-center rounded-[12px] border px-7 text-[15px] font-semibold text-white"
+                >
+                  Check my own website
+                </Link>
+              )}
+            </div>
           </div>
-          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row lg:w-[240px] lg:flex-col">
-            <LinkButton href="/signup" full>
-              Fix these for me
-            </LinkButton>
-            {runId ? (
-              <EmailThisAudit runId={runId} />
-            ) : (
-              <Link
-                href="/audit"
-                className="border-night-line hover:bg-night-raised inline-flex h-[46px] items-center justify-center rounded-[12px] border px-7 text-[15px] font-semibold text-white"
-              >
-                Check my own website
-              </Link>
-            )}
-          </div>
-        </div>
-      </section>
+        </section>
+      )}
 
-      <FixBar text={sample.bar} />
+      {paper ? (
+        <p className="text-faint mt-10 border-t border-[var(--color-line)] pt-4 text-[12px] leading-[18px]">
+          PPCway · {sample.business} · {sample.date}. Every check in this report was run against the
+          live website and the live Google listing on that date.
+        </p>
+      ) : (
+        <FixBar text={sample.bar} />
+      )}
     </AuditPage>
   );
 }
