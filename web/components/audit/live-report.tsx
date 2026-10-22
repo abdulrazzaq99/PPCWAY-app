@@ -81,7 +81,7 @@ export function LiveReport({ id, paper }: { id: string; paper?: boolean }) {
 
   if (status === "lost" || status === "failed") {
     return (
-      <AuditPage>
+      <AuditPage bare={paper}>
         <h1 className="text-[28px] leading-[34px] font-bold sm:text-[38px] sm:leading-[46px]">
           {status === "failed"
             ? `We could not finish checking ${run?.site ?? "that site"}.`
@@ -98,7 +98,7 @@ export function LiveReport({ id, paper }: { id: string; paper?: boolean }) {
   if (status !== "done" || !run?.report) {
     const site = (run?.site ?? "").replace(/^https?:\/\//, "").replace(/\/$/, "");
     return (
-      <AuditPage>
+      <AuditPage bare={paper}>
         <Checking
           site={site || "your website"}
           stage={(run?.stage ?? "") as "crawling" | "rendering" | "speed" | "checks" | "done" | ""}
