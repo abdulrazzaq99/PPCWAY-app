@@ -49,7 +49,7 @@ export function AuditFindView({
   chosen,
   error,
 }: {
-  view: "find" | "results" | "confirm" | "checking" | "not-found";
+  view: "find" | "results" | "confirm" | "not-found";
   typed?: Partial<Typed>;
   listings?: Listing[];
   chosen?: Listing;
@@ -64,7 +64,6 @@ export function AuditFindView({
     site: typed?.site ?? "",
   };
   if (view === "confirm") return <ConfirmView typed={t} chosen={chosen} />;
-  if (view === "checking") return <CheckingView />;
   if (view === "not-found") return <NotFoundView />;
   return <FindView results={view === "results"} typed={given} listings={listings} error={error} />;
 }
@@ -485,44 +484,6 @@ export function CheckingRows({
         </div>
       ))}
     </div>
-  );
-}
-
-function CheckingView() {
-  return (
-    <AuditPage>
-      <h1 className="text-[32px] leading-[38px] font-bold sm:text-[42px] sm:leading-[51px]">
-        Checking Alpha Plumbing.
-      </h1>
-      <p className="text-muted mt-6 max-w-[700px] text-[18px] leading-[22px]">
-        About forty seconds. You can stay on this page, or give us an email address and we will send
-        the report when it is ready.
-      </p>
-      <Card className="mt-6 px-5 py-1 sm:px-7">
-        <CheckingRows />
-      </Card>
-      <form
-        className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-end"
-        action="/audit/report"
-        method="get"
-      >
-        <input type="hidden" name="view" value="advertising" />
-        <Field label="Email me the report when it is done" className="flex-1">
-          {(id) => (
-            <Input
-              id={id}
-              type="email"
-              name="email"
-              placeholder="you@yourbusiness.ca"
-              autoComplete="email"
-            />
-          )}
-        </Field>
-        <Button type="submit" variant="secondary" className="shrink-0">
-          Email it to me
-        </Button>
-      </form>
-    </AuditPage>
   );
 }
 

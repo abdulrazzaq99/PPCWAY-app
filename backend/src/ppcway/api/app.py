@@ -75,8 +75,14 @@ from ppcway.auth.sessions import (
 from ppcway.config import Settings, load_settings
 from ppcway.db.session import get_session, session_factory
 from ppcway.mail.alerts import post_alerts
-from ppcway.mail.letters import fix_list, invitation, reset_password, verify_email
-from ppcway.mail.send import NotSent, Post, send
+from ppcway.mail.letters import (
+    audit_ready,
+    fix_list,
+    invitation,
+    reset_password,
+    verify_email,
+)
+from ppcway.mail.send import Letter, NotSent, Post, send
 from ppcway.mail.weekly import post_weekly
 from ppcway.org.models import CAN, Organization, Role
 from ppcway.org.places import (
@@ -292,6 +298,18 @@ class ShareOut(BaseModel):
     url: str
     expires_at: datetime
     emailed: bool = False
+
+
+class EmailAuditIn(BaseModel):
+    """Where to send a finished audit. Signed in, we already know."""
+
+    email: EmailStr | None = None
+
+
+class EmailedOut(BaseModel):
+    """Who it went to, so the button can say so rather than guess."""
+
+    sent_to: str
 
 
 class SyncOut(BaseModel):
@@ -576,17 +594,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def _post() -> Post:
         """How this deployment sends email, built from settings."""
-        return Post(
-            sender=settings.email_from,
-            provider=settings.email_provider,
-            api_key=settings.resend_api_key.get_secret_value() if settings.resend_api_key else "",
-            smtp_host=settings.smtp_host,
-            smtp_port=settings.smtp_port,
-            smtp_user=settings.smtp_user,
-            smtp_password=(
-                settings.smtp_password.get_secret_value() if settings.smtp_password else ""
-            ),
-        )
+        return _mailer(settings)
 
     def _home(session: Session, account: UserAccount) -> Organization:
         """The business this person is in, made on first use."""
@@ -1530,6 +1538,60 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 log.warning("the fix list did not go to %s: %s", body.email, exc)
         return ShareOut(url=url, expires_at=link.expires_at, id=str(link.id), emailed=emailed)
 
+    @app.post("/v1/audits/{run_id}/email", response_model=EmailedOut)
+    def email_audit(
+        run_id: UUID,
+        body: EmailAuditIn,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> EmailedOut:
+        """Send a finished audit to an inbox. It does not run anything.
+
+        The button that asks for this sits on the report, so the work is already
+        done and this is the post, not the audit. Which address it may use is
+        the whole of the thinking:
+
+        - signed in, their own and nothing the body asks for, so the most
+          anybody can do with a session is mail themselves;
+        - signed out on a run nobody has given an address for, the one they
+          type, which is then kept — that is the free audit's own promise;
+        - signed out on a run that already has an address, only that address,
+          so this cannot be pointed at a stranger.
+        """
+        run = session.get(AuditRun, run_id)
+        if run is None:
+            raise HTTPException(404, "No audit with that id.")
+        score = _score_of(run)
+        if run.status != "done" or score is None:
+            raise HTTPException(409, "That audit has not finished yet.")
+
+        asked = session.get(AuditRequest, run.request_id) if run.request_id else None
+        account = _person(session, x_session_token)
+        typed = str(body.email).lower().strip() if body.email else ""
+        if account is not None:
+            to = account.email
+        elif asked is not None and asked.email:
+            if typed and typed != asked.email:
+                raise HTTPException(403, "That audit is already going to another address.")
+            to = asked.email
+        elif typed:
+            to = typed
+        else:
+            raise HTTPException(400, "Tell us where to send it.")
+
+        try:
+            send(_post(), _audit_letter(run, asked, settings, to, score))
+        except NotSent as exc:
+            log.warning("the audit of %s did not go to %s: %s", run.site, to, exc)
+            raise HTTPException(502, "We could not send that email just now.") from exc
+
+        # Signed out and never asked before: remember it, so a second press
+        # cannot turn this into a way of mailing somebody else.
+        if account is None and asked is not None and not asked.email:
+            asked.email = to
+            session.commit()
+        return EmailedOut(sent_to=to)
+
     @app.get("/v1/public/fixes/{token}")
     def shared_fixes(
         token: str,
@@ -1799,6 +1861,62 @@ def _fix_count(run: AuditRun) -> int:
 _score_of = score_of
 
 
+def _mailer(settings: Settings) -> Post:
+    """How this deployment sends email, from settings alone.
+
+    Module level because the background run sends too, and it has settings but
+    not the application that was built around them.
+    """
+    return Post(
+        sender=settings.email_from,
+        provider=settings.email_provider,
+        api_key=settings.resend_api_key.get_secret_value() if settings.resend_api_key else "",
+        smtp_host=settings.smtp_host,
+        smtp_port=settings.smtp_port,
+        smtp_user=settings.smtp_user,
+        smtp_password=(settings.smtp_password.get_secret_value() if settings.smtp_password else ""),
+    )
+
+
+def _audit_letter(
+    run: AuditRun,
+    asked: AuditRequest | None,
+    settings: Settings,
+    to: str,
+    score: int,
+) -> Letter:
+    """One finished audit, as a letter to one person.
+
+    The link is the report's own public address rather than a share token: the
+    audit is already readable by anybody holding its id, and a person who asked
+    for their own report should not have it expire under them.
+    """
+    business = (asked.business_name if asked else "") or run.site
+    link = f"{settings.app_base_url.rstrip('/')}/audit/{run.id}"
+    return audit_ready(to=to, business=business, score=score, link=link)
+
+
+def _tell_them(run: AuditRun, session: Session, settings: Settings) -> None:
+    """Email the report to whoever asked for it when they started the run.
+
+    "You can stay on this page, or give us an email address and we will send the
+    report when it is ready" is on the waiting screen, so this is a promise
+    already made. A post that refuses is logged and nothing more: the audit is
+    finished and on screen either way, and failing the run over an email would
+    throw away work that is already done.
+    """
+    asked = session.get(AuditRequest, run.request_id) if run.request_id else None
+    if asked is None or not asked.email:
+        return
+    score = _score_of(run)
+    if score is None:
+        return
+    try:
+        send(_mailer(settings), _audit_letter(run, asked, settings, asked.email, score))
+    except NotSent as exc:
+        log.warning("the audit of %s did not go to %s: %s", run.site, asked.email, exc)
+
+
 def _behind(run_id: UUID, factory: sessionmaker[Session]) -> tuple[str, str] | None:
     """The Google Ads account behind an audit run: its id and stored permission.
 
@@ -2064,6 +2182,7 @@ def _run(run_id: UUID, settings: Settings, *, with_demand: bool = True) -> None:
             run.pages_read = report.pages_read
             run.finished_at = datetime.now(UTC)
             session.commit()
+            _tell_them(run, session, settings)
     except Exception as exc:
         log.exception("audit %s failed", run_id)
         with factory() as session:

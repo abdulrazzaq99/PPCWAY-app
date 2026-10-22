@@ -4,6 +4,7 @@ import { LinkButton } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { AdsFindings } from "./ads-findings";
 import type { AuditLine, AuditPanel, AuditSample } from "./report-views";
+import { EmailThisAudit } from "./email-audit";
 import { FixBar } from "./fix-bar";
 import { AuditPage, Card } from "./shell";
 
@@ -99,7 +100,12 @@ function Check({ line, source }: { line: AuditLine; source: string }) {
   );
 }
 
-export function ScoreReport({ sample }: { sample: AuditSample }) {
+/*
+  `runId` is what makes this a real report rather than the drawn one: with it,
+  the audit can be emailed, because there is an audit to email. The sample has
+  no id and so offers to run a real one instead of pretending to send it.
+*/
+export function ScoreReport({ sample, runId }: { sample: AuditSample; runId?: string }) {
   const checks: { line: AuditLine; source: string }[] = sample.panels.flatMap((panel: AuditPanel) =>
     panel.lines.map((line) => ({ line, source: panel.title.replace(/^Your /, "") })),
   );
@@ -290,12 +296,16 @@ export function ScoreReport({ sample }: { sample: AuditSample }) {
             <LinkButton href="/signup" full>
               Fix these for me
             </LinkButton>
-            <Link
-              href="/audit?view=checking"
-              className="border-night-line hover:bg-night-raised inline-flex h-[46px] items-center justify-center rounded-[12px] border px-7 text-[15px] font-semibold text-white"
-            >
-              Email me this audit
-            </Link>
+            {runId ? (
+              <EmailThisAudit runId={runId} />
+            ) : (
+              <Link
+                href="/audit"
+                className="border-night-line hover:bg-night-raised inline-flex h-[46px] items-center justify-center rounded-[12px] border px-7 text-[15px] font-semibold text-white"
+              >
+                Check my own website
+              </Link>
+            )}
           </div>
         </div>
       </section>

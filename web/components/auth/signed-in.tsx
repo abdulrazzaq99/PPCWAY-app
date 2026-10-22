@@ -37,7 +37,11 @@ export function SignedIn() {
     router.refresh();
   }
 
-  if (!asked || !person) {
+  // Nothing until the server has answered. Showing "Log in" first meant every
+  // public page flashed it at people who were already signed in, which is what
+  // a screenshot of the audit report caught.
+  if (!asked) return null;
+  if (!person) {
     return (
       <Link href="/login" className="text-ink text-[15px] leading-[18px] font-semibold">
         Log in

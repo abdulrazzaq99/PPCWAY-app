@@ -108,5 +108,5 @@ export function LiveReport({ id }: { id: string }) {
     );
   }
 
-  return <ScoreReport sample={reportFromRun(run, listing, rivals)} />;
+  return <ScoreReport sample={reportFromRun(run, listing, rivals)} runId={id} />;
 }

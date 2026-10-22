@@ -490,8 +490,8 @@ export function AuditReport({ sample }: { sample: Sample }) {
             <LinkButton href="/signup" full>
               Fix these for me
             </LinkButton>
-            <LinkButton href="/audit?view=checking" variant="secondary" full>
-              Email me this audit
+            <LinkButton href="/audit" variant="secondary" full>
+              Check my own website
             </LinkButton>
             <p className="text-brand-dark/80 text-center text-[13px] leading-4">
               Free for 14 days.
