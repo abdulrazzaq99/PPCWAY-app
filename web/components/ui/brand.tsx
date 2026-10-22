@@ -41,7 +41,7 @@ export function Brand({
     <Link
       href={href}
       aria-label={`${name} home`}
-      className="focus-visible:ring-brand-bar inline-flex rounded-sm focus-visible:ring-4 focus-visible:outline-none"
+      className="focus-visible:ring-brand-bar tap inline-flex rounded-sm focus-visible:ring-4 focus-visible:outline-none"
     >
       {inner}
     </Link>

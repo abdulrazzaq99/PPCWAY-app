@@ -155,7 +155,7 @@ export function ScoreReport({
         {runId && !paper && (
           <a
             href={`/api/audit/${encodeURIComponent(runId)}/pdf`}
-            className="border-line text-ink hover:bg-line-soft inline-flex h-[38px] shrink-0 items-center rounded-[10px] border px-4 text-[14px] font-semibold"
+            className="border-line text-ink hover:bg-line-soft inline-flex h-11 shrink-0 items-center rounded-[10px] border px-4 text-[14px] font-semibold sm:h-[38px]"
           >
             Download PDF
           </a>

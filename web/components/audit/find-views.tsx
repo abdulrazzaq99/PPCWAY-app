@@ -283,7 +283,7 @@ function LiveMatches({
       <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
         <Link
           href="/audit?view=not-found"
-          className="text-brand text-[14px] leading-[17px] font-semibold"
+          className="tap text-brand text-[14px] leading-[17px] font-semibold"
         >
           None of these are us
         </Link>
@@ -310,7 +310,7 @@ function SampleMatches({ typed }: { typed: Typed }) {
       <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
         <Link
           href="/audit?view=not-found"
-          className="text-brand text-[14px] leading-[17px] font-semibold"
+          className="tap text-brand text-[14px] leading-[17px] font-semibold"
         >
           None of these are us
         </Link>

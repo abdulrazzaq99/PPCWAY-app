@@ -82,7 +82,9 @@ export function PasswordInput(props: PasswordProps) {
         <button
           type="button"
           onClick={() => setShown((s) => !s)}
-          className="text-pw-blue hover:text-pw-blue-hover rounded-sm text-[14px] leading-[17px] font-semibold focus-visible:outline-none"
+          // The text stays the drawn size; the area around it is what a thumb
+          // needs. Full height of the field, which is 46px.
+          className="text-pw-blue hover:text-pw-blue-hover inline-flex h-full items-center rounded-sm px-1 text-[14px] leading-[17px] font-semibold focus-visible:outline-none"
           aria-pressed={shown}
         >
           {shown ? "Hide" : "Show"}

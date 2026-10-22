@@ -43,7 +43,7 @@ export function SignedIn() {
   if (!asked) return null;
   if (!person) {
     return (
-      <Link href="/login" className="text-ink text-[15px] leading-[18px] font-semibold">
+      <Link href="/login" className="tap text-ink text-[15px] leading-[18px] font-semibold">
         Log in
       </Link>
     );
@@ -52,13 +52,13 @@ export function SignedIn() {
   const first = person.name.split(" ")[0] || person.email;
   return (
     <div className="flex items-center gap-4">
-      <Link href="/audit/mine" className="text-ink text-[15px] leading-[18px] font-semibold">
+      <Link href="/audit/mine" className="tap text-ink text-[15px] leading-[18px] font-semibold">
         {first}
       </Link>
       <button
         type="button"
         onClick={signOut}
-        className="text-muted hover:text-ink text-[15px] leading-[18px] font-semibold"
+        className="tap text-muted hover:text-ink text-[15px] leading-[18px] font-semibold"
       >
         Sign out
       </button>

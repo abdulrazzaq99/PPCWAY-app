@@ -697,22 +697,22 @@ function Footer() {
         className="text-muted flex flex-wrap gap-x-6 gap-y-2 text-[14px] leading-[17px]"
         aria-label="Footer"
       >
-        <a href="#checks" className="hover:text-ink">
+        <a href="#checks" className="tap hover:text-ink">
           What we check
         </a>
-        <a href="#pricing" className="hover:text-ink">
+        <a href="#pricing" className="tap hover:text-ink">
           Pricing
         </a>
-        <Link href="/help" className="hover:text-ink">
+        <Link href="/help" className="tap hover:text-ink">
           Help
         </Link>
-        <Link href="/privacy" className="hover:text-ink">
+        <Link href="/privacy" className="tap hover:text-ink">
           Privacy
         </Link>
-        <Link href="/terms" className="hover:text-ink">
+        <Link href="/terms" className="tap hover:text-ink">
           Terms
         </Link>
-        <Link href="/login" className="hover:text-ink">
+        <Link href="/login" className="tap hover:text-ink">
           Sign in
         </Link>
       </nav>

@@ -123,7 +123,7 @@ function LoginPageInner() {
         <Field
           label="Password"
           labelAside={
-            <TextLink href="/forgot-password" size={13}>
+            <TextLink href="/forgot-password" size={13} className="tap">
               Forgot it?
             </TextLink>
           }

@@ -34,7 +34,7 @@ export function AuthShell({
     <div className="site bg-pw-ground text-pw-ink flex min-h-dvh flex-col lg:flex-row">
       <aside className="bg-pw-night text-pw-night-text lg:flex lg:w-[540px] lg:shrink-0 lg:flex-col lg:justify-between">
         <div className="px-6 pt-8 pb-8 sm:px-10 lg:px-14 lg:pt-14 lg:pb-0">
-          <Link href="/" className="inline-flex items-center">
+          <Link href="/" className="tap inline-flex items-center">
             <Image
               src="/brand/ppcway-logo-white.svg"
               alt={brand === "ppcway" ? "PPCway" : brand}

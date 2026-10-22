@@ -24,10 +24,10 @@ export function LegalPage({
       <header className="mx-auto flex max-w-[1200px] items-center justify-between px-5 py-6 sm:px-8">
         <Brand tone="light" size={26} href="/" />
         <nav className="text-muted flex gap-x-6 text-[14px]" aria-label="Site">
-          <Link href="/audit" className="hover:text-ink">
+          <Link href="/audit" className="tap hover:text-ink">
             Free audit
           </Link>
-          <Link href="/login" className="hover:text-ink">
+          <Link href="/login" className="tap hover:text-ink">
             Sign in
           </Link>
         </nav>
@@ -45,13 +45,13 @@ export function LegalPage({
       <footer className="border-line-soft mx-auto flex max-w-[1200px] flex-wrap items-center justify-between gap-4 border-t px-5 py-8 sm:px-8">
         <p className="text-faint text-[13px] leading-4">PPCWay · Mississauga, Ontario</p>
         <nav className="text-muted flex flex-wrap gap-x-6 gap-y-2 text-[14px]" aria-label="Legal">
-          <Link href="/privacy" className="hover:text-ink">
+          <Link href="/privacy" className="tap hover:text-ink">
             Privacy
           </Link>
-          <Link href="/terms" className="hover:text-ink">
+          <Link href="/terms" className="tap hover:text-ink">
             Terms
           </Link>
-          <Link href="/help" className="hover:text-ink">
+          <Link href="/help" className="tap hover:text-ink">
             Help
           </Link>
         </nav>

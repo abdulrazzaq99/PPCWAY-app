@@ -241,6 +241,44 @@ body {
   line-height: 16px;
 }
 
+/*
+  Phones: a form control under 16px makes iOS Safari zoom the page the instant
+  it is tapped, which throws the layout sideways. The first thing a stranger
+  meets on the free audit is three of those fields, so it happens three times
+  before they have told us anything.
+
+  The drawn 15px body stays everywhere it was drawn. This is controls only, and
+  only on a phone. The `[class]` line is not decoration: these inputs carry
+  Tailwind classes, and a class beats a bare element selector however many
+  elements it names.
+*/
+@media (max-width: 639px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  input[class],
+  select[class],
+  textarea[class] {
+    font-size: 16px;
+  }
+}
+
+/*
+  A link or button that has to be found with a thumb. The text keeps the size
+  it was drawn at; this grows only the area around it, and only on a phone,
+  where there is no pointer to be precise with. 44px is the smallest square
+  both Apple and Google ask for.
+*/
+@media (max-width: 639px) {
+  .tap {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
 /* Motion, from the "States and motion" frame */
 :root {
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
