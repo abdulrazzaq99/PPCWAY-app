@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -396,7 +396,7 @@ def account_numbers(
         sum(c.budget for c in campaigns if c.status == "ENABLED" and c.gone_at is None) * MONTH, 2
     )
 
-    held.needs = _needs(session, customer_id, held, campaigns)
+    held.needs = _needs(session, customer_id, held, campaigns, now)
     held.activity = [
         Change(kind=c.kind, label=c.label, summary=c.summary, when=c.noticed_at)
         for c in session.scalars(
@@ -421,8 +421,15 @@ def _needs(
     customer_id: str,
     held: Held,
     campaigns: list[MirrorCampaign],
+    today: date,
 ) -> list[Need]:
-    """What wants a person, in the order a person would care about it."""
+    """What wants a person, in the order a person would care about it.
+
+    `today` is the caller's, not the clock's. Every other figure in this module
+    is worked out from the day it was given; this one reached for the real time
+    instead, so "changed in the last seven days" drifted away from the window
+    the rest of the screen was describing.
+    """
     needs: list[Need] = []
 
     for row in held.campaigns:
@@ -463,7 +470,7 @@ def _needs(
             )
         )
 
-    since = datetime.now(UTC) - timedelta(days=RECENTLY)
+    since = datetime.combine(today - timedelta(days=RECENTLY), time.min, tzinfo=UTC)
     hands = (
         session.scalar(
             select(func.count())

@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from ppcway.ads.accounts import accessible_accounts
+from ppcway.ads.business import known_business
 from ppcway.ads.gate import gate_report
 from ppcway.ads.mirror import CampaignDay, ExternalChange, MirrorCampaign, SyncRun
 from ppcway.ads.models import AdsConnection, ConsentTrip
@@ -1052,6 +1053,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             customer_id=connection.customer_id,
             customer_name=connection.customer_name,
         )
+
+    @app.get("/v1/ads/business")
+    def ads_business(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """What the connected account tells us about the business it advertises.
+
+        So that the audit stops asking for a name and a website we were handed
+        when the account was connected. Everything it answers says where it came
+        from, because a screen that fills itself in has to show its working.
+        """
+        account = _signed_in(session, x_session_token)
+        connection = _connection(session, account)
+        if connection is None or not connection.customer_id:
+            return {"connected": False, "enough": False}
+        key = (
+            settings.google_maps_api_key.get_secret_value() if settings.google_maps_api_key else ""
+        )
+        known = known_business(
+            session,
+            customer_id=connection.customer_id,
+            account_name=connection.customer_name,
+            maps_key=key,
+        )
+        return {"connected": True, **known.as_dict()}
 
     @app.get("/v1/ads/accounts", response_model=list[AdsAccountOut])
     def ads_accounts(

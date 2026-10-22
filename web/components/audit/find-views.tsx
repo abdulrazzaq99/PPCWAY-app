@@ -9,6 +9,7 @@ import type { Listing } from "@/lib/listing";
 import { listingMeta, listingRating } from "@/lib/listing";
 import { ManualForm } from "./manual-form";
 import { NameField } from "./name-field";
+import { FromAccount } from "./from-account";
 import { AuditPage, Card, Pill } from "./shell";
 import { StartAudit } from "./start-audit";
 
@@ -108,6 +109,9 @@ function FindView({
           </li>
         ))}
       </ul>
+
+      {/* Connected already? Then we know the answers to the form below. */}
+      <FromAccount />
 
       <Card className="mt-7 overflow-hidden">
         <div className="grid gap-0 lg:grid-cols-[minmax(0,380px)_1fr]">

@@ -15,6 +15,7 @@ export function StartAudit({
   site,
   label,
   placeId = "",
+  trade = "",
 }: {
   business: string;
   city: string;
@@ -22,6 +23,8 @@ export function StartAudit({
   label: string;
   /** The Google listing they confirmed, so the report can read it again later. */
   placeId?: string;
+  /** What the business does, which seeds the "what is this worth" figures. */
+  trade?: string;
 }) {
   const router = useRouter();
   const [working, setWorking] = useState(false);
@@ -44,6 +47,7 @@ export function StartAudit({
           site,
           source: "landing",
           place_id: placeId,
+          trade,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
