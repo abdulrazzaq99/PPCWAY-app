@@ -15,11 +15,33 @@ import { NextResponse, type NextRequest } from "next/server";
   them worth hiding.
 */
 /*
-  Open without a session. The first three are the pages Google's reviewers read;
-  `/r` and `/fixes` are the shared links, which exist precisely so that somebody
-  with no account — an accountant, a web developer — can read one thing.
+  Open, password or no password.
+
+  The free audit is the launched part: a stranger types their business name,
+  gets a real report, and can have it emailed as a PDF, all without an account
+  and without knowing any password. Everything it touches is listed here —
+  the screens, the run, the polling, the screenshots, the PDF, the email, and
+  the Google Maps lookups behind the name field. Miss one and the audit breaks
+  for exactly the people it was opened for.
+
+  The rest: `/`, `/privacy` and `/terms` are the pages Google's reviewers read
+  and the ones its consent screen names; `/r` and `/fixes` are the shared
+  links, which exist precisely so somebody with no account — an accountant, a
+  web developer — can read one thing.
 */
-const OPEN = ["/gate", "/api/gate", "/", "/privacy", "/terms", "/r", "/fixes"];
+const OPEN = [
+  "/gate",
+  "/api/gate",
+  "/",
+  "/privacy",
+  "/terms",
+  "/r",
+  "/fixes",
+  // The free audit, end to end.
+  "/audit",
+  "/api/audit",
+  "/api/places",
+];
 
 /*
   The signed-in screens. Without a session they send people to sign in rather than
