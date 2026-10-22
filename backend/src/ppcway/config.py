@@ -97,6 +97,12 @@ class Settings(BaseSettings):
     #: Where the Next.js app lives, for links in emails and redirects.
     web_url: str = "http://localhost:3000"
 
+    #: Who may sign in while PPCWay is not open to everybody. Empty means open,
+    #: which is how it runs locally and how it ships when it opens properly.
+    #: Addresses, or whole domains written as "@example.com", comma separated.
+    #: The free audit is never gated by this. See `auth.opening`.
+    open_to: str = ""
+
     @field_validator("environment", mode="before")
     @classmethod
     def _lowercase(cls, value: object) -> object:

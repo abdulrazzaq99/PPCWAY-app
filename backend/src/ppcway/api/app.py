@@ -66,6 +66,7 @@ from ppcway.auth.accounts import (
 )
 from ppcway.auth.google import SignInRefused, verify_google_token
 from ppcway.auth.models import UserAccount
+from ppcway.auth.opening import NOT_YET, may_come_in, open_to_everybody
 from ppcway.auth.passwords import WeakPassword
 from ppcway.auth.sessions import (
     sign_in,
@@ -87,7 +88,7 @@ from ppcway.mail.letters import (
 )
 from ppcway.mail.send import Letter, NotSent, Post, send
 from ppcway.mail.weekly import post_weekly
-from ppcway.org.models import CAN, Organization, Role
+from ppcway.org.models import CAN, Invitation, Organization, Role
 from ppcway.org.places import (
     NotAllowed,
     accept,
@@ -595,6 +596,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def _person(session: Session, token: str | None) -> UserAccount | None:
         return whoever_holds(session, token)
 
+    def _may_sign_in(session: Session, email: str) -> None:
+        """Refuse a stranger at the door while PPCWay is not open to everybody.
+
+        Only the doors: the free audit, the shared links and the public pages
+        are open to anybody and ask nothing of this. Somebody already invited
+        by a person inside is let through without being named in the setting,
+        because a business should be able to add its own people.
+        """
+        if open_to_everybody(settings.open_to):
+            return
+        address = email.strip().lower()
+        invited = (
+            session.scalar(
+                select(func.count())
+                .select_from(Invitation)
+                .where(
+                    func.lower(Invitation.email) == address,
+                    Invitation.accepted_at.is_(None),
+                    Invitation.revoked_at.is_(None),
+                    Invitation.expires_at > datetime.now(UTC),
+                )
+            )
+            or 0
+        )
+        if not may_come_in(address, open_to=settings.open_to, invited=bool(invited)):
+            log.info("not open yet, so %s was turned away", address.partition("@")[2] or "somebody")
+            raise HTTPException(403, NOT_YET)
+
+    @app.get("/v1/open")
+    def how_open() -> dict[str, bool]:
+        """Whether anybody may make an account, for screens that offer it.
+
+        The free audit never asks this: it is open either way.
+        """
+        return {"open": open_to_everybody(settings.open_to)}
+
     @app.post("/v1/auth/google", response_model=SignedInOut)
     def sign_in_with_google(
         body: SignInIn, session: Annotated[Session, Depends(get_session)]
@@ -607,6 +644,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except SignInRefused as exc:
             log.warning("sign-in refused: %s", exc)
             raise HTTPException(401, str(exc)) from None
+        _may_sign_in(session, who.email)
         account, token = sign_in(session, who)
         return SignedInOut(
             person=PersonOut.of(account),
@@ -795,6 +833,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session: Annotated[Session, Depends(get_session)],
     ) -> SignedInOut:
         """Make an account with an address and a password, and post the link."""
+        _may_sign_in(session, str(body.email))
         try:
             account, secret = register(
                 session, email=str(body.email), password=body.password, name=body.name
@@ -815,6 +854,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session: Annotated[Session, Depends(get_session)],
     ) -> SignedInOut:
         """Sign in with an address and a password."""
+        _may_sign_in(session, str(body.email))
         account = sign_in_with_password(session, email=str(body.email), password=body.password)
         if account is None:
             # One message for a wrong address and a wrong password: which it was
@@ -870,6 +910,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(400, str(exc)) from None
         if account is None:
             raise HTTPException(400, "That link has been used already, or has expired.")
+        # A new password is still a way in, so it answers to the same latch.
+        _may_sign_in(session, account.email)
         token = sign_in_existing(session, account)
         return SignedInOut(token=token, person=PersonOut.of(account))
 

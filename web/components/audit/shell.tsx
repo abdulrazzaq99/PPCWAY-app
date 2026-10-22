@@ -16,8 +16,11 @@ export function AuditNav({ left }: { left?: ReactNode }) {
         <Brand tone="light" size={26} href="/" />
         <div className="flex items-center gap-4">
           {left ?? <SignedIn />}
+          {/* It says "audit", so it starts an audit. It used to open the
+              sign-up form, which was wrong before any of this and is worse
+              while accounts are not open. */}
           <Link
-            href="/signup"
+            href="/audit"
             className="bg-brand hover:bg-brand-dark inline-flex h-[42px] items-center rounded-[12px] px-5 text-[15px] font-semibold text-white"
           >
             Free instant audit
