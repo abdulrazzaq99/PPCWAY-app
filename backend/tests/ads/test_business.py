@@ -324,3 +324,42 @@ def test_with_no_website_in_the_ads_the_listing_can_supply_one(
     # Nothing is assumed, but there is something to offer rather than a blank form.
     assert known.enough is True
     assert known.choices[0]["website"] == "https://alphaplumbing.ca"
+
+
+def test_signed_out_the_endpoint_refuses_and_the_free_audit_is_untouched() -> None:
+    """The free audit asks for a business name because nobody has told us one.
+
+    This flow is for somebody who has signed in and connected an account. With
+    no session there is no account, nothing to read, and nothing to fill in, so
+    the public form stays exactly as it was.
+    """
+    from fastapi.testclient import TestClient
+
+    from ppcway.api.app import create_app
+    from ppcway.config import Settings
+    from ppcway.db.session import get_session
+
+    engine = sa.create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=sa.pool.StaticPool
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False, future=True)
+    app = create_app(Settings(google_signin_client_id="test-client"))
+
+    def one_session() -> Iterator[Session]:
+        session = factory()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_session] = one_session
+    try:
+        with TestClient(app) as client:
+            assert client.get("/v1/ads/business").status_code == 401
+            assert (
+                client.get("/v1/ads/business", headers={"x-session-token": "made up"}).status_code
+                == 401
+            )
+    finally:
+        Base.metadata.drop_all(engine)
