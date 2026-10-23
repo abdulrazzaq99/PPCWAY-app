@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hmac import compare_digest
 from pathlib import Path
@@ -43,6 +44,7 @@ from ppcway.ads.runner import sync_everyone, sync_one
 from ppcway.ads.stats import read_account
 from ppcway.ads.summary import account_summary, campaign_detail
 from ppcway.audit.history import score_history, score_of, what_changed
+from ppcway.audit.kinds import SAID, Kind, classify, keep
 from ppcway.audit.landing import (
     GOALS,
     RUNNERS,
@@ -60,6 +62,7 @@ from ppcway.audit.places import (
     Listing,
     PlacesError,
     find_businesses,
+    listing_for,
     nearby_rivals,
     place_details,
 )
@@ -322,6 +325,10 @@ class PublicAuditIn(BaseModel):
     site: str = Field(min_length=3, max_length=500)
     runner: str = Field(default="", max_length=20)
     goal: str = Field(default="", max_length=20)
+    #: What sort of business this is, as shown to them and possibly corrected.
+    kind: str = Field(default="", max_length=20)
+    kind_is_theirs: bool = False
+    place_id: str = Field(default="", max_length=200)
     spend_band: str = Field(default="", max_length=20)
     #: utm_* and gclid, kept with the lead rather than in the address bar.
     came_from: dict[str, str] = Field(default_factory=dict)
@@ -354,6 +361,13 @@ class PublicAuditIn(BaseModel):
         if value and value not in SPEND_BANDS:
             raise ValueError("Pick your monthly ad spend.")
         return value
+
+
+class IdentifyIn(BaseModel):
+    """Enough to find them on Google Maps and say what they look like."""
+
+    business_name: str = Field(min_length=1, max_length=200)
+    site: str = Field(default="", max_length=500)
 
 
 class LeadIn(BaseModel):
@@ -1671,6 +1685,56 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         full["open_again"] = f"{settings.app_base_url.rstrip('/')}/audit/open/{token}"
         return full
 
+    @app.post("/v1/public/identify")
+    def identify_business(body: IdentifyIn) -> dict[str, Any]:
+        """What sort of business this looks like, for the person to confirm.
+
+        Asked between the first step and the second, so the kind is settled
+        before anything is checked. Nothing here is binding: whatever it says,
+        the screen shows it and the person can say otherwise.
+
+        It never claims to have read their Google Business Profile category.
+        That is a different and far longer list, it is not public, and saying
+        we read it would be a lie somebody could catch us in.
+        """
+        key = (
+            settings.google_maps_api_key.get_secret_value() if settings.google_maps_api_key else ""
+        )
+        listing: Listing | None = None
+        matched = False
+        if key:
+            listing, matched = listing_for(body.business_name, body.site, api_key=key)
+
+        guess = classify(
+            primary_type=listing.primary_type if listing else "",
+            types=listing.types if listing else (),
+            maps_label=listing.maps_label if listing else "",
+            business_name=body.business_name,
+            open_24h=listing.open_24h if listing else False,
+        )
+        if listing is not None and not matched:
+            # A listing we are not certain belongs to them cannot make us
+            # certain of anything it says about them.
+            guess = replace(
+                guess,
+                sure=False,
+                because=(
+                    f"We found “{listing.name}” on Google, but its website is not the one "
+                    "you gave us. Check this is you."
+                ),
+            )
+
+        return {
+            "found": listing is not None,
+            "matched": matched,
+            "listing_name": listing.name if listing else "",
+            "place_id": listing.place_id if listing else "",
+            **guess.as_dict(),
+            "choices": [
+                {"kind": one.value, "label": SAID[one][0], "about": SAID[one][1]} for one in Kind
+            ],
+        }
+
     @app.post("/v1/public/audits", status_code=202)
     def start_public_audit(
         body: PublicAuditIn,
@@ -1704,6 +1768,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             source="landing",
             runner=body.runner,
             goal=body.goal,
+            kind=body.kind,
+            kind_is_theirs=body.kind_is_theirs,
+            place_id=body.place_id.strip(),
             spend_band=body.spend_band,
             came_from=body.came_from or None,
             user_id=asked_by.id if asked_by else None,
@@ -2249,6 +2316,22 @@ def _print_it(run_id: UUID, settings: Settings) -> None:
         log.warning("audit %s could not be printed: %s", run_id, exc)
 
 
+def _kind_of(run_id: UUID, factory: sessionmaker[Session]) -> Kind:
+    """What sort of business this run is for.
+
+    Anything we never worked out is OTHER, which asks the questions that are
+    true of every business and none of the ones that are not.
+    """
+    with factory() as session:
+        run = session.get(AuditRun, run_id)
+        asked = session.get(AuditRequest, run.request_id) if run and run.request_id else None
+    named = asked.kind if asked else ""
+    try:
+        return Kind(named)
+    except ValueError:
+        return Kind.OTHER
+
+
 def _mailer(settings: Settings) -> Post:
     """How this deployment sends email, from settings alone.
 
@@ -2549,6 +2632,7 @@ def _run(run_id: UUID, settings: Settings, *, with_demand: bool = True) -> None:
             (folder / f"{kind}.jpg").write_bytes(data)
             report.screenshot_urls[kind] = f"/v1/audits/{run_id}/screenshot/{kind}"
         written = report.as_dict()
+        written["findings"] = keep(_kind_of(run_id, factory), written["findings"])
         # What the searching is worth here, which does not need their account.
         # Google charges per call for it and a town's search volume does not move
         # daily, so a scheduled run asks for it weekly rather than every night.

@@ -26,6 +26,7 @@ import {
   type Runner,
   type SpendBand,
   type Unlocked,
+  type Who,
 } from "@/lib/funnel";
 
 /*
@@ -75,6 +76,13 @@ export function FreeAudit({ opened }: { opened?: Unlocked }) {
   const [runner, setRunner] = useState<Runner>("me");
   const [goal, setGoal] = useState<Goal | null>(null);
   const [spend, setSpend] = useState<SpendBand | null>(null);
+
+  // What sort of business this looks like. Worked out between the first step
+  // and the second, so it is settled, and shown, before anything is judged.
+  const [who, setWho] = useState<Who | null>(null);
+  const [kind, setKind] = useState("");
+  const [kindIsTheirs, setKindIsTheirs] = useState(false);
+  const [pickingKind, setPickingKind] = useState(false);
 
   const [auditId, setAuditId] = useState("");
   const [seen, setSeen] = useState<Progress | null>(null);
@@ -138,6 +146,18 @@ export function FreeAudit({ opened }: { opened?: Unlocked }) {
     setTrouble("");
     track("audit_start", { runner });
     setStep("goal");
+    // Not awaited: the person reads the next question while we look them up,
+    // and the panel fills in underneath. Nothing here can stop them.
+    funnel
+      .identify({ business_name: biz.trim(), site: tidySite(url) })
+      .then((said) => {
+        setWho(said);
+        setKind(said.kind);
+        setKindIsTheirs(false);
+        // A guess we are not sure of is a question, so it opens itself.
+        setPickingKind(!said.sure);
+      })
+      .catch(() => undefined);
   }, [biz, url, runner]);
 
   const runAudit = useCallback(async () => {
@@ -152,6 +172,9 @@ export function FreeAudit({ opened }: { opened?: Unlocked }) {
         runner,
         goal,
         spend_band: spend,
+        kind,
+        kind_is_theirs: kindIsTheirs,
+        place_id: who?.place_id ?? "",
         came_from: came.current,
       });
       track("audit_run", { goal, spend_band: spend });
@@ -163,7 +186,7 @@ export function FreeAudit({ opened }: { opened?: Unlocked }) {
     } finally {
       setBusy(false);
     }
-  }, [goal, spend, biz, url, runner]);
+  }, [goal, spend, biz, url, runner, kind, kindIsTheirs, who]);
 
   const unlock = useCallback(async () => {
     const wrong = {
@@ -372,6 +395,72 @@ export function FreeAudit({ opened }: { opened?: Unlocked }) {
 
             {step === "goal" && (
               <div className="flex flex-col gap-4">
+                {/*
+                  What we think they are, before anything is checked. The kind
+                  decides which questions the audit asks, so a wrong one
+                  quietly produces a wrong report — which is why it is shown
+                  rather than used silently, and why changing it is one tap.
+                */}
+                {who === null ? (
+                  <p className="text-[13.5px] text-[#6B6680]">Looking you up on Google…</p>
+                ) : pickingKind ? (
+                  <div className="flex flex-col gap-[10px] rounded-[16px] border border-[#E0DCE8] bg-[#FAF9F7] p-4">
+                    <div>
+                      <strong className="text-[15.5px]">
+                        {who.sure ? "Which of these is you?" : "What sort of business is this?"}
+                      </strong>
+                      <p className="mt-1 text-[13.5px] leading-[1.45] text-[#6B6680]">
+                        {who.sure ? "We will check the things that matter to it." : who.because}
+                      </p>
+                    </div>
+                    <div
+                      role="group"
+                      aria-label="What sort of business"
+                      className="grid gap-2 sm:grid-cols-2"
+                    >
+                      {who.choices.map((one) => (
+                        <Choice
+                          key={one.kind}
+                          on={kind === one.kind}
+                          onClick={() => {
+                            setKind(one.kind);
+                            setKindIsTheirs(true);
+                            setPickingKind(false);
+                          }}
+                          tall="h-auto py-[10px]"
+                          className="flex flex-col items-start gap-[2px] text-left"
+                        >
+                          <span className="text-[14.5px] font-bold">{one.label}</span>
+                          <span className="text-[12.5px] leading-[1.35] font-normal text-[#6B6680]">
+                            {one.about}
+                          </span>
+                        </Choice>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[#E0DCE8] bg-[#FAF9F7] px-4 py-3">
+                    <div className="min-w-0">
+                      <span className="text-[12.5px] font-bold tracking-[0.04em] text-[#6B6680]">
+                        WE WILL CHECK THIS AS
+                      </span>
+                      <p className="text-[15.5px] font-bold">
+                        {who.choices.find((c) => c.kind === kind)?.label ?? who.label}
+                      </p>
+                      <p className="text-[13px] leading-[1.45] text-[#6B6680]">
+                        {kindIsTheirs ? "You told us, so that is what we will use." : who.because}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPickingKind(true)}
+                      className="tap shrink-0 text-[14px] font-semibold text-[#2F5BEA] underline"
+                    >
+                      Not right? Change
+                    </button>
+                  </div>
+                )}
+
                 <h2 className="display text-[26px] leading-[1.2] font-semibold">
                   What should your ads bring you?
                 </h2>

@@ -63,6 +63,12 @@ class AuditRequest(Base):
     #: What the ads are meant to bring: sales, leads, calls, signups. Decides
     #: which checks are emphasised and how the findings are ordered.
     goal: Mapped[str] = mapped_column(String(20), default="")
+    #: What kind of business this is, which decides which checks make sense.
+    #: Ours from Google's type, then the person's if they corrected it. See
+    #: `audit.kinds`: an empty string means we never worked one out.
+    kind: Mapped[str] = mapped_column(String(20), default="")
+    #: True when the person chose it rather than accepting what we guessed.
+    kind_is_theirs: Mapped[bool] = mapped_column(Boolean, default=False)
     #: What they spend a month, as a band: none, under_1k, 1k_5k, 5k_25k, 25k_plus.
     #: Decides the wasted-spend range, and "nothing wasted yet" when there is none.
     spend_band: Mapped[str] = mapped_column(String(20), default="")

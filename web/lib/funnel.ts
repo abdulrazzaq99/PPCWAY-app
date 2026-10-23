@@ -32,6 +32,26 @@ export const SPENDS: { id: SpendBand; label: string }[] = [
   { id: "25k_plus", label: "$25k+" },
 ];
 
+export type Choice = { kind: string; label: string; about: string };
+
+/*
+  What sort of business this looks like. `sure` is the part that matters: an
+  unsure guess is shown as a question, a sure one as a statement, and either
+  can be overruled.
+*/
+export type Who = {
+  found: boolean;
+  matched: boolean;
+  listing_name: string;
+  place_id: string;
+  kind: string;
+  label: string;
+  about: string;
+  sure: boolean;
+  because: string;
+  choices: Choice[];
+};
+
 export type Stage = { label: string; state: "done" | "running" | "todo" };
 
 export type Summary = {
@@ -124,12 +144,18 @@ async function ask<T>(path: string, options: { method?: string; body?: unknown }
 }
 
 export const funnel = {
+  identify: (body: { business_name: string; site: string }) =>
+    ask<Who>("/api/public/identify", { method: "POST", body }),
+
   start: (body: {
     business_name: string;
     site: string;
     runner: Runner;
     goal: Goal;
     spend_band: SpendBand;
+    kind: string;
+    kind_is_theirs: boolean;
+    place_id: string;
     came_from: Record<string, string>;
   }) => ask<{ audit_id: string }>("/api/public/audits", { method: "POST", body }),
 

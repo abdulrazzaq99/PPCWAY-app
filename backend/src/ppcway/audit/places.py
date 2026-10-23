@@ -20,13 +20,17 @@ rest is read fresh when it is shown, with "Google Maps" credited.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
 SEARCH_ENDPOINT = "https://places.googleapis.com/v1/places:searchText"
+log = logging.getLogger(__name__)
+
 DETAILS_ENDPOINT = "https://places.googleapis.com/v1/places/"
 GEOCODE_ENDPOINT = "https://maps.googleapis.com/maps/api/geocode/json"
 
@@ -363,3 +367,47 @@ def find_businesses(
     finally:
         if own:
             c.close()
+
+
+def bare_host(url: str) -> str:
+    """The host of an address, without a scheme and without www."""
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    if "//" not in raw:
+        raw = f"https://{raw}"
+    host = (urlparse(raw).hostname or "").lower()
+    return host.removeprefix("www.")
+
+
+def listing_for(
+    name: str,
+    site: str,
+    *,
+    api_key: str,
+    client: httpx.Client | None = None,
+) -> tuple[Listing | None, bool]:
+    """The listing for a business, and whether we are sure it is theirs.
+
+    Sure means the listing's own website is the one being audited. That is the
+    only signal strong enough to act on by itself: two businesses share a name
+    far more often than they share a domain, and auditing the wrong company's
+    listing is worse than auditing none.
+
+    Without a website match we return the closest by name, unsure, for a person
+    to confirm or reject.
+    """
+    wanted = bare_host(site)
+    try:
+        found = find_businesses(name, api_key=api_key, client=client)
+    except PlacesError as exc:
+        log.warning("could not look up %r on Maps: %s", name, exc)
+        return None, False
+    if not found:
+        return None, False
+
+    if wanted:
+        for one in found:
+            if bare_host(one.website) == wanted:
+                return one, True
+    return found[0], False
