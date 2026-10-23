@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hmac import compare_digest
 from pathlib import Path
 from typing import Annotated, Any
@@ -43,6 +43,16 @@ from ppcway.ads.runner import sync_everyone, sync_one
 from ppcway.ads.stats import read_account
 from ppcway.ads.summary import account_summary, campaign_detail
 from ppcway.audit.history import score_history, score_of, what_changed
+from ppcway.audit.landing import (
+    GOALS,
+    RUNNERS,
+    SPEND_BANDS,
+    percent_at,
+    report_of,
+    stages_at,
+    summary_of,
+)
+from ppcway.audit.lead import Answer, check_code, post_a_code, take_the_lead
 from ppcway.audit.models import AuditRequest, AuditRun
 from ppcway.audit.pages import check_pages, landing_pages
 from ppcway.audit.paper import NotPrinted, to_pdf
@@ -79,6 +89,7 @@ from ppcway.config import Settings, load_settings
 from ppcway.db.session import get_session, session_factory
 from ppcway.mail.alerts import post_alerts
 from ppcway.mail.letters import (
+    audit_code,
     audit_ready,
     file_name,
     fix_list,
@@ -302,6 +313,70 @@ class ShareOut(BaseModel):
     url: str
     expires_at: datetime
     emailed: bool = False
+
+
+class PublicAuditIn(BaseModel):
+    """Step one and two of the free audit page, posted together."""
+
+    business_name: str = Field(min_length=1, max_length=200)
+    site: str = Field(min_length=3, max_length=500)
+    runner: str = Field(default="", max_length=20)
+    goal: str = Field(default="", max_length=20)
+    spend_band: str = Field(default="", max_length=20)
+    #: utm_* and gclid, kept with the lead rather than in the address bar.
+    came_from: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("site")
+    @classmethod
+    def _looks_like_a_site(cls, value: str) -> str:
+        bare = re.sub(r"^https?://", "", value.strip()).split("/")[0]
+        if not SITE.match(bare):
+            raise ValueError("Enter your website, for example yourbusiness.com")
+        return bare
+
+    @field_validator("runner")
+    @classmethod
+    def _known_runner(cls, value: str) -> str:
+        if value and value not in RUNNERS:
+            raise ValueError("Pick who runs your Google Ads.")
+        return value
+
+    @field_validator("goal")
+    @classmethod
+    def _known_goal(cls, value: str) -> str:
+        if value and value not in GOALS:
+            raise ValueError("Pick what your ads should bring you.")
+        return value
+
+    @field_validator("spend_band")
+    @classmethod
+    def _known_band(cls, value: str) -> str:
+        if value and value not in SPEND_BANDS:
+            raise ValueError("Pick your monthly ad spend.")
+        return value
+
+
+class LeadIn(BaseModel):
+    """The gate: who they are, so the findings can be opened to them."""
+
+    name: str = Field(min_length=2, max_length=200)
+    email: EmailStr
+    phone: str = Field(min_length=7, max_length=40)
+    tips_opt_in: bool = False
+    came_from: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("phone")
+    @classmethod
+    def _enough_digits(cls, value: str) -> str:
+        if sum(ch.isdigit() for ch in value) < 7:
+            raise ValueError("Enter a phone number we can reach you on.")
+        return value
+
+
+class CodeIn(BaseModel):
+    """Six digits from the email."""
+
+    code: str = Field(min_length=1, max_length=12)
 
 
 class EmailAuditIn(BaseModel):
@@ -1557,6 +1632,195 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if link is None or link.organization_id != place.id:
             raise HTTPException(404, "No such link.")
         revoke(session, link)
+
+    # ---- The free audit page, which is open to anybody ----------------
+    #
+    # The score and the counts are shown to whoever runs an audit. The
+    # findings wait until the address is proved, which is the page's bargain
+    # and the client's requirement: paid traffic in, verified leads out.
+
+    def _lead_run(session: Session, run_id: UUID) -> tuple[AuditRun, AuditRequest | None]:
+        run = session.get(AuditRun, run_id)
+        if run is None:
+            raise HTTPException(404, "No audit with that id.")
+        asked = session.get(AuditRequest, run.request_id) if run.request_id else None
+        return run, asked
+
+    def _progress(run: AuditRun, asked: AuditRequest | None) -> dict[str, Any]:
+        done = run.status == "done"
+        out: dict[str, Any] = {
+            "audit_id": str(run.id),
+            "status": run.status,
+            "stages": stages_at(run.stage, done=done),
+            "percent": percent_at(run.stage, done=done),
+            "pages_read": run.pages_read,
+        }
+        if run.status == "failed":
+            out["error"] = "We could not finish checking that website."
+        if done:
+            score = _score_of(run) or 0
+            out["summary"] = summary_of(run, asked, score=score).as_dict()
+            out["verified"] = asked is not None and asked.verified_at is not None
+        return out
+
+    def _unlocked(session: Session, run: AuditRun, asked: AuditRequest | None) -> dict[str, Any]:
+        """The whole report, plus a link that opens it again on any device."""
+        score = _score_of(run) or 0
+        full = report_of(run, asked, score=score).as_dict()
+        _, token = make_link(session, kind="audit", subject=str(run.id), days=30)
+        full["open_again"] = f"{settings.app_base_url.rstrip('/')}/audit/open/{token}"
+        return full
+
+    @app.post("/v1/public/audits", status_code=202)
+    def start_public_audit(
+        body: PublicAuditIn,
+        tasks: BackgroundTasks,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Start the free audit. Open to anybody; no account, no password."""
+        site = normalise_site(body.site)
+        recent = (
+            session.scalar(
+                select(func.count())
+                .select_from(AuditRun)
+                .where(
+                    AuditRun.site == site,
+                    AuditRun.created_at >= datetime.now(UTC) - timedelta(hours=1),
+                )
+            )
+            or 0
+        )
+        if recent >= 6:
+            raise HTTPException(429, "That website has been checked several times just now.")
+
+        asked_by = _person(session, x_session_token)
+        asked = AuditRequest(
+            name="",
+            email="",
+            phone="",
+            business_name=body.business_name.strip(),
+            site=body.site,
+            source="landing",
+            runner=body.runner,
+            goal=body.goal,
+            spend_band=body.spend_band,
+            came_from=body.came_from or None,
+            user_id=asked_by.id if asked_by else None,
+            consent_text="",
+        )
+        run = AuditRun(site=site, status="queued")
+        session.add(asked)
+        session.flush()
+        run.request_id = asked.id
+        session.add(run)
+        session.commit()
+        tasks.add_task(_run, run.id, settings)
+        return {"audit_id": str(run.id), "status": run.status}
+
+    @app.get("/v1/public/audits/{run_id}")
+    def public_audit(
+        run_id: UUID,
+        session: Annotated[Session, Depends(get_session)],
+    ) -> dict[str, Any]:
+        """Where the run has got to, and the summary once it is finished.
+
+        Never the findings. Those have their own door.
+        """
+        run, asked = _lead_run(session, run_id)
+        return _progress(run, asked)
+
+    @app.post("/v1/public/audits/{run_id}/lead")
+    def public_lead(
+        run_id: UUID,
+        body: LeadIn,
+        session: Annotated[Session, Depends(get_session)],
+    ) -> dict[str, Any]:
+        """Keep who asked, then post them a code."""
+        run, asked = _lead_run(session, run_id)
+        if asked is None:
+            raise HTTPException(404, "No audit with that id.")
+        if run.status != "done":
+            raise HTTPException(409, "That audit has not finished yet.")
+
+        take_the_lead(
+            session,
+            asked,
+            name=body.name,
+            email=str(body.email),
+            phone=body.phone,
+            tips_opt_in=body.tips_opt_in,
+            came_from=body.came_from or None,
+            consent_text=CONSENT_TEXT,
+        )
+        posted = post_a_code(session, asked, force=True)
+        _send_code(session, run, asked, posted.code)
+        return {"sent": True, "email": asked.email}
+
+    @app.post("/v1/public/audits/{run_id}/resend")
+    def public_resend(
+        run_id: UUID,
+        session: Annotated[Session, Depends(get_session)],
+    ) -> dict[str, Any]:
+        """Another code, unless one went out moments ago."""
+        run, asked = _lead_run(session, run_id)
+        if asked is None or not asked.email:
+            raise HTTPException(409, "Ask for a code first.")
+        posted = post_a_code(session, asked)
+        if posted.too_soon:
+            return {"sent": False, "wait_seconds": posted.wait_seconds}
+        _send_code(session, run, asked, posted.code)
+        return {"sent": True, "email": asked.email}
+
+    @app.post("/v1/public/audits/{run_id}/verify")
+    def public_verify(
+        run_id: UUID,
+        body: CodeIn,
+        session: Annotated[Session, Depends(get_session)],
+    ) -> dict[str, Any]:
+        """Six digits, and then everything."""
+        run, asked = _lead_run(session, run_id)
+        if asked is None or not asked.email:
+            raise HTTPException(409, "Ask for a code first.")
+        answer = check_code(session, asked, body.code)
+        if answer is not Answer.RIGHT:
+            raise HTTPException(400, answer.said)
+        log.info("audit %s unlocked by a verified address", run.id)
+        return {"verified": True, **_unlocked(session, run, asked)}
+
+    @app.get("/v1/public/audits/open/{token}")
+    def public_open(
+        token: str,
+        session: Annotated[Session, Depends(get_session)],
+    ) -> dict[str, Any]:
+        """The link in the email, which opens the report on any device."""
+        link = open_link(session, token, kind="audit")
+        if link is None:
+            raise HTTPException(404, "That link does not open anything.")
+        run, asked = _lead_run(session, UUID(link.subject))
+        if run.status != "done":
+            raise HTTPException(409, "That audit has not finished yet.")
+        return {"verified": True, **_unlocked(session, run, asked)}
+
+    def _send_code(session: Session, run: AuditRun, asked: AuditRequest, code: str) -> None:
+        """Post the code, with a link that does the same job on another device."""
+        if not code:
+            return
+        _, token = make_link(session, kind="audit", subject=str(run.id), days=1)
+        url = f"{settings.app_base_url.rstrip('/')}/audit/open/{token}"
+        try:
+            send(
+                _post(),
+                audit_code(
+                    to=asked.email,
+                    business=asked.business_name or run.site,
+                    code=code,
+                    link=url,
+                ),
+            )
+        except NotSent as exc:
+            log.warning("the audit code did not go to %s: %s", asked.email, exc)
+            raise HTTPException(502, "We could not send that email just now.") from exc
 
     @app.get("/v1/public/report/{token}")
     def shared_report(

@@ -157,6 +157,34 @@ def file_name(name: str) -> str:
     return kept[:60] or "report"
 
 
+def audit_code(*, to: str, business: str, code: str, link: str) -> Letter:
+    """The six digits that open a finished audit, and a link that does the same.
+
+    Both, not one: somebody who asked on a laptop and reads email on a phone
+    wants the link; somebody with the page still open wants the digits. The
+    code is in the subject as well, because a phone shows the subject on the
+    lock screen and that is often enough.
+    """
+    text = (
+        f"Your code is {code}\n\n"
+        f"Type it into the page to open the audit of {business}, or use this link, "
+        "which opens it on any device:\n\n"
+        f"{link}\n\n"
+        "The code works for 15 minutes. If you did not ask for this, ignore it: "
+        "nothing has been shared.\n\n"
+        f"{FOOT}"
+    )
+    html = _wrap(
+        f"Your code is {code}",
+        f"<p>Type it into the page to open the audit of <strong>{business}</strong>, "
+        "or use the button below, which opens it on any device.</p>"
+        "<p>The code works for 15 minutes. If you did not ask for this, ignore it: "
+        "nothing has been shared.</p>",
+        ("Open my audit", link),
+    )
+    return Letter(to=to, subject=f"{code} is your PPCway code", text=text, html=html)
+
+
 def fix_list(
     *,
     to: str,

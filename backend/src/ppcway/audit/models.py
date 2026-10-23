@@ -6,7 +6,17 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, Uuid, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    Uuid,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -46,6 +56,31 @@ class AuditRequest(Base):
     organization_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("organization.id"), index=True, nullable=True
     )
+    #: Who looks after their advertising today, from the first step: one of
+    #: "me", "agency", "none", "i_am_an_agency". It changes nothing we check;
+    #: it tells whoever calls them what conversation to have.
+    runner: Mapped[str] = mapped_column(String(20), default="")
+    #: What the ads are meant to bring: sales, leads, calls, signups. Decides
+    #: which checks are emphasised and how the findings are ordered.
+    goal: Mapped[str] = mapped_column(String(20), default="")
+    #: What they spend a month, as a band: none, under_1k, 1k_5k, 5k_25k, 25k_plus.
+    #: Decides the wasted-spend range, and "nothing wasted yet" when there is none.
+    spend_band: Mapped[str] = mapped_column(String(20), default="")
+    #: Where the visit came from — utm_*, gclid — kept with the lead rather than
+    #: in the address bar, because nothing personal belongs in a URL.
+    came_from: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=True
+    )
+    #: Marketing consent, which is a separate question from asking for the
+    #: report and starts unticked. The time is kept because consent without a
+    #: date cannot be shown to have been given.
+    tips_opt_in: Mapped[bool] = mapped_column(Boolean, default=False)
+    tips_opt_in_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: When they proved the address is theirs. Until then this is a lead we
+    #: hold but have not confirmed, and the findings stay shut.
+    verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     consent_text: Mapped[str] = mapped_column(Text)
     consented_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -77,3 +112,24 @@ class AuditRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class EmailCode(Base):
+    """A six-digit code, held as a hash like any other secret.
+
+    One live code per request: asking for another replaces the last, so a code
+    read from an older email cannot be used after a newer one was sent.
+    """
+
+    __tablename__ = "audit_email_code"
+    id: Mapped[uuid.UUID] = _pk()
+    request_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("audit_request.id"), index=True)
+    #: sha256 of the code. Nobody, including us, can read it back out.
+    code_hash: Mapped[str] = mapped_column(String(64), index=True)
+    #: The address it was sent to, so changing the address invalidates the code.
+    sent_to: Mapped[str] = mapped_column(String(320), default="")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    #: Wrong guesses so far. Enough of them and this code is spent.
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
