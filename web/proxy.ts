@@ -41,6 +41,7 @@ const OPEN = [
   "/audit",
   "/api/audit",
   "/api/places",
+  "/api/public",
 ];
 
 /*

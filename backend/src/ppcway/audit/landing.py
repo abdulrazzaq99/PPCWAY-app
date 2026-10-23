@@ -89,6 +89,7 @@ class Summary:
     verdict: str = ""
     business: str = ""
     goal: str = ""
+    spend: str = ""
     to_fix: int = 0
     to_improve: int = 0
     working: int = 0
@@ -104,6 +105,7 @@ class Summary:
             "verdict": self.verdict,
             "business": self.business,
             "goal": self.goal,
+            "spend": self.spend,
             "to_fix": self.to_fix,
             "to_improve": self.to_improve,
             "working": self.working,
@@ -181,6 +183,7 @@ def summary_of(run: AuditRun, request: AuditRequest | None, *, score: int) -> Su
         verdict=verdict_for(score),
         business=(request.business_name if request else "") or run.site,
         goal=GOALS.get(request.goal if request else "", ""),
+        spend=SPEND_BANDS.get(request.spend_band if request else "", ""),
         to_fix=counted["fix"],
         to_improve=counted["improve"],
         working=counted["good"],
