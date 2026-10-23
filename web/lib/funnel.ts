@@ -144,7 +144,7 @@ async function ask<T>(path: string, options: { method?: string; body?: unknown }
 }
 
 export const funnel = {
-  identify: (body: { business_name: string; site: string }) =>
+  identify: (body: { business_name: string; site: string; place_id?: string }) =>
     ask<Who>("/api/public/identify", { method: "POST", body }),
 
   start: (body: {

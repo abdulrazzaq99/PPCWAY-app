@@ -369,6 +369,9 @@ class IdentifyIn(BaseModel):
 
     business_name: str = Field(min_length=1, max_length=200)
     site: str = Field(default="", max_length=500)
+    #: Set when they picked their own listing out of Google's suggestions,
+    #: which settles which business this is rather than inferring it.
+    place_id: str = Field(default="", max_length=200)
 
 
 class LeadIn(BaseModel):
@@ -1703,7 +1706,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         listing: Listing | None = None
         matched = False
-        if key:
+        if key and body.place_id.strip():
+            # They picked it themselves, so there is nothing left to infer.
+            try:
+                listing = place_details(body.place_id.strip(), api_key=key)
+                matched = listing is not None
+            except PlacesError as exc:
+                log.warning("could not read the listing they picked: %s", exc)
+        elif key:
             listing, matched = listing_for(body.business_name, body.site, api_key=key)
 
         guess = classify(

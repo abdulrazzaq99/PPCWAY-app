@@ -12,8 +12,10 @@ import {
   Trouble,
   fieldBorder,
 } from "@/components/audit/funnel/bits";
+import { NameSuggest } from "@/components/audit/funnel/name-suggest";
 import { FullReport } from "@/components/audit/funnel/report";
 import { cn } from "@/lib/cn";
+import type { Listing } from "@/lib/listing";
 import {
   GOALS,
   RUNNERS,
@@ -74,6 +76,9 @@ export function FreeAudit({ opened }: { opened?: Unlocked }) {
   const [biz, setBiz] = useState("");
   const [url, setUrl] = useState("");
   const [runner, setRunner] = useState<Runner>("me");
+  // Set when they picked their own listing out of Google's suggestions. It
+  // settles which business this is, instead of us inferring it from a website.
+  const [picked, setPicked] = useState("");
   const [goal, setGoal] = useState<Goal | null>(null);
   const [spend, setSpend] = useState<SpendBand | null>(null);
 
@@ -149,7 +154,7 @@ export function FreeAudit({ opened }: { opened?: Unlocked }) {
     // Not awaited: the person reads the next question while we look them up,
     // and the panel fills in underneath. Nothing here can stop them.
     funnel
-      .identify({ business_name: biz.trim(), site: tidySite(url) })
+      .identify({ business_name: biz.trim(), site: tidySite(url), place_id: picked })
       .then((said) => {
         setWho(said);
         setKind(said.kind);
@@ -158,7 +163,7 @@ export function FreeAudit({ opened }: { opened?: Unlocked }) {
         setPickingKind(!said.sure);
       })
       .catch(() => undefined);
-  }, [biz, url, runner]);
+  }, [biz, url, runner, picked]);
 
   const runAudit = useCallback(async () => {
     if (!goal) return setTrouble("Pick what your ads should bring you.");
@@ -174,7 +179,7 @@ export function FreeAudit({ opened }: { opened?: Unlocked }) {
         spend_band: spend,
         kind,
         kind_is_theirs: kindIsTheirs,
-        place_id: who?.place_id ?? "",
+        place_id: picked || (who?.place_id ?? ""),
         came_from: came.current,
       });
       track("audit_run", { goal, spend_band: spend });
@@ -186,7 +191,7 @@ export function FreeAudit({ opened }: { opened?: Unlocked }) {
     } finally {
       setBusy(false);
     }
-  }, [goal, spend, biz, url, runner, kind, kindIsTheirs, who]);
+  }, [goal, spend, biz, url, runner, kind, kindIsTheirs, who, picked]);
 
   const unlock = useCallback(async () => {
     const wrong = {
@@ -328,18 +333,26 @@ export function FreeAudit({ opened }: { opened?: Unlocked }) {
                 </h2>
                 <Label htmlFor="biz">
                   Business name
-                  <input
-                    id="biz"
-                    type="text"
-                    autoComplete="organization"
-                    placeholder="Your business or brand"
+                  <NameSuggest
                     value={biz}
-                    onChange={(e) => {
-                      setBiz(e.target.value);
+                    invalid={bad.biz}
+                    onChange={(text) => {
+                      setBiz(text);
+                      // Typing again abandons whatever was picked: the name and
+                      // the listing must not be allowed to disagree.
+                      setPicked("");
                       setBad((b) => ({ ...b, biz: false }));
                       setTrouble("");
                     }}
-                    className={cn(BOX, fieldBorder(bad.biz), "font-normal")}
+                    onPick={(one: Listing) => {
+                      setBiz(one.name);
+                      setPicked(one.place_id);
+                      // Google knows their website; one fewer thing to type,
+                      // and it is the address their listing actually points at.
+                      if (one.website && !url.trim()) setUrl(tidySite(one.website));
+                      setBad({});
+                      setTrouble("");
+                    }}
                   />
                 </Label>
                 <Label htmlFor="url">
