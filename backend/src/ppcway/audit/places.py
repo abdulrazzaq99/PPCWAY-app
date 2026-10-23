@@ -43,6 +43,13 @@ FIELDS = (
     "places.shortFormattedAddress",
     "places.location",
     "places.primaryTypeDisplayName",
+    # The stable type strings, which is what a category may be keyed on.
+    # The display names beside them are localized and change with the
+    # request language, so they are shown to people and never matched on.
+    # Both are under the tier this mask already pays for.
+    "places.primaryType",
+    "places.types",
+    "places.googleMapsTypeLabel",
     "places.businessStatus",
     "places.pureServiceAreaBusiness",
     "places.googleMapsUri",
@@ -101,6 +108,14 @@ class Listing:
     hours_set: bool = False
     #: True when a day is open with no closing time, which is how Google says 24 hours.
     open_24h: bool = False
+    #: Google's own stable type for this place, e.g. "plumber". May be absent:
+    #: Google has no type for several ordinary trades.
+    primary_type: str = ""
+    #: Every type tag, specific and generic mixed together.
+    types: tuple[str, ...] = ()
+    #: The label Maps itself shows, e.g. "Emergency plumber". Localized, so it
+    #: is a hint to read, never a key to match on.
+    maps_label: str = ""
     #: Every word of the name typed is in this listing's name.
     name_match: bool = False
 
@@ -130,6 +145,9 @@ def parse_listing(raw: dict[str, Any], typed: str = "") -> Listing:
         address=raw.get("formattedAddress", ""),
         short_address=raw.get("shortFormattedAddress", ""),
         category=(raw.get("primaryTypeDisplayName") or {}).get("text", ""),
+        primary_type=str(raw.get("primaryType", "")),
+        types=tuple(str(t) for t in (raw.get("types") or [])),
+        maps_label=(raw.get("googleMapsTypeLabel") or {}).get("text", ""),
         status=raw.get("businessStatus", ""),
         service_area_only=bool(raw.get("pureServiceAreaBusiness", False)),
         maps_url=raw.get("googleMapsUri", ""),
