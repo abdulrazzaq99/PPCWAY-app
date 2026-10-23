@@ -56,10 +56,39 @@ function scoreOf(lines: AuditLine[]): string {
   return `${Math.round((good / Math.max(lines.length, 1)) * 10)} of 10`;
 }
 
+/*
+  The listing and competitor checks are worked out on the server now, so that
+  what kind of business this is can decide which of them are asked at all. A
+  run that carries them is drawn from them; an older run, from before that
+  moved, is still drawn the old way from the live listing.
+*/
+const LISTING_KEYS = /^(listing|rivals)_/;
+
+function fromServer(findings: RunFinding[], which: RegExp): RunFinding[] {
+  return findings.filter((f) => which.test(f.key) && f.status !== "unknown");
+}
+
+function asPanel(title: string, findings: RunFinding[], score?: string): AuditPanel {
+  const lines = linesOf(findings);
+  return { title, score: score ?? scoreOf(lines), lines };
+}
+
+function linesOf(findings: RunFinding[]): AuditLine[] {
+  return findings.map((f) => ({
+    title: f.title,
+    meta: f.summary,
+    verdict:
+      f.status === "good" ? "good" : COSTLY.has(f.key) && f.status !== "ours" ? "cost" : "fix",
+    ...(f.status === "good"
+      ? {}
+      : { who: f.status === "ours" ? ("us" as const) : ("you" as const) }),
+  }));
+}
+
 /** The website checks, in the words the audit already wrote. */
 function websitePanel(findings: RunFinding[]): AuditPanel {
   const lines: AuditLine[] = findings
-    .filter((f) => f.status !== "unknown")
+    .filter((f) => f.status !== "unknown" && !LISTING_KEYS.test(f.key))
     .map((f) => ({
       title: f.title,
       meta: f.summary,
@@ -282,9 +311,26 @@ export function reportFromRun(run: Run, mine: Listing | null, rivals: Listing[])
   const report = run.report;
   const site = (report?.site ?? run.site).replace(/^https?:\/\//, "").replace(/\/$/, "");
   const panels: AuditPanel[] = [];
-  if (mine) panels.push(listingPanel(mine, rivals));
+  // A run that brought its own listing checks is drawn from those, because
+  // they have already been through the business's kind. Only an older run,
+  // from before that moved to the server, is derived here from the listing.
+  const ownListing = report ? fromServer(report.findings, /^listing_/) : [];
+  const ownRivals = report ? fromServer(report.findings, /^rivals_/) : [];
+  const serverKnows = ownListing.length > 0 || ownRivals.length > 0;
+
+  if (serverKnows) {
+    if (ownListing.length) panels.push(asPanel("Your Google listing", ownListing));
+  } else if (mine) {
+    panels.push(listingPanel(mine, rivals));
+  }
   if (report) panels.push(websitePanel(report.findings));
-  if (mine && rivals.length) panels.push(comparePanel(mine, rivals));
+  if (serverKnows) {
+    if (ownRivals.length) {
+      panels.push(asPanel("Your competitors", ownRivals, "For information"));
+    }
+  } else if (mine && rivals.length) {
+    panels.push(comparePanel(mine, rivals));
+  }
 
   const all = panels.flatMap((p) => p.lines);
   const problems = all.filter((l) => l.verdict !== "good");

@@ -55,6 +55,7 @@ from ppcway.audit.landing import (
     summary_of,
 )
 from ppcway.audit.lead import Answer, check_code, post_a_code, take_the_lead
+from ppcway.audit.listing import listing_findings, rival_findings
 from ppcway.audit.models import AuditRequest, AuditRun
 from ppcway.audit.pages import check_pages, landing_pages
 from ppcway.audit.paper import NotPrinted, to_pdf
@@ -2316,6 +2317,43 @@ def _print_it(run_id: UUID, settings: Settings) -> None:
         log.warning("audit %s could not be printed: %s", run_id, exc)
 
 
+def _their_listing(
+    run_id: UUID, settings: Settings, factory: sessionmaker[Session]
+) -> tuple[Listing | None, list[Listing]]:
+    """Their Google listing and the businesses nearby, read fresh.
+
+    Never from anything stored: Google's terms let us keep the place id and
+    nothing else, so the listing is read again every time it is used.
+    """
+    if settings.google_maps_api_key is None:
+        return None, []
+    key = settings.google_maps_api_key.get_secret_value()
+
+    with factory() as session:
+        run = session.get(AuditRun, run_id)
+        asked = session.get(AuditRequest, run.request_id) if run and run.request_id else None
+        if asked is None:
+            return None, []
+        place_id, name, city, site = asked.place_id, asked.business_name, asked.city, asked.site
+
+    try:
+        mine: Listing | None = None
+        if place_id:
+            mine = place_details(place_id, api_key=key)
+        elif name:
+            # No listing was confirmed, so only a website match is good enough
+            # to audit somebody's listing by.
+            mine, matched = listing_for(name, site, api_key=key)
+            if not matched:
+                mine = None
+        if mine is None:
+            return None, []
+        return mine, list(nearby_rivals(mine, api_key=key, city=city))
+    except PlacesError as exc:
+        log.warning("audit %s could not read the Google listing: %s", run_id, exc)
+        return None, []
+
+
 def _kind_of(run_id: UUID, factory: sessionmaker[Session]) -> Kind:
     """What sort of business this run is for.
 
@@ -2627,10 +2665,23 @@ def _run(run_id: UUID, settings: Settings, *, with_demand: bool = True) -> None:
     try:
         report = run_audit(site, settings, on_stage=say)
         folder = Path(settings.audit_shots_dir) / str(run_id)
-        for kind, data in report.screenshots.items():
+        # `shot`, not `kind`: in this codebase a kind is what sort of business
+        # this is, and reusing the word here would be asking for trouble.
+        for shot, data in report.screenshots.items():
             folder.mkdir(parents=True, exist_ok=True)
-            (folder / f"{kind}.jpg").write_bytes(data)
-            report.screenshot_urls[kind] = f"/v1/audits/{run_id}/screenshot/{kind}"
+            (folder / f"{shot}.jpg").write_bytes(data)
+            report.screenshot_urls[shot] = f"/v1/audits/{run_id}/screenshot/{shot}"
+
+        # Their Google listing and the same trade nearby. Worked out here
+        # rather than on the page that draws the report, so the findings reach
+        # the stored report, the counts and the history — and so the kind can
+        # drop the ones that were never this business's question.
+        say("checks", report.pages_read)
+        mine, rivals = _their_listing(run_id, settings, factory)
+        if mine is not None:
+            report.findings.extend(listing_findings(mine, rivals))
+            report.findings.extend(rival_findings(mine, rivals))
+
         written = report.as_dict()
         written["findings"] = keep(_kind_of(run_id, factory), written["findings"])
         # What the searching is worth here, which does not need their account.
