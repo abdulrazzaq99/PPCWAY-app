@@ -13,6 +13,7 @@ import {
   fieldBorder,
 } from "@/components/audit/funnel/bits";
 import { NameSuggest } from "@/components/audit/funnel/name-suggest";
+import { PhoneField } from "@/components/audit/funnel/phone-field";
 import { FullReport } from "@/components/audit/funnel/report";
 import { cn } from "@/lib/cn";
 import type { Listing } from "@/lib/listing";
@@ -94,6 +95,9 @@ export function FreeAudit({ opened }: { opened?: Unlocked }) {
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  // The same number in the form anybody can ring from anywhere, which is
+  // what a specialist calling them back actually needs.
+  const [phoneDial, setPhoneDial] = useState("");
   const [email, setEmail] = useState("");
   const [optIn, setOptIn] = useState(false);
   const [code, setCode] = useState("");
@@ -209,7 +213,9 @@ export function FreeAudit({ opened }: { opened?: Unlocked }) {
       await funnel.lead(auditId, {
         name: name.trim(),
         email: email.trim(),
-        phone: phone.trim(),
+        // Dialable when it is a real number, otherwise whatever they typed:
+        // refusing to pass on an odd number would lose the lead to be fussy.
+        phone: phoneDial || phone.trim(),
         tips_opt_in: optIn,
         came_from: came.current,
       });
@@ -221,7 +227,7 @@ export function FreeAudit({ opened }: { opened?: Unlocked }) {
     } finally {
       setBusy(false);
     }
-  }, [name, phone, email, optIn, auditId, goal, spend]);
+  }, [name, phone, phoneDial, email, optIn, auditId, goal, spend]);
 
   const verify = useCallback(async () => {
     if (!/^\d{6}$/.test(code)) return setTrouble("Enter the 6-digit code from the email.");
@@ -615,18 +621,15 @@ export function FreeAudit({ opened }: { opened?: Unlocked }) {
                       </Label>
                       <Label htmlFor="tel" className="text-[14px]">
                         Phone
-                        <input
-                          id="tel"
-                          type="tel"
-                          autoComplete="tel"
-                          placeholder="+1 416 555 0123"
+                        <PhoneField
                           value={phone}
-                          onChange={(e) => {
-                            setPhone(e.target.value);
+                          invalid={bad.phone}
+                          onChange={(text, dialable) => {
+                            setPhone(text);
+                            setPhoneDial(dialable);
                             setBad((b) => ({ ...b, phone: false }));
                             setTrouble("");
                           }}
-                          className={cn(BOX, fieldBorder(bad.phone), "font-normal")}
                         />
                       </Label>
                     </div>
