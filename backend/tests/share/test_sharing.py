@@ -28,6 +28,7 @@ from ppcway.auth.models import UserAccount
 from ppcway.config import Settings
 from ppcway.db.base import Base
 from ppcway.db.session import get_session
+from ppcway.org.places import home_for
 
 KEY = Fernet.generate_key()
 TODAY = datetime.now(UTC).date()
@@ -112,6 +113,7 @@ def signed_in(client: TestClient, factory: sessionmaker[Session]) -> str:
         session.add(
             ads_models.AdsConnection(
                 account_id=account.id,
+                organization_id=home_for(session, account).id,
                 ciphertext=Fernet(KEY).encrypt(b"a-lasting-permission").decode(),
                 customer_id="2580586343",
                 customer_name="Byte9",

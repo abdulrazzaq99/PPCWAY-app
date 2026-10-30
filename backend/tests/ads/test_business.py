@@ -18,6 +18,7 @@ from ppcway.ads.business import host_of, known_business, site_from_ads
 from ppcway.ads.mirror import MirrorAd
 from ppcway.audit.places import Listing
 from ppcway.db.base import Base
+from ppcway.org.places import home_for
 
 CUSTOMER = "2580586343"
 
@@ -237,6 +238,7 @@ def test_the_endpoint_answers_what_the_account_knows(monkeypatch: pytest.MonkeyP
                 session.add(
                     ads_models.AdsConnection(
                         account_id=account.id,
+                        organization_id=home_for(session, account).id,
                         ciphertext=Fernet(key).encrypt(b"a-permission").decode(),
                         customer_id=CUSTOMER,
                         customer_name="Alpha Plumbing",

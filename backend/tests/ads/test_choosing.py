@@ -26,6 +26,7 @@ from ppcway.auth.models import UserAccount
 from ppcway.config import Settings
 from ppcway.db.base import Base
 from ppcway.db.session import get_session
+from ppcway.org.places import home_for
 
 #: The deployment's encryption key, so a stored permission is a real one.
 KEY = Fernet.generate_key()
@@ -90,6 +91,7 @@ def connected(client: TestClient, factory: sessionmaker[Session]) -> str:
         session.add(
             ads_models.AdsConnection(
                 account_id=account.id,
+                organization_id=home_for(session, account).id,
                 ciphertext=Fernet(KEY).encrypt(b"a-lasting-permission").decode(),
                 customer_id=None,
             )

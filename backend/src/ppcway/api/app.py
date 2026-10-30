@@ -103,7 +103,7 @@ from ppcway.mail.letters import (
 )
 from ppcway.mail.send import Letter, NotSent, Post, send
 from ppcway.mail.weekly import post_weekly
-from ppcway.org.models import CAN, Invitation, Organization, Role
+from ppcway.org.models import CAN, Invitation, Membership, Organization, Role
 from ppcway.org.places import (
     NotAllowed,
     accept,
@@ -1049,15 +1049,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return account
 
     def _connection(session: Session, account: UserAccount) -> AdsConnection | None:
-        """Their live permission, preferring one that names an account.
+        """The business's live permission, preferring one that names an account.
+
+        Scoped to the organisation, not to the person who granted it. The model
+        has said as much since it was written -- "a connection outlives the
+        person who granted it: staff leave, and the account they connected
+        stays" -- but this query asked for `account_id`, so an invited admin,
+        member or expert saw nothing and the business looked unconnected to
+        everybody but whoever first clicked through to Google.
 
         A merchant who starts the trip to Google twice leaves two rows behind.
         Picking the newest blindly can pick the one that never got as far as
         choosing an account, which then reports "connected" and reads nothing.
         """
+        place = _home(session, account)
         return session.scalar(
             select(AdsConnection)
-            .where(AdsConnection.account_id == account.id, AdsConnection.revoked_at.is_(None))
+            .where(
+                AdsConnection.organization_id == place.id,
+                AdsConnection.revoked_at.is_(None),
+            )
             .order_by(
                 (AdsConnection.customer_id.is_(None)).asc(),
                 (AdsConnection.customer_id == "").asc(),
@@ -1128,14 +1139,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(502, str(exc)) from None
 
         trip.used_at = datetime.now(UTC)
+        place = _home(session, account)
         for old in session.scalars(
             select(AdsConnection).where(
-                AdsConnection.account_id == account.id, AdsConnection.revoked_at.is_(None)
+                AdsConnection.organization_id == place.id,
+                AdsConnection.revoked_at.is_(None),
             )
         ):
-            # Connecting again replaces the last permission rather than racing it.
+            # Connecting again replaces the business's last permission rather
+            # than racing it. Organisation-wide, because the connection is the
+            # organisation's: two live rows in one business would leave
+            # `_connection` picking between them by date alone.
             old.revoked_at = datetime.now(UTC)
-        place = _home(session, account)
         connection = AdsConnection(
             account_id=account.id,
             organization_id=place.id,
@@ -2456,9 +2471,19 @@ def _behind(run_id: UUID, factory: sessionmaker[Session]) -> tuple[str, str] | N
         asked = session.get(AuditRequest, run.request_id)
         if asked is None or asked.user_id is None:
             return None
+        # The business's connection, not the asker's own: a colleague's audit
+        # should read the same account as the owner's. The request usually
+        # carries the organisation; where it does not, their membership says.
+        place_id = asked.organization_id or session.scalar(
+            select(Membership.organization_id)
+            .where(Membership.account_id == asked.user_id)
+            .order_by(Membership.created_at.asc())
+        )
+        if place_id is None:
+            return None
         connection = session.scalars(
             select(AdsConnection).where(
-                AdsConnection.account_id == asked.user_id,
+                AdsConnection.organization_id == place_id,
                 AdsConnection.revoked_at.is_(None),
             )
         ).first()

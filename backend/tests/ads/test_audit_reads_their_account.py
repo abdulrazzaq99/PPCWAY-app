@@ -23,6 +23,7 @@ from ppcway.audit.models import AuditRequest, AuditRun
 from ppcway.auth.models import UserAccount
 from ppcway.config import Settings
 from ppcway.db.base import Base
+from ppcway.org.places import home_for
 
 KEY = Fernet.generate_key()
 
@@ -73,6 +74,7 @@ def a_run(
                 session.add(
                     ads_models.AdsConnection(
                         account_id=person.id,
+                        organization_id=home_for(session, person).id,
                         ciphertext=Fernet(KEY).encrypt(b"a-lasting-permission").decode(),
                         customer_id=chosen,
                     )
