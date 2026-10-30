@@ -33,6 +33,7 @@ from ppcway.audit import models as _audit  # noqa: F401
 from ppcway.auth import models as _auth  # noqa: F401
 from ppcway.db.base import Base
 from ppcway.mail import models as _mail  # noqa: F401
+from ppcway.model import log as _prompt_log  # noqa: F401
 from ppcway.opt import models as _opt  # noqa: F401
 from ppcway.org import models as _org  # noqa: F401
 from ppcway.share import models as _share  # noqa: F401

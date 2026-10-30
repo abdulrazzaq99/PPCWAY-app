@@ -18,6 +18,8 @@ import ppcway.ads.models
 import ppcway.audit.models
 import ppcway.auth.models
 import ppcway.mail.models
+import ppcway.model.log
+import ppcway.opt.models
 import ppcway.org.models
 import ppcway.share.models  # noqa: F401
 from ppcway.config import load_settings

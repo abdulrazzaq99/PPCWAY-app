@@ -103,6 +103,22 @@ class Settings(BaseSettings):
     #: The free audit is never gated by this. See `auth.opening`.
     open_to: str = ""
 
+    #: Otto's model service. Claude runs on Google Cloud Vertex AI, so there is
+    #: no Anthropic API key here and never should be: authentication is
+    #: Google's, from the environment's application default credentials.
+    vertex_project: str = ""
+    #: The United States multi-region, per the client's decision of 30 October.
+    #: "global" is refused in `model.service`, not here, because the refusal
+    #: belongs with the code that would otherwise send the request.
+    vertex_region: str = "us"
+    #: Which version of our own prompt wording produced an answer. Every answer
+    #: carries it, so a bad prompt can be traced to the ads it wrote after the
+    #: prompt has been fixed. Blueprint §7.6.
+    model_prompt_version: str = ""
+    #: The Model Armor template that screens what a merchant types, as
+    #: "projects/x/locations/us/templates/y". Chat refuses without it.
+    model_armor_template: str = ""
+
     @field_validator("environment", mode="before")
     @classmethod
     def _lowercase(cls, value: object) -> object:
