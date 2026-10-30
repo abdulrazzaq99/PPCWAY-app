@@ -29,7 +29,6 @@ and says how much we hold when it is not.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -37,36 +36,10 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from ppcway.ads.numbers import Day, Held, Row, account_numbers, plain_money
-
-#: Two standard errors: a difference this big or bigger would turn up by chance
-#: less than about one time in twenty.
-SURE = 1.96
-
-#: Below this many events across both periods, the test is not worth running —
-#: the honest answer is that nobody can tell.
-ENOUGH_EVENTS = 10
-
-#: And below this many clicks, a rate is not worth comparing either.
-ENOUGH_CLICKS = 100
+from ppcway.metric import verdicts
 
 #: A year, for the year-on-year column.
 YEAR = 365
-
-
-def _poisson_z(now: float, before: float) -> float:
-    """Two counts of rare events, compared. Zero when there is nothing to compare."""
-    total = now + before
-    return (now - before) / math.sqrt(total) if total > 0 else 0.0
-
-
-def _rate_z(hits_now: float, of_now: int, hits_before: float, of_before: int) -> float:
-    """Two shares of two totals, compared the ordinary way."""
-    if of_now <= 0 or of_before <= 0:
-        return 0.0
-    p_now, p_before = hits_now / of_now, hits_before / of_before
-    pooled = (hits_now + hits_before) / (of_now + of_before)
-    spread = math.sqrt(pooled * (1 - pooled) * (1 / of_now + 1 / of_before))
-    return (p_now - p_before) / spread if spread > 0 else 0.0
 
 
 @dataclass
@@ -211,39 +184,6 @@ class Report:
         }
 
 
-def _verdict_for_counts(now: float, before: float, *, what: str) -> tuple[str, str, str]:
-    """A verdict, its sentence and the name of the test, for a count of events."""
-    test = "two Poisson counts"
-    if before <= 0:
-        return "none", f"There is no earlier period to compare these {what} with.", ""
-    if now + before < ENOUGH_EVENTS:
-        return (
-            "thin",
-            f"Too few {what} in both periods to tell a real change from chance.",
-            test,
-        )
-    z = _poisson_z(now, before)
-    if abs(z) >= SURE:
-        way = "up" if z > 0 else "down"
-        return "real", f"A real change: {what} are {way} by more than the usual wobble.", test
-    return "normal", f"Within the normal range for {what} at this volume.", test
-
-
-def _verdict_for_rate(
-    hits_now: float, of_now: int, hits_before: float, of_before: int
-) -> tuple[str, str, str]:
-    test = "two proportions"
-    if of_before <= 0:
-        return "none", "There is no earlier period to compare this rate with.", ""
-    if of_now + of_before < ENOUGH_CLICKS:
-        return "thin", "Too few clicks in both periods for the rate to mean anything.", test
-    z = _rate_z(hits_now, of_now, hits_before, of_before)
-    if abs(z) >= SURE:
-        way = "better" if z > 0 else "worse"
-        return "real", f"A real change: the rate is {way} by more than the usual wobble.", test
-    return "normal", "Within the normal range for this many clicks.", test
-
-
 def _sentence(held: Held) -> str:
     """The period in one line, for somebody who reads nothing else."""
     money = plain_money(held.cost, held.currency)
@@ -302,10 +242,10 @@ def report_for(
     )
     clicks_before = before.clicks
 
-    leads_verdict, leads_words, leads_test = _verdict_for_counts(
+    leads_verdict, leads_words, leads_test = verdicts.for_counts(
         held.leads, held.leads_before, what="leads"
     )
-    rate_verdict, rate_words, rate_test = _verdict_for_rate(
+    rate_verdict, rate_words, rate_test = verdicts.for_rate(
         held.leads, held.clicks, held.leads_before, clicks_before
     )
 
