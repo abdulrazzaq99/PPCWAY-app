@@ -167,6 +167,33 @@ class CampaignDay(Base):
     conversion_value_micros: Mapped[int] = mapped_column(Integer, default=0)
     calls: Mapped[float] = mapped_column(Float, default=0.0)
     forms: Mapped[float] = mapped_column(Float, default=0.0)
+    #: How much of the available auction this campaign actually appeared in, and
+    #: where the rest went. Google reports these as a share between 0 and 1, and
+    #: caps anything above 0.9 at 0.9 for competitive reasons -- so "90%" here
+    #: means "90% or better" and no recommendation may read it as exact.
+    #:
+    #: These live on this table rather than in a mirror of their own because the
+    #: grain is identical: one campaign, one day. A separate table would be a
+    #: join for every screen that already reads this one, and two refresh paths
+    #: that could disagree about the same afternoon.
+    #:
+    #: Null, not zero, when Google did not report them. A campaign that is not
+    #: a Search campaign has no search impression share, and a day with no
+    #: impressions has none either; zero would read as "you appeared in none of
+    #: the auctions", which is a different and much more alarming claim.
+    search_share: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: The share lost because the daily budget ran out. This is the number
+    #: behind the only recommendation that asks a merchant to spend more, so it
+    #: is kept separately from rank rather than rolled into one "lost" figure.
+    lost_to_budget: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: The share lost because the ad was not good enough or the bid too low.
+    #: Spending more does not fix this one, and telling the two apart is the
+    #: difference between useful advice and expensive advice.
+    lost_to_rank: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: How often it was the very first result, which is what a merchant means
+    #: when they ask why they cannot see themselves.
+    top_share: Mapped[float | None] = mapped_column(Float, nullable=True)
+
     #: The last time this day was re-read. Yesterday's row is rewritten for three
     #: nights, because conversions arrive late.
     refreshed_at: Mapped[datetime] = mapped_column(
@@ -176,6 +203,16 @@ class CampaignDay(Base):
     @property
     def cost(self) -> float:
         return round(self.cost_micros / MICRO, 2)
+
+    @property
+    def share_is_capped(self) -> bool:
+        """Google reported 90% or better and will not say which.
+
+        A screen that prints "90%" from a capped figure is stating something
+        Google refused to state. Anything reading `search_share` for a
+        merchant has to check this first.
+        """
+        return self.search_share is not None and self.search_share >= 0.9
 
 
 class SyncRun(Base):
@@ -228,3 +265,128 @@ class ExternalChange(Base):
     before: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     after: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     noticed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SearchTermDay(Base):
+    """What somebody actually typed, per day, and what it cost.
+
+    Not the same thing as a keyword. A keyword is what the merchant bid on; a
+    search term is what a person really searched for, and the gap between the
+    two is where most wasted money in a small account lives -- a plumber
+    bidding broadly on "boiler repair" paying for "boiler repair apprenticeship
+    salary". Rule R1, the only change the client will let run unattended, reads
+    nothing but this table.
+
+    Kept per day rather than summed over a window, for the same reason
+    `CampaignDay` is: a rule asking "thirty days of this" and a rule asking
+    "seven" must not need two tables, and the freshness guardrail needs to know
+    *when* a figure was true rather than only what it was.
+
+    `status` is why this is not merely a metrics table. Google says whether a
+    term is already a keyword, already excluded, or neither, and a rule that
+    proposes excluding something already excluded is a rule the merchant stops
+    trusting on the second day.
+    """
+
+    __tablename__ = "ads_search_term_day"
+    __table_args__ = (
+        UniqueConstraint("customer_id", "ad_group_id", "term_hash", "day", name="one_term_a_day"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
+    customer_id: Mapped[str] = mapped_column(String(20), index=True)
+    campaign_id: Mapped[str] = mapped_column(String(20), index=True, default="")
+    ad_group_id: Mapped[str] = mapped_column(String(20), index=True, default="")
+    day: Mapped[date] = mapped_column(Date, index=True)
+
+    #: What was typed. Long: people type sentences, and Google does not
+    #: truncate them, so neither does this.
+    term: Mapped[str] = mapped_column(String(1000))
+    #: The term, hashed, because it is part of the uniqueness of a row and a
+    #: thousand-character column cannot be indexed on either Postgres or MySQL.
+    #: Set from `term` by `term_key`, never written by hand.
+    term_hash: Mapped[str] = mapped_column(String(64), index=True)
+    #: Google's own word: "ADDED", "EXCLUDED", "ADDED_EXCLUDED", "NONE", or
+    #: "UNKNOWN" where it would not say. Kept as Google writes it rather than
+    #: mapped to a boolean, because "added and also excluded" is a real state
+    #: and a boolean cannot hold it.
+    status: Mapped[str] = mapped_column(String(20), default="")
+    #: The keyword that matched it, where Google reported one.
+    matched_keyword: Mapped[str] = mapped_column(String(255), default="")
+
+    impressions: Mapped[int] = mapped_column(Integer, default=0)
+    clicks: Mapped[int] = mapped_column(Integer, default=0)
+    cost_micros: Mapped[int] = mapped_column(Integer, default=0)
+    conversions: Mapped[float] = mapped_column(Float, default=0.0)
+    conversion_value_micros: Mapped[int] = mapped_column(Integer, default=0)
+
+    refreshed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    @property
+    def cost(self) -> float:
+        return round(self.cost_micros / MICRO, 2)
+
+    @property
+    def already_handled(self) -> bool:
+        """Already a keyword, or already excluded. Nothing to propose here."""
+        return self.status in {"ADDED", "EXCLUDED", "ADDED_EXCLUDED"}
+
+
+class KeywordDay(Base):
+    """One keyword, one day: what it cost and what it brought back.
+
+    The grain the guardrails need. "Minimum data to call a loser: 1.5 times the
+    target cost per lead in spend, or 100 clicks" is a question about one
+    keyword over a window, and answering it from the structure mirror alone is
+    impossible -- that holds what a keyword *is*, not what it did.
+
+    Quality Score is deliberately not here. It lives on `MirrorKeyword`,
+    because Google reports it as a current property of the keyword rather than
+    as a daily metric, and copying it onto every day's row would invent a
+    history Google never gave us.
+    """
+
+    __tablename__ = "ads_keyword_day"
+    __table_args__ = (
+        UniqueConstraint("customer_id", "criterion_id", "day", name="one_keyword_a_day"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
+    customer_id: Mapped[str] = mapped_column(String(20), index=True)
+    criterion_id: Mapped[str] = mapped_column(String(20), index=True)
+    ad_group_id: Mapped[str] = mapped_column(String(20), index=True, default="")
+    campaign_id: Mapped[str] = mapped_column(String(20), index=True, default="")
+    day: Mapped[date] = mapped_column(Date, index=True)
+
+    #: The words and the match type, copied here so a report reads without a
+    #: second lookup and still reads after the keyword has been removed.
+    text: Mapped[str] = mapped_column(String(255), default="")
+    match_type: Mapped[str] = mapped_column(String(20), default="")
+
+    impressions: Mapped[int] = mapped_column(Integer, default=0)
+    clicks: Mapped[int] = mapped_column(Integer, default=0)
+    cost_micros: Mapped[int] = mapped_column(Integer, default=0)
+    conversions: Mapped[float] = mapped_column(Float, default=0.0)
+    conversion_value_micros: Mapped[int] = mapped_column(Integer, default=0)
+
+    refreshed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    @property
+    def cost(self) -> float:
+        return round(self.cost_micros / MICRO, 2)
+
+
+def term_key(term: str) -> str:
+    """The hash that makes a search term's row unique.
+
+    Case-folded and space-collapsed first: Google reports search terms already
+    lowercased, but "boiler  repair" and "boiler repair" arriving on different
+    days as different rows would split one term's spend in two and put it under
+    whichever rule threshold it was closest to.
+    """
+    tidy = " ".join(term.lower().split())
+    return hashlib.sha256(tidy.encode()).hexdigest()

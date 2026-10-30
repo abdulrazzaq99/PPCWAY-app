@@ -34,12 +34,15 @@ from ppcway.ads.mirror import (
     MICRO,
     CampaignDay,
     ExternalChange,
+    KeywordDay,
     MirrorAd,
     MirrorAdGroup,
     MirrorCampaign,
     MirrorKeyword,
+    SearchTermDay,
     SyncRun,
     fingerprint,
+    term_key,
 )
 
 log = logging.getLogger(__name__)
@@ -116,6 +119,21 @@ def _ask(
             break
         body["pageToken"] = token
     return rows, ""
+
+
+def _share(value: Any) -> float | None:
+    """One impression-share figure, or None where Google did not report one.
+
+    Google sends these as a fraction between 0 and 1, and caps anything above
+    0.9 at 0.9 for competitive reasons -- so a 0.9 here means "90% or better"
+    and nothing may present it as exact. See `CampaignDay.share_is_capped`.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _money(micros: Any, currency: str) -> str:
@@ -499,7 +517,11 @@ def sync_days(
             customer_id,
             f"""
             SELECT campaign.id, segments.date, metrics.impressions, metrics.clicks,
-                   metrics.cost_micros, metrics.conversions, metrics.conversions_value
+                   metrics.cost_micros, metrics.conversions, metrics.conversions_value,
+                   metrics.search_impression_share,
+                   metrics.search_budget_lost_impression_share,
+                   metrics.search_rank_lost_impression_share,
+                   metrics.search_absolute_top_impression_share
             FROM campaign WHERE {window}
             """,
             **ask,  # type: ignore[arg-type]
@@ -524,6 +546,15 @@ def sync_days(
                 ),
                 "calls": 0.0,
                 "forms": 0.0,
+                # None rather than 0.0 where Google did not report it. A
+                # campaign that is not a Search campaign has no search
+                # impression share at all, and zero would read as "you were in
+                # none of the auctions" -- a far more alarming claim than
+                # "Google did not say". `_share` keeps the distinction.
+                "search_share": _share(metrics.get("searchImpressionShare")),
+                "lost_to_budget": _share(metrics.get("searchBudgetLostImpressionShare")),
+                "lost_to_rank": _share(metrics.get("searchRankLostImpressionShare")),
+                "top_share": _share(metrics.get("searchAbsoluteTopImpressionShare")),
             }
 
         split, trouble = _ask(
@@ -578,6 +609,230 @@ def sync_days(
             kept.refreshed_at = at
 
         report.counts["days"] = len({day for _, day in facts})
+        report.counts["rows"] = len(facts)
+        session.commit()
+        return report
+    finally:
+        if own:
+            c.close()
+
+
+def sync_search_terms(
+    session: Session,
+    customer_id: str,
+    *,
+    since: date,
+    until: date | None = None,
+    access_token: str,
+    developer_token: str,
+    login_customer_id: str | None = None,
+    api_version: str = "v25",
+    client: httpx.Client | None = None,
+    now: datetime | None = None,
+) -> Report:
+    """What people actually typed, per day, and whether it is already handled.
+
+    One query. `search_term_view` is the only place Google reports the words a
+    person really searched for, and `status` beside them is what keeps rule R1
+    from proposing an exclusion for a term already excluded -- the fastest way
+    to lose a merchant's trust is to recommend something they have already done.
+
+    Rows with no impressions are skipped rather than stored. Google reports a
+    row for a term that merely matched, and a table of nothing-happened is most
+    of the storage and none of the signal.
+    """
+    own = client is None
+    c = client or httpx.Client(timeout=httpx.Timeout(90))
+    at = now or datetime.now(UTC)
+    last = until or at.date()
+    report = Report()
+    window = f"segments.date BETWEEN '{since.isoformat()}' AND '{last.isoformat()}'"
+    try:
+        rows, trouble = _ask(
+            customer_id,
+            f"""
+            SELECT search_term_view.search_term, search_term_view.status,
+                   segments.date, campaign.id, ad_group.id, segments.keyword.info.text,
+                   metrics.impressions, metrics.clicks, metrics.cost_micros,
+                   metrics.conversions, metrics.conversions_value
+            FROM search_term_view WHERE {window}
+            """,
+            access_token=access_token,
+            developer_token=developer_token,
+            login_customer_id=login_customer_id,
+            api_version=api_version,
+            client=c,
+        )
+        if trouble:
+            return Report(ok=False, trouble=trouble)
+
+        facts: dict[tuple[str, str, str], dict[str, Any]] = {}
+        for row in rows:
+            view = row.get("searchTermView", {})
+            term = str(view.get("searchTerm", "") or "")
+            day = str(row.get("segments", {}).get("date", ""))
+            ad_group_id = str(row.get("adGroup", {}).get("id", "") or "")
+            if not term or not day:
+                continue
+            metrics = row.get("metrics", {})
+            impressions = int(metrics.get("impressions", 0) or 0)
+            if impressions <= 0:
+                continue
+            keyword = row.get("segments", {}).get("keyword", {}).get("info", {})
+            facts[(ad_group_id, term_key(term), day)] = {
+                "campaign_id": str(row.get("campaign", {}).get("id", "") or ""),
+                "ad_group_id": ad_group_id,
+                "term": term[:1000],
+                "status": str(view.get("status", "") or ""),
+                "matched_keyword": str(keyword.get("text", "") or "")[:255],
+                "impressions": impressions,
+                "clicks": int(metrics.get("clicks", 0) or 0),
+                "cost_micros": int(metrics.get("costMicros", 0) or 0),
+                "conversions": float(metrics.get("conversions", 0) or 0),
+                "conversion_value_micros": round(
+                    float(metrics.get("conversionsValue", 0) or 0) * MICRO
+                ),
+            }
+
+        held = {
+            (kept.ad_group_id, kept.term_hash, kept.day.isoformat()): kept
+            for kept in session.scalars(
+                select(SearchTermDay).where(
+                    SearchTermDay.customer_id == customer_id,
+                    SearchTermDay.day >= since,
+                    SearchTermDay.day <= last,
+                )
+            )
+        }
+        for (ad_group_id, hashed, day), fact in facts.items():
+            kept = held.get((ad_group_id, hashed, day))
+            if kept is None:
+                session.add(
+                    SearchTermDay(
+                        customer_id=customer_id,
+                        term_hash=hashed,
+                        day=date.fromisoformat(day),
+                        refreshed_at=at,
+                        **fact,
+                    )
+                )
+                continue
+            for key, value in fact.items():
+                setattr(kept, key, value)
+            kept.refreshed_at = at
+
+        report.counts["search_terms"] = len({hashed for _, hashed, _ in facts})
+        report.counts["rows"] = len(facts)
+        session.commit()
+        return report
+    finally:
+        if own:
+            c.close()
+
+
+def sync_keyword_days(
+    session: Session,
+    customer_id: str,
+    *,
+    since: date,
+    until: date | None = None,
+    access_token: str,
+    developer_token: str,
+    login_customer_id: str | None = None,
+    api_version: str = "v25",
+    client: httpx.Client | None = None,
+    now: datetime | None = None,
+) -> Report:
+    """One keyword, one day. What the guardrails need to call something a loser.
+
+    "A keyword has spent 1.5 times the target cost per lead, or taken 100
+    clicks, and brought nothing back" is a question about one keyword over a
+    window, and the structure mirror cannot answer it: that holds what a
+    keyword is, not what it did.
+
+    Quality Score is not read here. Google reports it as a property of the
+    keyword now rather than as a figure for a past day, so it stays on the
+    structure mirror; writing it onto each day's row would invent a history
+    Google never gave us.
+    """
+    own = client is None
+    c = client or httpx.Client(timeout=httpx.Timeout(90))
+    at = now or datetime.now(UTC)
+    last = until or at.date()
+    report = Report()
+    window = f"segments.date BETWEEN '{since.isoformat()}' AND '{last.isoformat()}'"
+    try:
+        rows, trouble = _ask(
+            customer_id,
+            f"""
+            SELECT ad_group_criterion.criterion_id, ad_group_criterion.keyword.text,
+                   ad_group_criterion.keyword.match_type, ad_group.id, campaign.id,
+                   segments.date, metrics.impressions, metrics.clicks,
+                   metrics.cost_micros, metrics.conversions, metrics.conversions_value
+            FROM keyword_view WHERE {window}
+            """,
+            access_token=access_token,
+            developer_token=developer_token,
+            login_customer_id=login_customer_id,
+            api_version=api_version,
+            client=c,
+        )
+        if trouble:
+            return Report(ok=False, trouble=trouble)
+
+        facts: dict[tuple[str, str], dict[str, Any]] = {}
+        for row in rows:
+            criterion = row.get("adGroupCriterion", {})
+            criterion_id = str(criterion.get("criterionId", "") or "")
+            day = str(row.get("segments", {}).get("date", ""))
+            if not criterion_id or not day:
+                continue
+            metrics = row.get("metrics", {})
+            if int(metrics.get("impressions", 0) or 0) <= 0:
+                continue
+            keyword = criterion.get("keyword", {})
+            facts[(criterion_id, day)] = {
+                "ad_group_id": str(row.get("adGroup", {}).get("id", "") or ""),
+                "campaign_id": str(row.get("campaign", {}).get("id", "") or ""),
+                "text": str(keyword.get("text", "") or "")[:255],
+                "match_type": str(keyword.get("matchType", "") or ""),
+                "impressions": int(metrics.get("impressions", 0) or 0),
+                "clicks": int(metrics.get("clicks", 0) or 0),
+                "cost_micros": int(metrics.get("costMicros", 0) or 0),
+                "conversions": float(metrics.get("conversions", 0) or 0),
+                "conversion_value_micros": round(
+                    float(metrics.get("conversionsValue", 0) or 0) * MICRO
+                ),
+            }
+
+        held = {
+            (kept.criterion_id, kept.day.isoformat()): kept
+            for kept in session.scalars(
+                select(KeywordDay).where(
+                    KeywordDay.customer_id == customer_id,
+                    KeywordDay.day >= since,
+                    KeywordDay.day <= last,
+                )
+            )
+        }
+        for (criterion_id, day), fact in facts.items():
+            kept = held.get((criterion_id, day))
+            if kept is None:
+                session.add(
+                    KeywordDay(
+                        customer_id=customer_id,
+                        criterion_id=criterion_id,
+                        day=date.fromisoformat(day),
+                        refreshed_at=at,
+                        **fact,
+                    )
+                )
+                continue
+            for key, value in fact.items():
+                setattr(kept, key, value)
+            kept.refreshed_at = at
+
+        report.counts["keywords"] = len({criterion for criterion, _ in facts})
         report.counts["rows"] = len(facts)
         session.commit()
         return report
