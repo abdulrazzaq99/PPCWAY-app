@@ -13,7 +13,15 @@ export const metadata: Metadata = {
   Google's reviewer reads this page to decide whether the adwords permission is
   honestly described, so anything we start doing has to arrive here first.
 */
-const CONTACT = "abdulrazzaq0621@gmail.com";
+/*
+  The address for privacy requests. PPCWay supplies the final one (brief F4);
+  until then this is their own domain rather than a person's mailbox. What was
+  here before was a contractor's personal Gmail, which named a private
+  individual on the page the whole internet and Google's reviewer read.
+  Whoever changes this must make sure the mailbox is genuinely answered: a
+  deletion request this page promises to honour has to reach somebody.
+*/
+const CONTACT = "privacy@ppcway.com";
 
 export default function Privacy() {
   return (
@@ -92,14 +100,20 @@ export default function Privacy() {
             own speed test. Connecting is done through Google&rsquo;s sign-in, so Google knows you
             granted us access, and you can withdraw it from your Google account at any time.
           </Row>
-          <Row label="Anthropic">
-            Our artificial intelligence provider. When the report is written, parts of your
-            website&rsquo;s wording may be sent to Anthropic to put the findings into plain English.
-            Anthropic does not use it to train models.
+          <Row label="Artificial intelligence">
+            Nothing of yours goes to an artificial intelligence model today. When Otto, our
+            assistant, is switched on, the wording of your report and any ad drafts will be written
+            by Claude models run inside Google Cloud&rsquo;s Vertex AI in the United States. Every
+            figure you see is worked out in our own code, never by a model, and nothing you give us
+            is ever used to train one.
           </Row>
           <Row label="Our hosting">
-            The service runs on Google Cloud in Toronto, and the database is operated by Neon. They
-            hold the data on our behalf and do nothing else with it.
+            PPCWay runs on Google Cloud, and the database is operated by Neon. They hold the data on
+            our behalf and do nothing else with it.
+          </Row>
+          <Row label="Resend">
+            Sends the email we send you: your audit, your weekly summary, your sign-in codes. It
+            gets your email address and the letter itself, and nothing more.
           </Row>
           <Row label="Nobody else">
             We do not sell or rent anything to anyone. If we are ever legally compelled to hand

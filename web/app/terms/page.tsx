@@ -8,7 +8,12 @@ export const metadata: Metadata = {
     "What PPCWay does for you, what it will never do without asking, what it costs, and how either of us can walk away.",
 };
 
-const CONTACT = "abdulrazzaq0621@gmail.com";
+/*
+  The address for legal notices and deletion requests. PPCWay supplies the
+  final one (brief F4); until then this is their own domain, not a person's
+  mailbox -- see the note on the same constant in app/privacy/page.tsx.
+*/
+const CONTACT = "legal@ppcway.com";
 
 export default function Terms() {
   return (

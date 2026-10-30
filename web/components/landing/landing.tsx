@@ -634,7 +634,7 @@ const FAQ = [
   ],
   [
     "Who can see my data?",
-    "You, and anyone you invite. Support can look only if you ask, every look is written down, and you get an email saying who and when. Data is stored in Canada.",
+    "You, and anyone you invite. Support can look only if you ask, every look is written down, and you get an email saying who and when.",
   ],
 ];
 

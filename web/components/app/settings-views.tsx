@@ -1515,16 +1515,14 @@ function Results() {
 
 /* ---------- 87:7528 ---------- */
 function DataHandling() {
-  const out = "Outside Canada";
   return (
     <AppShell active="settings" workspace={alpha}>
       <PageHead
         title="Who handles your data, and your choices."
-        lead="Your data is stored in Canada. A few companies process parts of it for us, some outside Canada. They are all listed here, with exactly what each one gets."
+        lead="A few companies process parts of your data for us. They are all listed here, with exactly what each one gets, and the list is the one the code actually calls."
       />
       <Tiles>
-        <Tile tone="brand" label="Stored in" value="Canada" chip="Montreal and Toronto" />
-        <Tile label="Companies we use" value="7" chip="Listed below" chipTone="grey" />
+        <Tile label="Companies we use" value="4" chip="Listed below" chipTone="grey" />
         <Tile label="Optional sharing" value="Off" chip="You decide, below" chipTone="amber" />
         <Tile label="List last changed" value="1 Sep" chip="We email you first" chipTone="grey" />
       </Tiles>
@@ -1534,18 +1532,15 @@ function DataHandling() {
             <Panel title="Your choices" tone="plain">
               <Rows className="mt-1">
                 <ListRow
-                  title="Help improve our ad writing"
-                  meta="Use copies of your ads with names and contact details removed"
-                  right={<Toggle on={false} label="Help improve our ad writing" />}
-                />
-                <ListRow
                   title="Anonymous category averages"
                   meta="Include your results in how plumbers do on average"
                   right={<Toggle on={false} label="Anonymous category averages" />}
                 />
               </Rows>
               <Footnote>
-                Both are off unless you turn them on. Turning one off later stops it straight away.
+                Off unless you turn it on. Turning it off later stops it straight away. Nothing you
+                give us is ever used to train an artificial intelligence model, and there is no
+                setting that would allow it.
               </Footnote>
             </Panel>
             <Panel title="If something goes wrong" tone="plain">
@@ -1563,35 +1558,21 @@ function DataHandling() {
           tone="plain"
         >
           <Rows className="mt-1">
-            <ListRow title="Google" meta="Runs your ads · your Google Ads data" chip={out} />
             <ListRow
-              title="Anthropic"
-              meta="Writes ad text from your website · site text only, not used for training"
-              chip={out}
+              title="Google"
+              meta="Runs your ads, holds your listing, measures your site · your Google Ads data"
             />
-            <ListRow
-              title="Stripe"
-              meta="Takes your PPCWay payment · card details, never seen by us"
-              chip={out}
-            />
-            <ListRow title="Postmark" meta="Sends our emails · your email address" chip={out} />
-            <ListRow
-              title="Google Cloud"
-              meta="Hosts PPCWay · everything, encrypted"
-              chip="In Canada"
-              chipTone="pale"
-            />
-            <ListRow
-              title="Temporal"
-              meta="Runs our scheduled checks · account IDs only"
-              chip={out}
-            />
-            <ListRow
-              title="Sentry"
-              meta="Catches errors · technical logs, no card data"
-              chip={out}
-            />
+            <ListRow title="Google Cloud" meta="Hosts PPCWay · everything, encrypted" />
+            <ListRow title="Neon" meta="Operates our database · everything, encrypted" />
+            <ListRow title="Resend" meta="Sends our email · your email address and the letter" />
           </Rows>
+          <Footnote>
+            Four, and no more: a company is on this list only once our code calls it. Payment,
+            error reporting and artificial intelligence are not here because nothing of yours
+            reaches them yet. When Otto is switched on, Claude models running inside Google
+            Cloud&rsquo;s Vertex AI in the United States will join this list, and it will say so
+            here before it happens.
+          </Footnote>
         </Panel>
       </Columns>
     </AppShell>
@@ -1607,12 +1588,6 @@ function YourData() {
         lead="Take a copy whenever you like, or close the account and have everything deleted. We have never sold data and do not intend to."
       />
       <Tiles>
-        <Tile
-          tone="brand"
-          label="Where your data lives"
-          value="Canada"
-          chip="Montreal and Toronto"
-        />
         <Tile label="Results we keep" value="13 months" chip="Then deleted automatically" />
         <Tile label="Change records" value="7 years" chip="Required for the audit trail" />
         <Tile label="Your card number" value="Never" progress={4 / 226} />
