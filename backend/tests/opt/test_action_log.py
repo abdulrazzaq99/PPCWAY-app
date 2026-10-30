@@ -62,7 +62,7 @@ def an_action(place: Organization, **over: object) -> OptimizationAction:
         "job_run": "run-2026-10-26",
     }
     fields.update(over)
-    return OptimizationAction(**fields)  # type: ignore[arg-type]
+    return OptimizationAction(**fields)
 
 
 def test_a_row_exists_before_anything_is_sent_to_google(db: sessionmaker[Session]) -> None:

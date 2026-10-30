@@ -13,6 +13,7 @@ import pytest
 
 from ppcway.opt.guardrails import (
     ORDER,
+    Judgement,
     Limits,
     Proposal,
     Standing,
@@ -68,7 +69,7 @@ def limits(**over: object) -> Limits:
     return Limits(**fields)  # type: ignore[arg-type]
 
 
-def ruling(**over: object):
+def ruling(**over: object) -> Judgement:
     """One judgement, with everything clean unless a test says otherwise."""
     return judge(
         a_proposal(**over.pop("proposal", {})),  # type: ignore[arg-type]
@@ -121,7 +122,7 @@ def test_the_first_failure_stops_the_run() -> None:
         ({"quota_left": 0}, "quota"),
     ],
 )
-def test_each_check_refuses_what_it_is_for(standing: dict, check: str) -> None:
+def test_each_check_refuses_what_it_is_for(standing: dict[str, object], check: str) -> None:
     said = ruling(standing=standing)
     assert said.ruling.verdict is Verdict.REJECTED
     assert said.ruling.check == check
@@ -142,7 +143,7 @@ def test_each_check_refuses_what_it_is_for(standing: dict, check: str) -> None:
         ({"limits": {"autonomy": ""}}, "autonomy_level"),
     ],
 )
-def test_what_cannot_be_checked_is_refused(over: dict, check: str) -> None:
+def test_what_cannot_be_checked_is_refused(over: dict[str, object], check: str) -> None:
     """Not knowing whether a change is safe is not a reason to make it."""
     said = ruling(**over)
     assert said.ruling.verdict is Verdict.REJECTED, said.ruling
