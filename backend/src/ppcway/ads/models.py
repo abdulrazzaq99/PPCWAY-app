@@ -34,6 +34,16 @@ class AdsConnection(Base):
     #: What that account spends, as Google writes it: "CAD", "USD", "EUR". Kept
     #: here because the mirror holds micros, which carry no currency of their own.
     currency: Mapped[str] = mapped_column(String(3), default="")
+    #: Google's own word for the state of the account: "ENABLED", "SUSPENDED",
+    #: "CANCELED", "CLOSED". Empty until a sync has read it, and empty is not
+    #: the same as healthy -- the guardrails refuse a change to an account
+    #: whose state we cannot name, which is the right way round.
+    account_status: Mapped[str] = mapped_column(String(20), default="")
+    #: When that state was last read, so a guardrail can tell a current answer
+    #: from one we happen to still be holding.
+    status_read_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     #: Set when they disconnect. The row stays as a record that it happened.
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

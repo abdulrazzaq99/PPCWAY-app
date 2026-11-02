@@ -126,10 +126,18 @@ def sync_connection(
                 trouble=report.trouble or days.trouble,
                 counts={**report.counts, **days.counts},
                 changes=report.changes,
+                account_status=report.account_status,
             )
     except AdsConnectionRefused as exc:
         log.warning("sync refused for %s: %s", connection.customer_id, exc)
         report = Report(ok=False, trouble=str(exc))
+
+    if report.account_status:
+        # Written here rather than in the sync, which does not own this row.
+        # Stamped with the time so a guardrail can tell a state we just read
+        # from one we happen to still be holding from a fortnight ago.
+        connection.account_status = report.account_status
+        connection.status_read_at = datetime.now(UTC)
 
     return finish(session, run, report, now=datetime.now(UTC))
 

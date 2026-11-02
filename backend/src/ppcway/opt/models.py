@@ -209,8 +209,15 @@ class GuardrailConfig(Base):
     #: How far one change may move a number, and how far a day's changes may
     #: move it in total. The per-change cap alone is not enough: twenty percent
     #: a day compounds into a thirty-eight times budget increase in a year.
-    max_change_pct: Mapped[float] = mapped_column(Float, default=25.0)
-    max_daily_change_pct: Mapped[float] = mapped_column(Float, default=50.0)
+    #:
+    #: Three numbers rather than two, settled by the client on 30 October: up
+    #: to 20% is the normal route, 20% to 50% goes to an expert, and over 50%
+    #: in one change is refused by anybody. Without the middle one a 30% rise
+    #: is simply rejected and never reaches the person whose job is to judge
+    #: it, which is how a guardrail gets switched off rather than respected.
+    max_change_pct: Mapped[float] = mapped_column(Float, default=20.0)
+    expert_max_change_pct: Mapped[float] = mapped_column(Float, default=50.0)
+    max_daily_change_pct: Mapped[float] = mapped_column(Float, default=100.0)
 
     #: How often one thing may be touched, and how busy a day may get.
     max_changes_per_entity_day: Mapped[int] = mapped_column(Integer, default=2)
@@ -298,9 +305,19 @@ class OptimizationAction(Base):
     #: this?" without inferring it from which fields are filled in.
     proposed_by: Mapped[str] = mapped_column(String(10), default=ProposedBy.RULE.value, index=True)
     status: Mapped[str] = mapped_column(String(20), default=Status.PROPOSED.value, index=True)
-    #: Which guardrail decided, and what it said, in plain words.
+    #: Which guardrail decided, and what it said, in plain words. Write-once,
+    #: because this records the decision that produced the row's first status
+    #: and a log whose reasons can be rewritten is not a log.
     decided_by: Mapped[str] = mapped_column(String(40), default="")
     decided_because: Mapped[str] = mapped_column(Text, default="")
+    #: The guardrails run a second time when somebody approves, because time
+    #: has passed: the figures may have gone stale, the day's budget may have
+    #: moved, the account may have been suspended. That second ruling goes
+    #: here rather than overwriting the first -- both happened, at different
+    #: times, and an action refused at approval needs to say which of the two
+    #: refused it.
+    rechecked: Mapped[dict[str, Any] | None] = _json()
+    rechecked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     #: Derived from this row's id, so a retry of the same action cannot apply
     #: it twice. Blueprint §5.6.

@@ -206,15 +206,34 @@ def test_a_bid_outside_the_range_is_refused() -> None:
     assert said.ruling.check == "hard_spend_limits"
 
 
-def test_one_change_may_only_move_a_number_so_far() -> None:
+def test_a_change_past_the_hard_ceiling_has_no_route_at_all() -> None:
+    """Over 50% in one change: nobody can approve it, expert included."""
     said = ruling(proposal={"change_pct": -60.0})
+    assert said.ruling.verdict is Verdict.REJECTED
     assert said.ruling.check == "delta_limits"
-    assert "one change may move it" in said.ruling.because
+    assert "in smaller steps" in said.ruling.because
+
+
+@pytest.mark.parametrize("size", [20.1, 30.0, 50.0])
+def test_a_change_between_the_bands_goes_to_an_expert(size: float) -> None:
+    """The client's middle band. "No" here would mean a merchant who genuinely
+    needs to double a budget has no route, which is how a guardrail gets
+    switched off rather than respected."""
+    said = ruling(proposal={"change_pct": size})
+    assert said.ruling.verdict is Verdict.REQUIRES_APPROVAL
+    assert said.ruling.check == "delta_limits"
+    assert "expert has to sign it off" in said.ruling.because
+
+
+@pytest.mark.parametrize("size", [5.0, 20.0, -20.0])
+def test_a_change_inside_the_ordinary_cap_needs_no_expert(size: float) -> None:
+    said = ruling(proposal={"change_pct": size})
+    assert said.ruling.verdict is Verdict.APPROVED
 
 
 def test_the_day_has_a_limit_even_when_each_change_is_small() -> None:
     """Twenty percent a day is a thirty-eight times increase over a year."""
-    said = ruling(proposal={"change_pct": 20.0}, standing={"moved_pct_today": 40.0})
+    said = ruling(proposal={"change_pct": 20.0}, standing={"moved_pct_today": 90.0})
     assert said.ruling.verdict is Verdict.REJECTED
     assert said.ruling.check == "delta_limits"
     assert "already moved it" in said.ruling.because
@@ -223,6 +242,13 @@ def test_the_day_has_a_limit_even_when_each_change_is_small() -> None:
 def test_the_same_change_passes_when_the_day_has_room() -> None:
     said = ruling(proposal={"change_pct": 20.0}, standing={"moved_pct_today": 20.0})
     assert said.ruling.verdict is Verdict.APPROVED
+
+
+def test_the_three_bands_are_the_ones_the_client_settled_on() -> None:
+    """20 normal, 50 expert ceiling, 100 in a day. Their brief of 30 October."""
+    limits = Limits()
+    assert (limits.max_change_pct, limits.expert_max_change_pct) == (20.0, 50.0)
+    assert limits.max_daily_change_pct == 100.0
 
 
 def test_nothing_may_pause_most_of_an_account() -> None:

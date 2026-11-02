@@ -108,8 +108,15 @@ class Limits:
     max_cpa: float = 0.0
     min_bid: float = 0.0
     max_bid: float = 0.0
-    max_change_pct: float = 25.0
-    max_daily_change_pct: float = 50.0
+    #: The client's three bands, settled in their brief of 30 October: up to
+    #: 20% is the normal route, 20% to 50% goes to an expert, and over 50% in
+    #: one change is refused outright. The middle band is the whole reason
+    #: `expert_max_change_pct` exists -- without it, a 30% rise is simply
+    #: rejected and never reaches the person whose job is to judge it.
+    max_change_pct: float = 20.0
+    expert_max_change_pct: float = 50.0
+    #: And no more than this in a day, however many changes it takes.
+    max_daily_change_pct: float = 100.0
     max_changes_per_entity_day: int = 2
     max_changes_per_day: int = 20
     max_pause_pct: float = 10.0
@@ -220,15 +227,30 @@ def delta_limits(p: Proposal, s: Standing, limits: Limits, now: datetime) -> Rul
     The per-change cap alone is not enough. Twenty percent a day is a
     thirty-eight times budget increase over a year, each step of it inside the
     rules. The daily cumulative cap is what actually bounds the exposure.
+
+    Three bands rather than two, which is the client's decision of 30 October
+    and not a softening. Over the hard ceiling is refused as before. Between
+    the ordinary cap and that ceiling, the answer is not "no" but "not by
+    you": the change goes to an expert. Returning a flat rejection there would
+    mean a merchant who genuinely needs to double a budget has no route at
+    all, which is how a guardrail gets switched off rather than respected.
     """
     if p.change_pct is None:
         return Passed
     size = abs(p.change_pct)
-    if size > limits.max_change_pct:
+    if size > limits.expert_max_change_pct:
         return _no(
             "delta_limits",
-            f"That moves it by {size:.0f}%, and one change may move it "
-            f"{limits.max_change_pct:.0f}%.",
+            f"That moves it by {size:.0f}%, which is past the {limits.expert_max_change_pct:.0f}%"
+            f" ceiling for a single change. Nobody here can approve that; it has to be"
+            f" done in smaller steps.",
+        )
+    if size > limits.max_change_pct:
+        return Ruling(
+            Verdict.REQUIRES_APPROVAL,
+            "delta_limits",
+            f"That moves it by {size:.0f}%, more than the {limits.max_change_pct:.0f}% a"
+            f" change is normally allowed, so a PPCWay expert has to sign it off.",
         )
     if abs(s.moved_pct_today) + size > limits.max_daily_change_pct:
         return _no(

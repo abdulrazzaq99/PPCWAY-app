@@ -80,6 +80,11 @@ class Report:
     counts: dict[str, int] = field(default_factory=dict)
     #: One line per change somebody made in Google Ads since we last looked.
     changes: list[str] = field(default_factory=list)
+    #: Google's own word for the state of the account, where this pass read it.
+    #: Carried on the report rather than written here, because the connection
+    #: belongs to the caller's session and a sync function that reached into it
+    #: would be a second writer to a row it does not own.
+    account_status: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -286,6 +291,7 @@ def sync_structure(
             customer_id,
             """
             SELECT campaign.resource_name, campaign.id, campaign.name, campaign.status,
+                   customer.status,
                    campaign.advertising_channel_type, campaign.bidding_strategy_type,
                    campaign.start_date_time, campaign.end_date_time,
                    campaign_budget.amount_micros, customer.currency_code
@@ -297,6 +303,7 @@ def sync_structure(
             return Report(ok=False, trouble=trouble)
 
         currency = ""
+        account_status = ""
         campaigns: dict[str, dict[str, Any]] = {}
         labels: dict[str, str] = {}
         for row in rows:
@@ -304,7 +311,12 @@ def sync_structure(
             name = str(campaign.get("resourceName", ""))
             if not name:
                 continue
-            currency = currency or str(row.get("customer", {}).get("currencyCode", ""))
+            customer = row.get("customer", {})
+            currency = currency or str(customer.get("currencyCode", ""))
+            # Google's own word for the state of the account. The second
+            # guardrail refuses a change to an account it cannot name the state
+            # of, so this is the figure that makes that check answerable.
+            account_status = account_status or str(customer.get("status", ""))
             labels[name] = str(campaign.get("name", ""))
             campaigns[name] = {
                 "campaign_id": str(campaign.get("id", "")),
@@ -327,6 +339,8 @@ def sync_structure(
             now=at,
         )
         report.counts["campaigns"] = count
+        if account_status:
+            report.account_status = account_status
         report.changes.extend(changes)
 
         rows, trouble = _ask(

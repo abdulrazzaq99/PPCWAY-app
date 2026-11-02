@@ -1268,6 +1268,127 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             word for word in (place.name, connection.customer_name) if word and len(word) > 2
         )
 
+    def _answerable(
+        session: Session, account: UserAccount
+    ) -> tuple[Organization, Role | None, AdsConnection]:
+        """Who is asking, what they are in this business, and its connection."""
+        place = _home(session, account)
+        connection = _connection(session, account)
+        if connection is None or not connection.customer_id:
+            raise HTTPException(409, "No Google Ads account is connected.")
+        return place, role_of(session, account, place), connection
+
+    def _answer(
+        said: object, action_id: str
+    ) -> dict[str, Any]:
+        from ppcway.opt.answer import Answered
+
+        assert isinstance(said, Answered)
+        return {
+            "id": str(said.action.id),
+            "answered": action_id,
+            "status": said.status.value,
+            "words": said.words,
+            "refused_by": said.refused_by,
+        }
+
+    @app.post("/v1/otto/actions/{action_id}/approve")
+    def approve_action(
+        action_id: UUID,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Say yes to a change, and check again whether yes is still allowed.
+
+        The guardrails run a second time here, which is the client's brief and
+        is not a formality: the first ruling may be six days old, and in that
+        time the figures can go stale, the day's budget can move and the
+        account can be suspended. A yes is permission, not a finding that the
+        change is still safe.
+        """
+        from ppcway.opt import answer as answering
+
+        account = _signed_in(session, x_session_token)
+        place, role, connection = _answerable(session, account)
+        try:
+            said = answering.approve(
+                session,
+                action_id,
+                organization_id=place.id,
+                account_id=account.id,
+                role=role,
+                connection=connection,
+            )
+        except LookupError:
+            raise HTTPException(404, "We have no record of that change.") from None
+        except answering.NotAllowed as exc:
+            raise HTTPException(403, str(exc)) from None
+        except answering.NotAnswerable as exc:
+            raise HTTPException(409, str(exc)) from None
+        return _answer(said, str(action_id))
+
+    @app.post("/v1/otto/actions/{action_id}/reject")
+    def reject_action(
+        action_id: UUID,
+        body: dict[str, str],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Say no. Nobody needs the guardrails' permission to decline."""
+        from ppcway.opt import answer as answering
+
+        account = _signed_in(session, x_session_token)
+        place, role, _connection = _answerable(session, account)
+        try:
+            said = answering.reject(
+                session,
+                action_id,
+                organization_id=place.id,
+                account_id=account.id,
+                role=role,
+                because=body.get("because", ""),
+            )
+        except LookupError:
+            raise HTTPException(404, "We have no record of that change.") from None
+        except answering.NotAllowed as exc:
+            raise HTTPException(403, str(exc)) from None
+        except answering.NotAnswerable as exc:
+            raise HTTPException(409, str(exc)) from None
+        return _answer(said, str(action_id))
+
+    @app.post("/v1/otto/actions/{action_id}/undo")
+    def undo_action(
+        action_id: UUID,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Put a change back, by proposing the opposite of it.
+
+        A new row, as the brief requires. The original stays applied until the
+        reversing change has actually been made: a log that said "reverted" the
+        moment somebody asked would be claiming something had happened because
+        it had been requested.
+        """
+        from ppcway.opt import answer as answering
+
+        account = _signed_in(session, x_session_token)
+        place, role, _connection = _answerable(session, account)
+        try:
+            said = answering.undo(
+                session,
+                action_id,
+                organization_id=place.id,
+                account_id=account.id,
+                role=role,
+            )
+        except LookupError:
+            raise HTTPException(404, "We have no record of that change.") from None
+        except answering.NotAllowed as exc:
+            raise HTTPException(403, str(exc)) from None
+        except answering.NotAnswerable as exc:
+            raise HTTPException(409, str(exc)) from None
+        return _answer(said, str(action_id))
+
     @app.get("/v1/ads/business")
     def ads_business(
         session: Annotated[Session, Depends(get_session)],
