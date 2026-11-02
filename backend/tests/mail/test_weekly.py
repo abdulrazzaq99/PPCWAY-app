@@ -29,6 +29,9 @@ from ppcway.mail.weekly import post_weekly, weekly_letter
 # A connection points at the business it belongs to, so that table has to be
 # registered before the rest can be created.
 from ppcway.org.models import Organization  # noqa: F401
+from ppcway.rules.inbox import Card
+from ppcway.rules.recommend import Impact, Recommendation
+from ppcway.rules.words import FROM_TEMPLATE, Written
 
 #: A Monday, which is when the post goes out.
 NOW = datetime(2026, 10, 19, 8, 0, tzinfo=UTC)
@@ -347,3 +350,108 @@ def test_a_revoked_connection_gets_no_post(db: DbSession) -> None:
 
     assert counts == {"sent": 0, "failed": 0, "skipped": 0}
     assert sent == []
+
+
+# --- Otto's cards in the letter (phase 1.3) ---
+
+
+def _a_card(label: str, *, kind: str = "add_negative_keyword", money: float = 91.2) -> Card:
+    """One card, built directly rather than run through the rules.
+
+    The rules have their own tests; what matters here is what the letter does
+    with a card, and building one plainly keeps this test about the letter.
+    """
+    from ppcway.rules.catalogue import CATALOGUE
+
+    spec = next(r for r in CATALOGUE.values() if r.kind == kind)
+    found = Recommendation(
+        rule=spec,
+        customer_id="1",
+        target_kind="search_term",
+        target_id=label,
+        target_label=label,
+        reason=f'Nobody who searched "{label}" got in touch.',
+        impact=Impact(
+            money_a_month=money,
+            currency="CAD",
+            confidence=0.8,
+            words=f"Excluding it stops about {money:,.2f} CAD a month.",
+        ),
+        figures=(),
+        undo="Remove the negative keyword.",
+    )
+    return Card(found=found, words=Written(text=found.reason, source=FROM_TEMPLATE))
+
+
+def _letter_with(db: DbSession, cards: list[Card], more: int = 0) -> str:
+    held = account_numbers(db, "1", days=7, currency="CAD", today=TODAY)
+    return weekly_letter(
+        held,
+        to="dana@alphaplumbing.ca",
+        name="Dana Reyes",
+        business="Alpha Plumbing",
+        link="https://app.ppcway.com/home",
+        cards=cards,
+        more_cards=more,
+        now=NOW,
+    ).text
+
+
+def test_what_otto_found_is_in_the_letter(db: DbSession) -> None:
+    campaign(db)
+    day(db, date(2026, 10, 15), cost=120.0, calls=3.0)
+    text = _letter_with(db, [_a_card("boiler repair jobs")])
+    assert "Otto found 1 thing worth doing:" in text
+    assert "boiler repair jobs" in text
+    assert "91.20 CAD a month" in text
+
+
+def test_the_letter_carries_three_and_says_how_many_are_waiting(db: DbSession) -> None:
+    """Ten in an email is a wall. Ten belong in the inbox."""
+    campaign(db)
+    day(db, date(2026, 10, 15), cost=120.0, calls=3.0)
+    cards = [_a_card(f"waste {n}") for n in range(3)]
+    text = _letter_with(db, cards, more=7)
+    assert "Otto found 3 things worth doing:" in text
+    assert "and 7 more waiting in your inbox." in text
+
+
+def test_nothing_found_means_no_otto_section_at_all(db: DbSession) -> None:
+    campaign(db)
+    day(db, date(2026, 10, 15), cost=120.0, calls=3.0)
+    assert "Otto found" not in _letter_with(db, [])
+
+
+def test_a_refused_ad_is_reported_once_not_twice(db: DbSession) -> None:
+    """It is already a "needs you" line. Saying it again reads as miscounting."""
+    campaign(db)
+    day(db, date(2026, 10, 15), cost=120.0, calls=3.0)
+    db.add(
+        MirrorAd(
+            customer_id="1",
+            resource_name="customers/1/adGroupAds/21~41",
+            ad_id="41",
+            ad_group_id="21",
+            campaign_id="11",
+            status="ENABLED",
+            approval="DISAPPROVED",
+            headlines=["24 hour plumber"],
+        )
+    )
+    db.commit()
+
+    without = _letter_with(db, [])
+    assert "24 hour plumber" in without, "the needs list says it when Otto does not"
+
+    with_card = _letter_with(db, [_a_card("24 hour plumber", kind="pause_ad", money=0.0)])
+    assert with_card.count("24 hour plumber") == 1
+    assert "Otto found" in with_card
+    assert "needs you" not in with_card, "the only need was the one Otto now covers"
+
+
+def test_the_letter_still_says_ppcway_changed_nothing(db: DbSession) -> None:
+    """Phase 1 is shown, not applied, and a letter full of findings must not imply otherwise."""
+    campaign(db)
+    day(db, date(2026, 10, 15), cost=120.0, calls=3.0)
+    text = _letter_with(db, [_a_card("boiler repair jobs")])
+    assert "has not changed anything in your account" in text

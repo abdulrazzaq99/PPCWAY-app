@@ -25,7 +25,7 @@ the email and the screen can never disagree.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
@@ -41,6 +41,7 @@ from ppcway.config import Settings
 from ppcway.mail.letters import FOOT, _wrap
 from ppcway.mail.models import WeeklyPost
 from ppcway.mail.send import Letter, NotSent, Post, send
+from ppcway.rules.inbox import Card, cards_for
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +56,16 @@ UNTOUCHED = (
 #: The window the post speaks in. A week, because a week is how a small
 #: business already thinks about its trade.
 WEEK = 7
+
+#: How many of Otto's cards go in the letter. An email carrying ten is a wall,
+#: and the inbox is where ten belong; three is what somebody reads standing up.
+IN_THE_LETTER = 3
+
+#: Needs that one of Otto's rules now says better, and which are therefore
+#: dropped from the "needs you" list when the matching card is present. A
+#: letter that reports a refused ad twice -- once as a problem and once as a
+#: recommendation -- reads as though we cannot count.
+SAID_BY_OTTO: dict[str, str] = {"pause_ad": "ad_refused"}
 
 
 def _count(value: float) -> str:
@@ -142,9 +153,17 @@ def weekly_letter(
     name: str = "",
     business: str = "",
     link: str = "",
+    cards: Sequence[Card] = (),
+    more_cards: int = 0,
     now: datetime | None = None,
 ) -> Letter:
-    """One week, as a letter. Plain text and the same words in HTML."""
+    """One week, as a letter. Plain text and the same words in HTML.
+
+    `cards` is what Otto found, best first, already cut to `IN_THE_LETTER`;
+    `more_cards` is how many are waiting in the inbox beyond them. Both default
+    to nothing, so a deployment with no rules running still sends the letter it
+    sent before.
+    """
     at = now or datetime.now(UTC)
     hello = f"Hello {name.split(' ')[0]}," if name else "Hello,"
     opening = f"Here is last week in {business}." if business else "Here is last week."
@@ -160,10 +179,22 @@ def weekly_letter(
         for change in held.activity
         if change.when and change.when.replace(tzinfo=change.when.tzinfo or UTC) >= since
     ]
-    needs = [need for need in held.needs if need.kind != "changed_in_google"]
+    # Anything Otto now says better is said once, by Otto.
+    covered = {
+        SAID_BY_OTTO[card.found.rule.kind] for card in cards if card.found.rule.kind in SAID_BY_OTTO
+    }
+    needs = [
+        need for need in held.needs if need.kind != "changed_in_google" and need.kind not in covered
+    ]
 
     text = [hello, "", opening, ""]
     text += story
+    if cards:
+        word = "thing" if len(cards) == 1 else "things"
+        text += ["", f"Otto found {len(cards)} {word} worth doing:"]
+        text += [f" - {card.words.text} {card.found.impact.words}".rstrip() for card in cards]
+        if more_cards:
+            text += [f"   and {more_cards} more waiting in your inbox."]
     if needs:
         text += ["", f"{'One thing' if len(needs) == 1 else f'{len(needs)} things'} needs you:"]
         text += [f" - {need.label}: {need.what}" for need in needs]
@@ -178,6 +209,17 @@ def weekly_letter(
     text += ["", FOOT]
 
     body = "".join(f"<p>{line}</p>" for line in [hello, opening, *story])
+    if cards:
+        word = "thing" if len(cards) == 1 else "things"
+        body += (
+            f"<p><strong>Otto found {len(cards)} {word} worth doing</strong></p><ul>"
+            + "".join(
+                f"<li>{card.words.text} <em>{card.found.impact.words}</em></li>" for card in cards
+            )
+            + "</ul>"
+        )
+        if more_cards:
+            body += f"<p>And {more_cards} more waiting in your inbox.</p>"
     if needs:
         body += (
             f"<p><strong>{'One thing' if len(needs) == 1 else f'{len(needs)} things'} "
@@ -275,6 +317,19 @@ def candidates(
             # Nothing mirrored yet. No row is written, so next week tries again.
             yield Candidate(connection, person, skip="we have not read that account yet")
             continue
+        # What Otto has for them, computed from the mirror the same way the
+        # inbox does it. No model is called: the letter goes out on the
+        # computed sentences, which are the ones that would ship anyway when
+        # the model is unreachable.
+        found = cards_for(
+            session,
+            connection.customer_id,
+            currency=connection.currency,
+            target_cost_per_lead=held.cost_per_lead,
+            today=at.date(),
+            now=at,
+            protected=tuple(w for w in (connection.customer_name,) if w and len(w) > 2),
+        )
         yield Candidate(
             connection,
             person,
@@ -284,6 +339,8 @@ def candidates(
                 name=person.name,
                 business=connection.customer_name,
                 link=f"{settings.app_base_url.rstrip('/')}/home",
+                cards=found.cards[:IN_THE_LETTER],
+                more_cards=max(0, len(found.cards) - IN_THE_LETTER),
                 now=at,
             ),
             existing=existing,
