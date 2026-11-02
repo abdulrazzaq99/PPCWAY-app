@@ -286,7 +286,7 @@ def test_risk_only_breaks_ties_and_does_not_reorder_the_list() -> None:
             target_label="x",
             reason="x",
             impact=Impact(money_a_month=money, currency="CAD", confidence=1.0, words="x"),
-            evidence=(),
+            figures=(),
             undo="x",
         )
 

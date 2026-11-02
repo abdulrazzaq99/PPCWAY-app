@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Final
 
+from ppcway.metric.figures import Figure
 from ppcway.opt import guardrails
 from ppcway.rules.catalogue import Risk, Route, Rule
 
@@ -88,8 +89,11 @@ class Recommendation:
     #: may rewrite it for tone, and then every number in it is checked.
     reason: str
     impact: Impact
-    #: Figure ids with as-of times, which is what the brief calls evidence.
-    evidence: tuple[Mapping[str, Any], ...]
+    #: The computed figures this rests on. The brief's "evidence" is these
+    #: cited, and the number check matches a model's sentence against these,
+    #: so they are kept whole rather than reduced to citations here and
+    #: reconstructed later from a shape that has already lost the units.
+    figures: tuple[Figure, ...]
     #: How this gets put back, in words. "Not reversible" is also an answer.
     undo: str
     #: The state before and after, kept whole so an undo months later can build
@@ -106,6 +110,11 @@ class Recommendation:
     change_pct: float | None = None
     pauses: int = 0
     resources: tuple[str, ...] = ()
+
+    @property
+    def evidence(self) -> tuple[Mapping[str, Any], ...]:
+        """Figure ids with as-of times, which is what the brief calls evidence."""
+        return tuple(figure.cite() for figure in self.figures)
 
     @property
     def risk(self) -> Risk:

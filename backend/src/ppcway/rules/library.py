@@ -147,35 +147,32 @@ def wasteful_terms(
 
         as_of = _aware(row.as_of)
         scope = Scope(kind="search_term", id=row.term_hash[:12])
-        evidence = tuple(
-            figure.cite()
-            for figure in (
-                Figure(
-                    name="search_term_spend",
-                    value=spend,
-                    unit=Unit.MONEY,
-                    currency=currency,
-                    period=window,
-                    scope=scope,
-                    as_of=as_of,
-                ),
-                Figure(
-                    name="search_term_clicks",
-                    value=float(clicks),
-                    unit=Unit.COUNT,
-                    period=window,
-                    scope=scope,
-                    as_of=as_of,
-                ),
-                Figure(
-                    name="search_term_leads",
-                    value=0.0,
-                    unit=Unit.COUNT,
-                    period=window,
-                    scope=scope,
-                    as_of=as_of,
-                ),
-            )
+        figures = (
+            Figure(
+                name="search_term_spend",
+                value=spend,
+                unit=Unit.MONEY,
+                currency=currency,
+                period=window,
+                scope=scope,
+                as_of=as_of,
+            ),
+            Figure(
+                name="search_term_clicks",
+                value=float(clicks),
+                unit=Unit.COUNT,
+                period=window,
+                scope=scope,
+                as_of=as_of,
+            ),
+            Figure(
+                name="search_term_leads",
+                value=0.0,
+                unit=Unit.COUNT,
+                period=window,
+                scope=scope,
+                as_of=as_of,
+            ),
         )
         a_month = round(spend * (MONTH / window.days), 2)
         found.append(
@@ -201,7 +198,7 @@ def wasteful_terms(
                         f"searches rather than disappear."
                     ),
                 ),
-                evidence=evidence,
+                figures=figures,
                 undo=(
                     "Remove the negative keyword and this search can match your ads "
                     "again from that moment. The clicks you did not pay for in between "
@@ -292,7 +289,7 @@ def disapproved_ads(
                     ),
                     blocking=alone,
                 ),
-                evidence=(
+                figures=(
                     Figure(
                         name="ad_approval",
                         value=0.0,
@@ -301,7 +298,7 @@ def disapproved_ads(
                         scope=Scope(kind="ad", id=ad.ad_id),
                         as_of=as_of,
                         notes={"approval": ad.approval, "status": ad.status},
-                    ).cite(),
+                    ),
                 ),
                 undo=(
                     "Turn the ad back on. It stays refused until its wording is"

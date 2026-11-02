@@ -1,0 +1,260 @@
+"""`GET /v1/otto/inbox`, through the interface a merchant's browser uses.
+
+The endpoint is where phase 1's promise is kept or broken: shown, not applied.
+So these check the whole path -- signed in, connected, cards with everything on
+them -- and that nothing was written to Google or to the log on the way.
+"""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
+
+import pytest
+import sqlalchemy as sa
+from cryptography.fernet import Fernet
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from pydantic import SecretStr
+from sqlalchemy.orm import Session, sessionmaker
+
+from ppcway.ads import models as ads_models
+from ppcway.ads.mirror import (
+    MICRO,
+    CampaignDay,
+    MirrorAd,
+    MirrorCampaign,
+    SearchTermDay,
+    SyncRun,
+    term_key,
+)
+from ppcway.api.app import create_app
+from ppcway.auth import google
+from ppcway.auth.models import UserAccount
+from ppcway.config import Settings
+from ppcway.db.base import Base
+from ppcway.db.session import get_session
+from ppcway.opt.models import OptimizationAction
+from ppcway.org.places import home_for
+
+KEY = Fernet.generate_key()
+CUSTOMER = "2580586343"
+TODAY = datetime.now(UTC).date()
+
+
+@pytest.fixture
+def app_and_db(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[FastAPI, sessionmaker[Session]]]:
+    engine = sa.create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=sa.pool.StaticPool
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False, future=True)
+
+    monkeypatch.setattr(
+        google.id_token,  # type: ignore[attr-defined]
+        "verify_oauth2_token",
+        lambda credential, *a, **k: {
+            "sub": "google-dana",
+            "email": "dana@alphaplumbing.ca",
+            "email_verified": True,
+            "name": "Dana",
+        },
+    )
+    settings = Settings(
+        google_signin_client_id="test-client",
+        google_oauth_client_id="test-client",
+        google_oauth_client_secret=SecretStr("test-secret"),
+        google_ads_developer_token=SecretStr("test-token"),
+        google_oauth_token_key=SecretStr(KEY.decode()),
+    )
+    app = create_app(settings)
+
+    def one_session() -> Iterator[Session]:
+        session = factory()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_session] = one_session
+    yield app, factory
+    Base.metadata.drop_all(engine)
+
+
+def connected(client: TestClient, factory: sessionmaker[Session]) -> str:
+    token = client.post("/v1/auth/google", json={"credential": "d" * 40}).json()["token"]
+    with factory() as session:
+        dana = session.scalars(sa.select(UserAccount)).one()
+        session.add(
+            ads_models.AdsConnection(
+                account_id=dana.id,
+                organization_id=home_for(session, dana).id,
+                ciphertext=Fernet(KEY).encrypt(b"a-permission").decode(),
+                customer_id=CUSTOMER,
+                customer_name="Alpha Plumbing",
+                currency="CAD",
+            )
+        )
+        session.commit()
+    return str(token)
+
+
+def mirror(factory: sessionmaker[Session], *, term: str = "boiler repair jobs") -> None:
+    """A read that went fine, a month of leads, and one wasteful search."""
+    now = datetime.now(UTC)
+    with factory() as session:
+        session.add(
+            MirrorCampaign(
+                id=uuid.uuid4(),
+                customer_id=CUSTOMER,
+                resource_name=f"customers/{CUSTOMER}/campaigns/11",
+                campaign_id="11",
+                name="Emergency",
+                status="ENABLED",
+                channel="SEARCH",
+                budget_micros=round(30.0 * MICRO),
+                seen_at=now - timedelta(hours=2),
+            )
+        )
+        session.add(
+            SyncRun(
+                id=uuid.uuid4(),
+                customer_id=CUSTOMER,
+                kind="today",
+                status="done",
+                started_at=now - timedelta(hours=3),
+                finished_at=now - timedelta(hours=2),
+            )
+        )
+        # Enough leads and spend that the account has its own cost per lead,
+        # which is what the endpoint uses as the target to measure waste.
+        for back in range(1, 29):
+            session.add(
+                CampaignDay(
+                    id=uuid.uuid4(),
+                    customer_id=CUSTOMER,
+                    campaign_id="11",
+                    day=TODAY - timedelta(days=back),
+                    impressions=400,
+                    clicks=20,
+                    cost_micros=round(30.0 * MICRO),
+                    conversions=1.0,
+                    # `leads` is calls plus forms, not `conversions`, so an
+                    # account whose conversions are not split into those
+                    # categories has no cost per lead at all. Set here because
+                    # this test is about an account that does.
+                    calls=1.0,
+                    refreshed_at=now - timedelta(hours=2),
+                )
+            )
+        session.add(
+            SearchTermDay(
+                id=uuid.uuid4(),
+                customer_id=CUSTOMER,
+                campaign_id="11",
+                ad_group_id="21",
+                day=TODAY - timedelta(days=3),
+                term=term,
+                term_hash=term_key(term),
+                status="NONE",
+                clicks=140,
+                cost_micros=round(240.0 * MICRO),
+                conversions=0.0,
+                refreshed_at=now - timedelta(hours=2),
+            )
+        )
+        session.commit()
+
+
+def test_signing_out_is_refused(app_and_db: tuple[FastAPI, sessionmaker[Session]]) -> None:
+    app, _ = app_and_db
+    with TestClient(app) as client:
+        assert client.get("/v1/otto/inbox").status_code in (401, 422)
+
+
+def test_without_a_connection_it_says_to_connect(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    app, _factory = app_and_db
+    with TestClient(app) as client:
+        token = client.post("/v1/auth/google", json={"credential": "d" * 40}).json()["token"]
+        said = client.get("/v1/otto/inbox", headers={"x-session-token": token}).json()
+    assert said["connected"] is False
+    assert said["cards"] == []
+    assert "Connect your Google Ads account" in said["nothing_because"]
+
+
+def test_a_card_comes_back_with_everything_the_brief_asks_for(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        mirror(factory)
+        reply = client.get("/v1/otto/inbox", headers={"x-session-token": token})
+    assert reply.status_code == 200, reply.text
+    said = reply.json()
+    assert said["connected"] is True
+    assert said["target_cost_per_lead"] > 0
+    assert len(said["cards"]) == 1
+
+    card = said["cards"][0]
+    assert card["rule_id"] == "R1"
+    assert card["reason"] and "boiler repair jobs" in card["reason"]
+    assert card["evidence"] and all(cite["id"] and cite["as_of"] for cite in card["evidence"])
+    assert card["impact"]["money_a_month"] > 0
+    assert card["risk"] == "low" and card["route"] == "owner"
+    assert card["undo"]
+    assert card["reason_is_ours"] is True, "no model was called on this path"
+
+
+def test_the_business_own_name_is_never_proposed_for_exclusion(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    """The mistake that would cost the most: a plumber stops showing for their own name."""
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        mirror(factory, term="alpha plumbing emergency")
+        said = client.get("/v1/otto/inbox", headers={"x-session-token": token}).json()
+    assert said["cards"] == []
+
+
+def test_the_inbox_says_which_rules_are_still_missing(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        mirror(factory)
+        said = client.get("/v1/otto/inbox", headers={"x-session-token": token}).json()
+    assert said["ran"] == ["R1", "R4"]
+    assert said["not_specified"] == ["R2", "R3", "R5"]
+
+
+def test_reading_the_inbox_changes_nothing(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    """Phase 1 is shown, not applied. Opening it must not be a decision."""
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        mirror(factory)
+        client.get("/v1/otto/inbox", headers={"x-session-token": token})
+        client.get("/v1/otto/inbox", headers={"x-session-token": token})
+    with factory() as session:
+        assert session.scalars(sa.select(OptimizationAction)).all() == []
+        assert session.scalars(sa.select(MirrorAd)).all() == []
+
+
+def test_a_colleague_sees_the_same_inbox(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    """The connection belongs to the business, so the cards do too."""
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        mirror(factory)
+        mine = client.get("/v1/otto/inbox", headers={"x-session-token": token}).json()
+    assert mine["connected"] is True and len(mine["cards"]) == 1

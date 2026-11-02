@@ -115,6 +115,7 @@ from ppcway.org.places import (
     remove,
     role_of,
 )
+from ppcway.rules.inbox import cards_for
 from ppcway.share.links import make_link, open_link, revoke
 from ppcway.share.models import ShareLink
 
@@ -1202,6 +1203,69 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             connected=True,
             customer_id=connection.customer_id,
             customer_name=connection.customer_name,
+        )
+
+    @app.get("/v1/otto/inbox")
+    def otto_inbox(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """The cards Otto has for this business, best first.
+
+        Phase 1 of the client's brief: shown, not applied. Nothing here writes
+        to Google and nothing writes the action log -- a card is a thing to
+        read, and the decision it invites has not been made.
+
+        No model is called on this path. The rules produce a correct sentence
+        for every card, and the better wording is written by the nightly job
+        and stored, so opening the inbox never waits on a model. See
+        `rules.inbox` for why that is a choice rather than a shortcut.
+        """
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "view")
+        connection = _connection(session, account)
+        if connection is None or not connection.customer_id:
+            return {
+                "connected": False,
+                "cards": [],
+                "nothing_because": ("Connect your Google Ads account and Otto can start looking."),
+            }
+
+        # The account's own cost per lead, as the target to measure waste
+        # against. The client owes us real targets per plan; until they arrive
+        # this errs in the safe direction, because a lower target means more
+        # waste is needed before anything is proposed, not less.
+        #
+        # It can legitimately be zero. `Held.leads` is calls plus forms, which
+        # is the split Google reports by conversion category, so an account
+        # whose conversion tracking does not distinguish them has no cost per
+        # lead however many conversions it records. A zero target disables R1's
+        # spend threshold and leaves only its hundred-click one, which is again
+        # the safe direction: fewer proposals, not weaker ones.
+        held = account_numbers(session, connection.customer_id, currency=connection.currency)
+        said = cards_for(
+            session,
+            connection.customer_id,
+            currency=connection.currency,
+            target_cost_per_lead=held.cost_per_lead,
+            protected=_brand_words(place, connection),
+        )
+        answer = said.as_dict()
+        answer["connected"] = True
+        answer["target_cost_per_lead"] = held.cost_per_lead
+        return answer
+
+    def _brand_words(place: Organization, connection: AdsConnection) -> tuple[str, ...]:
+        """Brand terms never to propose excluding.
+
+        The client is supplying a real list per industry. Until then the
+        business's own two names are protected, which covers the mistake that
+        would cost the most: proposing that a plumber stop appearing for their
+        own company name.
+        """
+        return tuple(
+            word for word in (place.name, connection.customer_name) if word and len(word) > 2
         )
 
     @app.get("/v1/ads/business")
