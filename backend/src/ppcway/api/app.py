@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
@@ -1388,6 +1388,97 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except answering.NotAnswerable as exc:
             raise HTTPException(409, str(exc)) from None
         return _answer(said, str(action_id))
+
+    @app.get("/v1/otto/auto-apply")
+    def auto_apply_standing(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """The consent screen's own content, and where this business stands.
+
+        The words come from the server rather than the page, so what somebody
+        was shown and what was recorded cannot drift apart -- and so that
+        changing the words means changing the version, which is what makes an
+        old consent answerable.
+        """
+        from ppcway.opt import consent as consenting
+
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "view")
+        held = consenting.current(session, place.id)
+        mine = role_of(session, account, place)
+        return {
+            "on": held is not None,
+            "wording": consenting.WORDING,
+            "words": consenting.THE_WORDS,
+            "change_types": list(consenting.eligible_kinds()),
+            "may_turn_on": mine is Role.OWNER,
+            "may_turn_off": mine in {Role.OWNER, Role.ADMIN},
+            # Off in production until the client confirms the Terms and the
+            # Google filings are updated. Reported so the screen can say the
+            # feature is not live yet rather than offering a switch that does
+            # nothing.
+            "live": settings.otto_auto_apply,
+            "agreed_at": held.given_at.isoformat() if held else None,
+            "agreed_wording": held.wording if held else "",
+        }
+
+    @app.post("/v1/otto/auto-apply", status_code=201)
+    def auto_apply_agree(
+        request: Request,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Record that the owner has agreed, with what they agreed to."""
+        from ppcway.opt import consent as consenting
+        from ppcway.opt.context import limits_for
+
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        try:
+            held = consenting.give(
+                session,
+                organization_id=place.id,
+                account_id=account.id,
+                role=role_of(session, account, place),
+                ip=request.client.host if request.client else "",
+                limits=limits_for(session, place.id),
+            )
+        except consenting.NotTheirs as exc:
+            raise HTTPException(403, str(exc)) from None
+        return {
+            "on": True,
+            "agreed_at": held.given_at.isoformat(),
+            "wording": held.wording,
+            "change_types": (held.change_types or {}).get("kinds", []),
+            "live": settings.otto_auto_apply,
+        }
+
+    @app.delete("/v1/otto/auto-apply", status_code=200)
+    def auto_apply_stop(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Turn it off. At once, and the record of having agreed stays."""
+        from ppcway.opt import consent as consenting
+
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        try:
+            gone = consenting.withdraw(
+                session,
+                organization_id=place.id,
+                account_id=account.id,
+                role=role_of(session, account, place),
+            )
+        except consenting.NotTheirs as exc:
+            raise HTTPException(403, str(exc)) from None
+        return {
+            "on": False,
+            "was_on": gone is not None,
+            "stopped_at": gone.withdrawn_at.isoformat() if gone and gone.withdrawn_at else None,
+        }
 
     @app.get("/v1/ads/business")
     def ads_business(

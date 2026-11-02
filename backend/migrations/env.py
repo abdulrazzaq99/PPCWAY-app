@@ -21,6 +21,7 @@ import ppcway.gateway.quota
 import ppcway.gateway.switch
 import ppcway.mail.models
 import ppcway.model.log
+import ppcway.opt.consent
 import ppcway.opt.models
 import ppcway.org.models
 import ppcway.share.models  # noqa: F401

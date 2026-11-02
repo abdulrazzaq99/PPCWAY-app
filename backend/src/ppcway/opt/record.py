@@ -24,6 +24,7 @@ from typing import Any
 from sqlalchemy import CursorResult, select, update
 from sqlalchemy.orm import Session
 
+from ppcway.opt.consent import may_apply_unasked
 from ppcway.opt.guardrails import Judgement, Verdict
 from ppcway.opt.models import (
     APPROVAL_EXPIRES_DAYS,
@@ -41,21 +42,21 @@ log = logging.getLogger(__name__)
 CAN_EXPIRE: frozenset[str] = frozenset({Status.PROPOSED.value, Status.AWAITING_APPROVAL.value})
 
 
-def _status_for(said: Judgement, autonomy: str, auto_eligible: bool) -> str:
+def _status_for(said: Judgement, unasked: bool) -> str:
     """What state a judged proposal starts in.
 
-    Three inputs, because three things have to agree before a change may go
-    without being asked about: the guardrails have to allow it, the merchant
-    has to have chosen full auto, and the client has to have named this change
-    type as one that may run unattended. Any one of them missing means a person
-    is asked -- which is approve-first, and is the default for a reason.
+    `unasked` is the answer to all five questions at once -- see
+    `ppcway.opt.consent.may_apply_unasked`, which is where they live, because
+    four of the five are about a business's own standing rather than about this
+    proposal. Any one of them no means a person is asked, which is
+    approve-first and is the default for a reason.
     """
     verdict = said.ruling.verdict
     if verdict is Verdict.REJECTED:
         return Status.REJECTED.value
     if verdict is Verdict.REQUIRES_APPROVAL:
         return Status.AWAITING_APPROVAL.value
-    if autonomy == Autonomy.FULL_AUTO.value and auto_eligible:
+    if unasked:
         return Status.APPROVED.value
     return Status.AWAITING_APPROVAL.value
 
@@ -70,6 +71,7 @@ def write_proposal(
     autonomy: str = Autonomy.APPROVE_FIRST.value,
     proposed_by: str = ProposedBy.RULE.value,
     job_run: str = "",
+    auto_apply_flag: bool = False,
     now: datetime | None = None,
 ) -> OptimizationAction:
     """One row, written before anything is applied. Returns it, uncommitted.
@@ -79,7 +81,17 @@ def write_proposal(
     proposals or none, rather than a half-offered inbox.
     """
     at = now or datetime.now(UTC)
-    status = _status_for(said, autonomy, found.rule.auto_eligible)
+    # Whether this may go without being asked about: the deployment's flag,
+    # the account's autonomy, the change type's eligibility, a live consent
+    # record, and that record covering this type. All five, every time.
+    unasked = may_apply_unasked(
+        session,
+        organization_id=organization_id,
+        kind=found.rule.kind,
+        autonomy=autonomy,
+        flag_on=auto_apply_flag,
+    )
+    status = _status_for(said, unasked.may)
     row = OptimizationAction(
         organization_id=organization_id,
         customer_id=found.customer_id,
@@ -111,8 +123,17 @@ def write_proposal(
         risk=found.risk.value,
         proposed_by=proposed_by,
         status=status,
-        decided_by=said.ruling.check,
-        decided_because=said.ruling.because,
+        # Where the guardrails were happy but a person is still being asked,
+        # the gate is the operative reason and the guardrails' "within every
+        # limit set for this account" is good news rather than an explanation
+        # of why anybody is waiting. So the gate wins when it is the thing
+        # holding the change, and the guardrail wins when it is.
+        decided_by=said.ruling.check or (unasked.stopped_by if not unasked.may else ""),
+        decided_because=(
+            said.ruling.because
+            if said.ruling.verdict is not Verdict.APPROVED
+            else (unasked.because if not unasked.may else said.ruling.because)
+        ),
         reversible=found.reversible,
         # Only an offer has a deadline. Writing it at insert rather than
         # working it out on read means a row that was allowed to expire says

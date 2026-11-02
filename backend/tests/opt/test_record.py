@@ -16,9 +16,10 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import Session, sessionmaker
 
-from ppcway.auth.models import UserAccount  # noqa: F401 - a foreign key target
+from ppcway.auth.models import UserAccount
 from ppcway.db.base import Base
 from ppcway.metric.figures import Figure, Period, Scope, Unit
+from ppcway.opt.consent import give
 from ppcway.opt.guardrails import Judgement, Ruling, Verdict
 from ppcway.opt.models import (
     APPROVAL_EXPIRES_DAYS,
@@ -29,7 +30,7 @@ from ppcway.opt.models import (
     Status,
 )
 from ppcway.opt.record import expire_old, waiting_for, write_proposal
-from ppcway.org.models import Organization
+from ppcway.org.models import Organization, Role
 from ppcway.rules.catalogue import CATALOGUE
 from ppcway.rules.recommend import Impact, Recommendation
 
@@ -149,12 +150,77 @@ def test_approve_first_is_the_default_even_when_the_guardrails_allow_it(
     assert row.status == Status.AWAITING_APPROVAL.value
 
 
-def test_three_things_must_agree_before_a_change_goes_unasked(
+def test_five_things_must_agree_before_a_change_goes_unasked(
     db: sessionmaker[Session],
 ) -> None:
-    """The guardrails, the merchant's chosen level, and the change type."""
-    row = _write(db, allowed(), autonomy=Autonomy.FULL_AUTO.value)
-    assert row.status == Status.APPROVED.value, "R1 is an auto-eligible type"
+    """The guardrails, the flag, the autonomy level, the change type, and a
+    live consent record that covers it. All five, and this is all five."""
+    with db() as session:
+        place = a_business(session)
+        person = UserAccount(email="dana@alphaplumbing.ca", name="Dana")
+        session.add(person)
+        session.flush()
+        give(
+            session,
+            organization_id=place,
+            account_id=person.id,
+            role=Role.OWNER,
+            ip="203.0.113.7",
+        )
+        row = write_proposal(
+            session,
+            a_card(),
+            allowed(),
+            organization_id=place,
+            guardrail_config_version=3,
+            autonomy=Autonomy.FULL_AUTO.value,
+            auto_apply_flag=True,
+            now=NOW,
+        )
+        session.commit()
+    assert row.status == Status.APPROVED.value
+
+
+@pytest.mark.parametrize(
+    ("missing", "says"),
+    [
+        ("flag", "not making changes on its own yet"),
+        ("autonomy", "without being asked first"),
+        ("consent", "Nobody has agreed"),
+    ],
+)
+def test_any_one_of_the_five_missing_means_a_person_is_asked(
+    db: sessionmaker[Session], missing: str, says: str
+) -> None:
+    """And the row says which one, because otherwise the most common status in
+    the log would carry no explanation at all."""
+    with db() as session:
+        place = a_business(session)
+        person = UserAccount(email="dana@alphaplumbing.ca", name="Dana")
+        session.add(person)
+        session.flush()
+        if missing != "consent":
+            give(
+                session,
+                organization_id=place,
+                account_id=person.id,
+                role=Role.OWNER,
+            )
+        row = write_proposal(
+            session,
+            a_card(),
+            allowed(),
+            organization_id=place,
+            guardrail_config_version=3,
+            autonomy=(
+                Autonomy.APPROVE_FIRST.value if missing == "autonomy" else Autonomy.FULL_AUTO.value
+            ),
+            auto_apply_flag=missing != "flag",
+            now=NOW,
+        )
+        session.commit()
+    assert row.status == Status.AWAITING_APPROVAL.value
+    assert says in row.decided_because
 
 
 def test_a_type_the_client_has_not_named_still_waits_for_a_person(
@@ -163,6 +229,10 @@ def test_a_type_the_client_has_not_named_still_waits_for_a_person(
     """Full auto is not a blanket permission: it covers the named types only."""
     with db() as session:
         place = a_business(session)
+        person = UserAccount(email="dana@alphaplumbing.ca", name="Dana")
+        session.add(person)
+        session.flush()
+        give(session, organization_id=place, account_id=person.id, role=Role.OWNER)
         # A rule that is not auto-eligible, with everything else identical.
         card = replace(a_card(), rule=CATALOGUE["R2"])
         row = write_proposal(
@@ -172,10 +242,12 @@ def test_a_type_the_client_has_not_named_still_waits_for_a_person(
             organization_id=place,
             guardrail_config_version=3,
             autonomy=Autonomy.FULL_AUTO.value,
+            auto_apply_flag=True,
             now=NOW,
         )
         session.commit()
     assert row.status == Status.AWAITING_APPROVAL.value
+    assert "always needs a person" in row.decided_because
 
 
 def test_an_offer_is_given_seven_days(db: sessionmaker[Session]) -> None:

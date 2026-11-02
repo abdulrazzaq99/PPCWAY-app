@@ -119,6 +119,17 @@ class Settings(BaseSettings):
     #: "projects/x/locations/us/templates/y". Chat refuses without it.
     model_armor_template: str = ""
 
+    #: Whether PPCWay may write to Google Ads at all. Off, and it stays off:
+    #: there is no Google Standard access yet, and the client's brief puts a
+    #: gate on the write path closing on 6 December.
+    ads_writes_enabled: bool = False
+    #: Whether a business that has agreed may have changes applied without
+    #: being asked each time. The brief's `otto_auto_apply`, which "stays off
+    #: in production until we confirm". Off here means off everywhere: the
+    #: consent record, the autonomy level and the eligible-type list are all
+    #: checked as well, and all five have to agree.
+    otto_auto_apply: bool = False
+
     @field_validator("environment", mode="before")
     @classmethod
     def _lowercase(cls, value: object) -> object:

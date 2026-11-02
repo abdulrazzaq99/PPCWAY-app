@@ -35,6 +35,7 @@ from ppcway.auth.models import UserAccount
 from ppcway.config import Settings
 from ppcway.db.base import Base
 from ppcway.db.session import get_session
+from ppcway.opt import consent as _consent  # noqa: F401 - registers its table
 from ppcway.opt.models import OptimizationAction
 from ppcway.org.places import home_for
 
@@ -258,3 +259,76 @@ def test_a_colleague_sees_the_same_inbox(
         mirror(factory)
         mine = client.get("/v1/otto/inbox", headers={"x-session-token": token}).json()
     assert mine["connected"] is True and len(mine["cards"]) == 1
+
+
+# --- the auto-apply consent screen (phase 2.4) ---
+
+
+def test_the_consent_screen_serves_its_own_words(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    """From the server, so what was shown and what was recorded cannot drift."""
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        said = client.get("/v1/otto/auto-apply", headers={"x-session-token": token}).json()
+    assert said["on"] is False
+    assert said["wording"]
+    assert "excluding searches" in said["words"]
+    assert said["change_types"] == ["add_negative_keyword", "pause_ad"]
+    assert said["may_turn_on"] is True, "the first person in a business is its owner"
+    assert said["live"] is False, "the flag ships off"
+
+
+def test_agreeing_is_recorded_and_can_be_turned_off(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        gave = client.post("/v1/otto/auto-apply", headers={"x-session-token": token})
+        assert gave.status_code == 201, gave.text
+        assert gave.json()["on"] is True
+        assert gave.json()["change_types"] == ["add_negative_keyword", "pause_ad"]
+
+        now_on = client.get("/v1/otto/auto-apply", headers={"x-session-token": token}).json()
+        assert now_on["on"] is True
+        assert now_on["agreed_at"] and now_on["agreed_wording"]
+
+        off = client.delete("/v1/otto/auto-apply", headers={"x-session-token": token})
+        assert off.status_code == 200
+        assert off.json() == {
+            "on": False,
+            "was_on": True,
+            "stopped_at": off.json()["stopped_at"],
+        }
+
+        after = client.get("/v1/otto/auto-apply", headers={"x-session-token": token}).json()
+        assert after["on"] is False
+
+
+def test_the_record_keeps_the_ip_and_the_words(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    """What makes it evidence rather than a note."""
+    from ppcway.opt.consent import THE_WORDS, AutoApplyConsent
+
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        client.post("/v1/otto/auto-apply", headers={"x-session-token": token})
+    with factory() as session:
+        row = session.scalars(sa.select(AutoApplyConsent)).one()
+    assert row.ip, "the address it came from"
+    assert row.words == THE_WORDS
+    assert row.limits is not None and "max_change_pct" in row.limits
+
+
+def test_turning_off_something_never_on_says_so(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        off = client.delete("/v1/otto/auto-apply", headers={"x-session-token": token}).json()
+    assert off["on"] is False and off["was_on"] is False
