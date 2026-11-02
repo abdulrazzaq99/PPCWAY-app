@@ -26,13 +26,14 @@ trace breaks the property the log exists to provide.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Any
 
 from sqlalchemy import (
     JSON,
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -74,15 +75,108 @@ class Autonomy(str, Enum):
 
 
 class Status(str, Enum):
-    """The one transition this log allows: pending, then an outcome."""
+    """Where a proposed change has got to. The client's brief names all eight.
 
-    PENDING = "pending"
+    Eight rather than four, and the four extra are not bookkeeping. "Awaiting
+    approval" and "proposed" are different states -- one is waiting on a
+    person, the other on a guardrail -- and a merchant asking why nothing
+    happened is owed the difference. "Expired" is not "rejected": nobody said
+    no, the offer simply went stale, and a report that counted those together
+    would make the merchant look as though they had refused things they never
+    saw. "Reverted" is the state the undo story depends on. "Failed" is Google
+    refusing, which is nobody's decision at all.
+    """
+
+    #: Written, and the guardrails have not ruled yet.
+    PROPOSED = "proposed"
+    #: The guardrails allowed it, and a person has to say yes.
+    AWAITING_APPROVAL = "awaiting_approval"
+    #: Somebody said yes, or the account is in full auto. Not yet sent.
+    APPROVED = "approved"
+    #: Google accepted it.
     APPLIED = "applied"
-    FAILED = "failed"
+    #: A guardrail refused it, or a person did.
     REJECTED = "rejected"
+    #: Nobody answered in time. Not a refusal.
+    EXPIRED = "expired"
+    #: It was applied and then put back.
+    REVERTED = "reverted"
+    #: It was sent and Google would not have it.
+    FAILED = "failed"
+
+    @property
+    def settled(self) -> bool:
+        """Whether nothing more will happen to this row by itself."""
+        return self in TERMINAL
 
 
-#: How long a proposal waits for a yes before it is too old to trust. §8.3.
+#: The states nothing moves out of. `APPLIED` is not among them: an applied
+#: change can still be reverted, which is the property the log exists for.
+TERMINAL: frozenset[Status] = frozenset(
+    {Status.REJECTED, Status.EXPIRED, Status.REVERTED, Status.FAILED}
+)
+
+#: Every move a row may make, as the trigger in the database also enforces it.
+#: Kept here as data so the two can be compared by a test rather than by
+#: somebody reading both and hoping.
+MOVES: dict[Status, frozenset[Status]] = {
+    Status.PROPOSED: frozenset(
+        {Status.AWAITING_APPROVAL, Status.APPROVED, Status.REJECTED, Status.EXPIRED}
+    ),
+    Status.AWAITING_APPROVAL: frozenset({Status.APPROVED, Status.REJECTED, Status.EXPIRED}),
+    Status.APPROVED: frozenset({Status.APPLIED, Status.FAILED, Status.REJECTED}),
+    Status.APPLIED: frozenset({Status.REVERTED}),
+    Status.REJECTED: frozenset(),
+    Status.EXPIRED: frozenset(),
+    Status.REVERTED: frozenset(),
+    Status.FAILED: frozenset(),
+}
+
+
+#: The states that use up a merchant's ten changes a week. A proposal still
+#: waiting counts: it is already a card somebody has been asked to read, and
+#: offering an eleventh while ten sit unanswered is how an inbox is abandoned.
+#: An applied change that was later reverted counts too -- it reached the
+#: account, and the merchant spent a decision on it.
+#:
+#: The three that do not count never happened. A guardrail's refusal, an offer
+#: nobody answered, and a change Google would not have are all things the
+#: merchant did not get; counting them would spend somebody's allowance of real
+#: changes on a run of failures, which is exactly backwards.
+COUNTS_TOWARD_CAP: frozenset[Status] = frozenset(
+    {
+        Status.PROPOSED,
+        Status.AWAITING_APPROVAL,
+        Status.APPROVED,
+        Status.APPLIED,
+        Status.REVERTED,
+    }
+)
+
+
+class ProposedBy(str, Enum):
+    """Who or what put this forward. The brief's four."""
+
+    #: A rule, in the nightly pass.
+    RULE = "rule"
+    #: Otto, from something a merchant asked in the chat.
+    CHAT = "chat"
+    #: A PPCWay expert.
+    EXPERT = "expert"
+    #: The merchant themselves.
+    OWNER = "owner"
+
+
+class Risk(str, Enum):
+    """How much a change could cost if it is wrong. The brief's three levels."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+#: How long a proposal waits for a yes before it is too old to trust. §8.3,
+#: and the brief: "Expires at | Created + 7 days".
 APPROVAL_EXPIRES_DAYS = 7
 
 
@@ -167,8 +261,22 @@ class OptimizationAction(Base):
     #: One sentence the merchant reads, and the payload the gateway sends.
     reason: Mapped[str] = mapped_column(Text, default="")
     payload: Mapped[dict[str, Any] | None] = _json()
-    #: The numbers that justified it, as they stood when it was decided.
+    #: The numbers that justified it, as they stood when it was decided:
+    #: figure ids with their as-of times, which is the brief's own definition
+    #: of evidence.
     evidence: Mapped[dict[str, Any] | None] = _json()
+    #: What we expected it to be worth, in money a month, and in words. Kept
+    #: because "was Otto right?" is a question about what was predicted, and a
+    #: prediction nobody wrote down is not one.
+    expected_impact: Mapped[dict[str, Any] | None] = _json()
+    #: How this gets put back, in the words the merchant was shown. Not derived
+    #: from the kind at undo time: what somebody was promised is what they are
+    #: owed, even if we would phrase it differently now.
+    undo_plan: Mapped[str] = mapped_column(Text, default="")
+    #: The window the figures covered. An action explained months later needs
+    #: to say which days it was looking at.
+    window_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    window_end: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     #: Which rule, which version of it, which limits, which level, which run.
     rule_id: Mapped[str] = mapped_column(String(60), default="")
@@ -180,7 +288,16 @@ class OptimizationAction(Base):
     #: How it is meant to reach the account: applied and reported, one tap from
     #: the owner, or an expert's sign-off first.
     route: Mapped[str] = mapped_column(String(20), default="owner")
-    status: Mapped[str] = mapped_column(String(20), default=Status.PENDING.value, index=True)
+    #: How much this could cost if it is wrong: low, medium or high. Recorded
+    #: rather than looked up from the rule, because a rule's risk can be
+    #: changed and this row has to keep saying what was true when it was
+    #: written.
+    risk: Mapped[str] = mapped_column(String(10), default=Risk.MEDIUM.value, index=True)
+    #: Who put this forward: a rule, the chat, an expert, or the owner. The
+    #: brief's own column, and the one that answers "did a person ask for
+    #: this?" without inferring it from which fields are filled in.
+    proposed_by: Mapped[str] = mapped_column(String(10), default=ProposedBy.RULE.value, index=True)
+    status: Mapped[str] = mapped_column(String(20), default=Status.PROPOSED.value, index=True)
     #: Which guardrail decided, and what it said, in plain words.
     decided_by: Mapped[str] = mapped_column(String(40), default="")
     decided_because: Mapped[str] = mapped_column(Text, default="")
@@ -203,4 +320,21 @@ class OptimizationAction(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
+    #: When this stops being on offer. Created plus seven days, written at
+    #: insert rather than worked out on read, so a row that was allowed to
+    #: expire says when it was due rather than when somebody asked.
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reverted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    @property
+    def expired_by(self) -> bool:
+        """Whether this is past its date. Does not change the status: a row
+        moves between states by somebody writing the move down, never by the
+        clock being read, or two readers would disagree about history."""
+        return self.expires_at is not None and self.status in {
+            Status.PROPOSED.value,
+            Status.AWAITING_APPROVAL.value,
+        }

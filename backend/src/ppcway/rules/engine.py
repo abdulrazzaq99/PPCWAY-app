@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 
 from ppcway.ads.mirror import SyncRun
 from ppcway.metric.figures import FRESH_HOURS
-from ppcway.opt.models import OptimizationAction, Status
+from ppcway.opt.models import COUNTS_TOWARD_CAP, OptimizationAction
 from ppcway.rules import library
 from ppcway.rules.catalogue import Rule, live, waiting
 from ppcway.rules.recommend import Recommendation, in_order
@@ -158,15 +158,17 @@ def _for(
 def _used_this_week(session: Session, customer_id: str, at: datetime) -> int:
     """How many changes this account has had, or is waiting on, in seven days.
 
-    Rejected ones are not counted: they never happened, and counting them would
-    let a run of refusals use up a merchant's allowance of real changes.
+    Which states count is `COUNTS_TOWARD_CAP`, and the reasoning is there: a
+    refusal, an offer nobody answered and a change Google would not have are
+    all things the merchant did not get, so counting them would spend their
+    allowance of real changes on a run of failures.
     """
     since = at - timedelta(days=A_WEEK)
     rows = session.scalars(
         select(OptimizationAction.id).where(
             OptimizationAction.customer_id == customer_id,
             OptimizationAction.created_at >= since,
-            OptimizationAction.status.in_((Status.PENDING.value, Status.APPLIED.value)),
+            OptimizationAction.status.in_([s.value for s in COUNTS_TOWARD_CAP]),
         )
     ).all()
     return len(rows)

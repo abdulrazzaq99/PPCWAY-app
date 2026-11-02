@@ -18,7 +18,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from ppcway.auth.models import UserAccount  # noqa: F401 - the FK target must be mapped
-from ppcway.opt.models import Autonomy, GuardrailConfig, OptimizationAction, Status
+from ppcway.opt.models import MOVES, Autonomy, GuardrailConfig, OptimizationAction, Status
 from ppcway.org.models import Organization
 
 
@@ -38,7 +38,7 @@ def logged(db: sessionmaker[Session]) -> tuple[sessionmaker[Session], uuid.UUID,
             organization_id=place.id,
             customer_id="3330000003",
             kind="decrease_daily_budget",
-            status=Status.PENDING.value,
+            status=Status.PROPOSED.value,
             before={"daily_budget": 40.0},
             after={"daily_budget": 32.0},
             rule_id="R3",
@@ -78,8 +78,13 @@ def test_an_action_cannot_be_deleted(
 def test_the_log_still_records_what_became_of_a_proposal(
     logged: tuple[sessionmaker[Session], uuid.UUID, uuid.UUID],
 ) -> None:
-    """Append-only is not read-only. The one transition the log exists for works."""
+    """Append-only is not read-only. The path the log exists for works."""
     db, _place, action = logged
+    _allows(
+        db,
+        "UPDATE optimization_action SET status = 'approved', approved_at = :t WHERE id = :i",
+        {"t": datetime.now(UTC), "i": action},
+    )
     _allows(
         db,
         "UPDATE optimization_action SET status = 'applied', applied_at = :t WHERE id = :i",
@@ -92,11 +97,68 @@ def test_the_log_still_records_what_became_of_a_proposal(
         assert written.status == Status.APPLIED.value
 
 
+def test_a_change_cannot_be_applied_without_first_being_approved(
+    logged: tuple[sessionmaker[Session], uuid.UUID, uuid.UUID],
+) -> None:
+    """The step that makes approve-first mean something at the database.
+
+    A proposal that could go straight to applied is a proposal an approval
+    could be skipped for, and the brief is explicit that medium and high-risk
+    changes always need a person.
+    """
+    db, _place, action = logged
+    said = _refuses(
+        db, "UPDATE optimization_action SET status = 'applied' WHERE id = :i", {"i": action}
+    )
+    assert "not an allowed transition" in said
+
+
+def test_an_offer_nobody_answered_expires_and_goes_no_further(
+    logged: tuple[sessionmaker[Session], uuid.UUID, uuid.UUID],
+) -> None:
+    """Expired is not rejected, and it is the end of the row."""
+    db, _place, action = logged
+    _allows(
+        db,
+        "UPDATE optimization_action SET status = 'awaiting_approval' WHERE id = :i",
+        {"i": action},
+    )
+    _allows(db, "UPDATE optimization_action SET status = 'expired' WHERE id = :i", {"i": action})
+    said = _refuses(
+        db, "UPDATE optimization_action SET status = 'approved' WHERE id = :i", {"i": action}
+    )
+    assert "not an allowed transition" in said
+
+
+def test_the_database_allows_exactly_what_the_model_says_it_does(
+    db: sessionmaker[Session],
+) -> None:
+    """The trigger's transition list, read back and compared with `MOVES`.
+
+    The migration writes its list out rather than importing the model, because
+    a migration that read current code would change what it does to a database
+    as the code moved on. So the two could drift, and this is what stops them
+    doing it quietly.
+    """
+    with db() as session:
+        body = session.scalar(
+            sa.text("SELECT prosrc FROM pg_proc WHERE proname = 'optimization_action_append_only'")
+        )
+    assert body, "the trigger function is not installed"
+    inside = body[body.index("ARRAY[") + len("ARRAY[") : body.index("]", body.index("ARRAY["))]
+    in_the_database = {step.strip().strip("'") for step in inside.split(",")}
+    in_the_model = {
+        f"{was.value}>{becomes.value}" for was, moves in MOVES.items() for becomes in moves
+    }
+    assert in_the_database == in_the_model
+
+
 @pytest.mark.parametrize(
     ("to", "why"),
     [
-        ("pending", "an outcome cannot be reopened"),
+        ("proposed", "an outcome cannot be reopened"),
         ("rejected", "an applied change was not rejected"),
+        ("approved", "an applied change cannot be approved again"),
         ("made_up", "a status nobody defined"),
     ],
 )
@@ -104,6 +166,7 @@ def test_an_outcome_is_final(
     logged: tuple[sessionmaker[Session], uuid.UUID, uuid.UUID], to: str, why: str
 ) -> None:
     db, _place, action = logged
+    _allows(db, "UPDATE optimization_action SET status = 'approved' WHERE id = :i", {"i": action})
     _allows(db, "UPDATE optimization_action SET status = 'applied' WHERE id = :i", {"i": action})
     said = _refuses(
         db, "UPDATE optimization_action SET status = :s WHERE id = :i", {"s": to, "i": action}
@@ -181,6 +244,7 @@ def test_when_a_change_was_applied_cannot_be_backdated(
     logged: tuple[sessionmaker[Session], uuid.UUID, uuid.UUID],
 ) -> None:
     db, _place, action = logged
+    _allows(db, "UPDATE optimization_action SET status = 'approved' WHERE id = :i", {"i": action})
     _allows(
         db,
         "UPDATE optimization_action SET status = 'applied', applied_at = now() WHERE id = :i",

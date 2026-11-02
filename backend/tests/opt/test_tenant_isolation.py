@@ -70,7 +70,7 @@ def _plant(session: Session, which: Business) -> None:
         organization_id=place.id,
         customer_id=which.customer_id,
         kind="decrease_daily_budget",
-        status=Status.PENDING.value,
+        status=Status.PROPOSED.value,
         before={"daily_budget": 40.0},
         after={"daily_budget": 32.0},
     )
@@ -171,7 +171,7 @@ def test_a_write_cannot_be_addressed_to_another_business(
                 organization_id=beta.org_id,
                 customer_id=beta.customer_id,
                 kind="increase_daily_budget",
-                status=Status.PENDING.value,
+                status=Status.PROPOSED.value,
             )
         )
         with pytest.raises(sa.exc.ProgrammingError, match="row-level security"):

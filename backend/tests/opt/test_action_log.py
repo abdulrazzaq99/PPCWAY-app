@@ -75,7 +75,7 @@ def test_a_row_exists_before_anything_is_sent_to_google(db: sessionmaker[Session
 
         kept = session.scalars(sa.select(OptimizationAction)).one()
 
-    assert kept.status == Status.PENDING.value
+    assert kept.status == Status.PROPOSED.value
     assert kept.applied_at is None
     # The world as it stood, captured before the call rather than after it.
     assert kept.before == {"daily_budget": 40.0}

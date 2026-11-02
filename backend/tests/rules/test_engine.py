@@ -171,7 +171,7 @@ def test_changes_already_made_this_week_use_up_the_allowance(db: DbSession) -> N
 def test_a_proposal_still_waiting_counts_against_the_allowance(db: DbSession) -> None:
     """It is a card the merchant has already been asked to read."""
     a_good_sync(db)
-    already_changed(db, 10, status=Status.PENDING.value)
+    already_changed(db, 10, status=Status.PROPOSED.value)
     wasteful(db, "boiler repair jobs")
     said = _run(db)
     assert said.used_this_week == 10
