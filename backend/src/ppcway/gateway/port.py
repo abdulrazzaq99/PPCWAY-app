@@ -1,0 +1,186 @@
+"""The shape of a mutation, and the one interface that may make one.
+
+Ported from the proof of concept's `gateway/port.py`, which got the hard part
+right and wrote down why.
+
+**The hard part is partial failure.** Google's mutate endpoint, asked for
+`partial_failure`, applies every operation that is valid and reports the rest
+as per-operation errors rather than failing the batch. Blueprint §5.6 names
+discarding that payload as a common and expensive bug: the platform believes it
+created four hundred keywords when it created three hundred and eighty-six, and
+nothing says otherwise until a merchant asks why half their ad group is
+missing.
+
+So `MutateResult` carries one entry per operation, at the same index, and uses
+`None` rather than omission to mark one that did not land. `applied_count` is
+derived from that convention. An implementation that returned a shorter list
+would make `applied_count` lie quietly, which is why the invariant is stated
+here and asserted by a test rather than left to each implementation's care.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import Any, Protocol, runtime_checkable
+
+#: Blueprint §5.4. Google's own ceiling for one mutate request.
+MOST_OPERATIONS = 10_000
+
+#: Google's resource-name URL scheme, by the name this codebase uses for each
+#: resource. A property of the Google Ads API rather than of any one caller,
+#: so it lives on the seam where both sides can reach it.
+_PATHS = {
+    "campaign": "campaigns",
+    "campaign_budget": "campaignBudgets",
+    "ad_group": "adGroups",
+    "ad_group_criterion": "adGroupCriteria",
+    "ad_group_ad": "adGroupAds",
+    "shared_set": "sharedSets",
+    "shared_criterion": "sharedCriteria",
+}
+
+
+def resource_name(customer_id: str, resource_type: str, entity_id: str) -> str:
+    return f"customers/{customer_id}/{_PATHS[resource_type]}/{entity_id}"
+
+
+def entity_id_of(name: str) -> str:
+    """The trailing id of a resource name, for re-addressing something Google
+    told us about by name but which we must now name by id."""
+    return name.rsplit("/", 1)[-1]
+
+
+class Doing(StrEnum):
+    CREATE = "create"
+    UPDATE = "update"
+    REMOVE = "remove"
+
+
+@dataclass(frozen=True, slots=True)
+class Operation:
+    """One change to one thing."""
+
+    resource_type: str
+    doing: Doing
+    #: The thing being changed, for an update or a remove. None for a create.
+    resource_name: str | None = None
+    fields: dict[str, Any] = field(default_factory=dict)
+    #: Which fields of `fields` Google should actually read, for an update.
+    #: Google ignores an update that does not name its own update mask, which
+    #: is a silent no-op rather than an error -- the worst shape of failure.
+    update_mask: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.resource_type not in _PATHS:
+            raise ValueError(
+                f"{self.resource_type!r} is not a resource this gateway knows how to"
+                f" address. Adding one means adding its URL path, because a wrong"
+                f" path is a request Google answers about a different thing."
+            )
+        if self.doing is Doing.CREATE and self.resource_name:
+            raise ValueError("a create names nothing: Google assigns the resource name")
+        if self.doing is not Doing.CREATE and not self.resource_name:
+            raise ValueError(f"a {self.doing.value} has to say what it is changing")
+        if self.doing is Doing.UPDATE and not self.update_mask:
+            raise ValueError(
+                "an update with no update mask is one Google accepts and ignores."
+                " Name the fields it should read, or the change silently does nothing."
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class Batch:
+    """One request to Google: everything in it, for one account."""
+
+    customer_id: str
+    operations: tuple[Operation, ...]
+    #: True runs the operations through Google's validation and applies none.
+    #: The pre-launch check in phase 4 is this, and so is every rehearsal.
+    validate_only: bool = False
+    #: Apply what is valid and report the rest. Always true: the alternative
+    #: is one bad keyword costing a merchant the other three hundred.
+    partial_failure: bool = True
+    #: The action this batch carries out, so a retry of the same action cannot
+    #: apply it twice.
+    idempotency_key: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.operations:
+            raise ValueError("a batch with no operations is a request nobody meant to send")
+        if len(self.operations) > MOST_OPERATIONS:
+            raise ValueError(
+                f"{len(self.operations)} operations is past Google's ceiling of"
+                f" {MOST_OPERATIONS:,} for one request. Split it."
+            )
+        if any(op.resource_type != self.operations[0].resource_type for op in self.operations):
+            # Google's mutate endpoint takes mixed operations, and this gateway
+            # does not send them: a batch of one kind is one thing to retry,
+            # one thing to undo, and one thing to explain.
+            raise ValueError("a batch changes one kind of thing at a time")
+
+    @property
+    def how_many(self) -> int:
+        return len(self.operations)
+
+
+@dataclass(frozen=True, slots=True)
+class Refused:
+    """One operation Google would not have, and why, in its own words."""
+
+    at: int
+    code: str
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class Applied:
+    """What happened to a batch.
+
+    `landed` has exactly one entry per operation in the batch, at the same
+    index: the resource name when that operation landed, and `None` when it
+    did not. An index that is `None` has a matching entry in `refused`.
+
+    Omitting a failed operation instead of marking it `None` would make
+    `how_many_landed` wrong without making it obviously wrong, which is the
+    bug Blueprint §5.6 warns about. A test asserts the alignment.
+    """
+
+    landed: tuple[str | None, ...]
+    refused: tuple[Refused, ...] = ()
+    operations_used: int = 0
+
+    def __post_init__(self) -> None:
+        for one in self.refused:
+            if not 0 <= one.at < len(self.landed):
+                raise ValueError(
+                    f"a refusal at index {one.at} does not line up with"
+                    f" {len(self.landed)} operations: the indexes are how a caller"
+                    f" tells which change failed."
+                )
+            if self.landed[one.at] is not None:
+                raise ValueError(
+                    f"operation {one.at} is both landed and refused. One of the two"
+                    f" is wrong, and a caller cannot tell which."
+                )
+
+    @property
+    def how_many_landed(self) -> int:
+        """Operations that actually landed.
+
+        Callers read this, never `len(operations)`. Believing the second is how
+        a platform reports creating four hundred keywords when it created
+        three hundred and eighty-six.
+        """
+        return sum(1 for name in self.landed if name is not None)
+
+    @property
+    def all_landed(self) -> bool:
+        return not self.refused and all(name is not None for name in self.landed)
+
+
+@runtime_checkable
+class Door(Protocol):
+    """The one door to Google. Only `ppcway.gateway` may hold one of these."""
+
+    def mutate(self, batch: Batch) -> Applied: ...

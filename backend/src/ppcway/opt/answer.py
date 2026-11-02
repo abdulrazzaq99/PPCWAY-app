@@ -137,6 +137,7 @@ def _as_proposal(action: OptimizationAction) -> Proposal:
         # refused at approval rather than applied on stale numbers.
         metrics_as_of=_oldest_figure(action),
         resources=tuple(str(r) for r in (after.get("resources") or ())),
+        is_undo=action.undo_of is not None,
     )
 
 

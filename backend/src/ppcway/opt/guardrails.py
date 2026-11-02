@@ -78,6 +78,9 @@ class Proposal:
     metrics_as_of: datetime | None = None
     #: Google resource names this touches, checked against what is pinned.
     resources: tuple[str, ...] = ()
+    #: True when this change exists to reverse one already made. Four of the
+    #: ten checks do not apply to one, and `SKIP_FOR_UNDO` says which and why.
+    is_undo: bool = False
 
 
 @dataclass(frozen=True)
@@ -123,6 +126,34 @@ class Limits:
     staleness_minutes: int = 180
     hands_off: tuple[str, ...] = ()
 
+
+#: The checks an undo does not have to pass, and the reason for each. Found
+#: while building the write path: the velocity limit counted a change and its
+#: own reversal as two changes to the same thing, so undoing something was
+#: refused as thrashing. A limit that stops a merchant reversing a mistake
+#: traps them in it, which is the opposite of what a guardrail is for.
+#:
+#: * `velocity_limits` -- an undo is not thrashing, it is a return to a state
+#:   that was in force before. The changes it reverses were themselves rate
+#:   limited, so nothing can loop: after two changes to a thing the next one
+#:   is refused, and only the undos remain free.
+#: * `delta_limits` -- the number goes back to a value this account already
+#:   had. Asking an expert to re-approve the reversal of a change they
+#:   approved an hour ago is a worse outcome than the original mistake.
+#: * `data_freshness` -- an undo rests on the `before` that was stored when
+#:   the change was made, not on current metrics. Requiring fresh figures to
+#:   undo would mean a merchant cannot undo while the sync is broken, which is
+#:   exactly when they most want to.
+#: * `autonomy_level` -- a person asked for this one explicitly. Holding it for
+#:   approval would be asking them to approve their own request.
+#:
+#: Everything else still applies, and deliberately: an undo still has to be
+#: for an account this business owns, still may not push past a hard spend
+#: ceiling, still may not pause most of an account, and still needs a working
+#: connection and some quota.
+SKIP_FOR_UNDO: frozenset[str] = frozenset(
+    {"velocity_limits", "delta_limits", "data_freshness", "autonomy_level"}
+)
 
 #: Returned by a check that is happy. Anything else stops the run.
 Passed = None
@@ -357,6 +388,12 @@ def judge(
     held_for_approval: Ruling | None = None
 
     for name, check in ORDER:
+        if proposal.is_undo and name in SKIP_FOR_UNDO:
+            # Recorded as skipped rather than silently omitted: the log keeps
+            # `checks_run`, and a reader comparing two actions needs to see
+            # that a check was passed over rather than wonder if it ran.
+            ran.append(f"{name}:skipped_for_undo")
+            continue
         ran.append(name)
         try:
             said = check(proposal, standing, limits, at)
