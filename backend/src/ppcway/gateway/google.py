@@ -24,7 +24,10 @@ from typing import Any
 
 import httpx
 
-from ppcway.gateway.port import Applied, Batch, Doing, Refused
+from ppcway.gateway.port import Applied, Batch, Doing, GoogleRefused, Refused
+
+# Re-exported: this module raises it, and the seam defines it.
+__all__ = ["API", "GoogleDoor", "GoogleRefused", "Keys"]
 
 log = logging.getLogger(__name__)
 
@@ -45,10 +48,6 @@ _SERVICE = {
     "shared_set": ("sharedSets", "sharedSetOperation"),
     "shared_criterion": ("sharedCriteria", "sharedCriterionOperation"),
 }
-
-
-class GoogleRefused(RuntimeError):
-    """Google would not take the request at all, as opposed to part of it."""
 
 
 @dataclass(frozen=True, slots=True)

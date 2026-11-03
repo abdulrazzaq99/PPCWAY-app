@@ -179,6 +179,17 @@ class Applied:
         return not self.refused and all(name is not None for name in self.landed)
 
 
+class GoogleRefused(RuntimeError):
+    """Google would not take the request at all, as opposed to part of it.
+
+    Defined on the seam rather than in the one implementation that raises it.
+    An error any `Door` may raise is part of what a `Door` is, and a caller
+    that had to import the real door to catch its errors would be a caller
+    reaching past the seam -- which is the thing `tests/gateway/test_one_door.py`
+    exists to stop.
+    """
+
+
 @runtime_checkable
 class Door(Protocol):
     """The one door to Google. Only `ppcway.gateway` may hold one of these."""

@@ -23,7 +23,12 @@ THE_DOOR = "ppcway.gateway.google"
 
 #: And these are the packages allowed to import the gateway at all. Everything
 #: else proposes, records and reports; it does not act.
-MAY_USE_THE_GATEWAY = {"gateway", "api"}
+#:
+#: `builder` is on the list because the client's brief puts it there: *launch
+#: as one batch through the gateway; full rollback on any failure*. It reaches
+#: the seam -- `port`, `switch` -- and not the module that sends, which is the
+#: distinction the first test below actually enforces.
+MAY_USE_THE_GATEWAY = {"gateway", "api", "builder"}
 
 
 def _imports(path: pathlib.Path) -> set[str]:
