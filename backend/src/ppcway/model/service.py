@@ -50,7 +50,7 @@ import time
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Final, Protocol
+from typing import Any, Final, Protocol, runtime_checkable
 
 import anthropic
 
@@ -94,8 +94,14 @@ class Screening:
         return self.verdict == "blocked"
 
 
+@runtime_checkable
 class Screener(Protocol):
-    """Model Armor, or anything shaped like it."""
+    """Model Armor, or anything shaped like it.
+
+    Runtime-checkable for the same reason `gateway.port.Door` is: a seam the
+    deployment plugs a real implementation into is a seam worth being able to
+    assert about.
+    """
 
     def check(self, text: str) -> Screening: ...
 

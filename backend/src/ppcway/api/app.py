@@ -1496,7 +1496,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             project=settings.vertex_project,
             region=settings.vertex_region,
             prompt_version=settings.model_prompt_version,
+            screener=_screener(),
         )
+
+    def _screener() -> Any:
+        """Model Armor, where a template is configured.
+
+        None where it is not, which does not quietly disable screening: chat
+        raises `NotScreened` without a screener, so an unconfigured template
+        stops chat rather than allowing an unscreened message through. The
+        nightly pass and the weekly letter are unaffected, because neither
+        sends a merchant's own words to a model.
+        """
+        from ppcway.model.armor import ModelArmor
+
+        if not settings.model_armor_template:
+            return None
+        try:
+            return ModelArmor(template=settings.model_armor_template)
+        except ValueError:
+            # A malformed template name. Refusing to build it means chat
+            # refuses, which is better than sending to a 404 host.
+            log.exception("MODEL_ARMOR_TEMPLATE is not a template name; chat will refuse")
+            return None
 
     @app.post("/v1/internal/nightly")
     def scheduled_nightly(

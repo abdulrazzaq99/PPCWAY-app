@@ -14,7 +14,19 @@ call to `ast` and invisible here. Nothing does that, and it would be a
 conspicuous way to write it, but a reviewer reading this test as proof should
 know where the proof stops.
 
-**The `anthropic` SDK is the one permitted import that speaks HTTP, and this
+**Two imports here speak HTTP, and this test permits both by name.** The
+`anthropic` SDK, everywhere; and `httpx` in `armor.py` alone, because Model
+Armor is an HTTP API and screening a merchant's words requires calling it. The
+exemption is per-file rather than package-wide, so a second module reaching for
+`httpx` still fails this test and has to argue its own case here.
+
+What makes `armor.py` acceptable is that its URL cannot be aimed: it is built
+from the configured template name, whose region is read out of that same name,
+and `test_the_screener_cannot_be_aimed_at_another_host` below holds that
+property. There is no setting, argument or prompt that can turn it into a
+fetch of something else.
+
+**The `anthropic` SDK is the other permitted import that speaks HTTP, and this
 test does not forbid it.** Pretending otherwise would be the dishonest version
 of this check: the model service obviously makes a network call, or it could
 not call a model. What makes that acceptable, and what "cannot fetch URLs"
@@ -68,6 +80,17 @@ def _imports(path: pathlib.Path) -> set[str]:
     return found
 
 
+#: Per-file exemptions, each with the reason it is allowed. Narrow on purpose:
+#: a module not named here cannot import an HTTP client, so the next one that
+#: wants to has to come and write down why.
+ALLOWED = {
+    ("armor.py", "httpx"): (
+        "Model Armor is an HTTP API and screening requires calling it; the URL is"
+        " derived from the template name and cannot be aimed elsewhere"
+    ),
+}
+
+
 def test_the_model_service_cannot_reach_google_ads_or_fetch_a_url() -> None:
     files = sorted(PACKAGE.glob("*.py"))
     assert files, f"no modules found under {PACKAGE}; this test would pass vacuously"
@@ -76,8 +99,11 @@ def test_the_model_service_cannot_reach_google_ads_or_fetch_a_url() -> None:
     for path in files:
         for name in _imports(path):
             for banned, what in FORBIDDEN.items():
-                if name == banned or name.startswith(f"{banned}."):
-                    broken.append(f"{path.name} imports {name} -- {what}")
+                if name != banned and not name.startswith(f"{banned}."):
+                    continue
+                if (path.name, banned) in ALLOWED:
+                    continue
+                broken.append(f"{path.name} imports {name} -- {what}")
     assert not broken, (
         "the model service must not be able to reach Google Ads credentials or fetch a"
         " URL (client brief, model service): " + "; ".join(broken)
@@ -97,3 +123,32 @@ def test_the_guard_would_notice() -> None:
     assert "ppcway.ads.oauth" in found
     assert "httpx" in found
     assert any(name in FORBIDDEN for name in found)
+
+
+def test_the_screener_cannot_be_aimed_at_another_host() -> None:
+    """What the `httpx` exemption for `armor.py` actually rests on.
+
+    The exemption above is only safe while the URL is derived rather than
+    given. Model Armor's host comes out of the template name's own region and
+    the path out of the template name itself, so the most a misconfiguration
+    can do is point at a different Model Armor template -- never at a URL of
+    somebody's choosing, and never at something a prompt named.
+    """
+    from ppcway.model.armor import ModelArmor
+
+    for template in (
+        "projects/p/locations/us-central1/templates/t",
+        "projects/other/locations/europe-west4/templates/x",
+    ):
+        url = ModelArmor(template=template, token=lambda: "x").url
+        assert url.startswith("https://modelarmor."), url
+        assert url.endswith(":sanitizeUserPrompt"), url
+        assert ".rep.googleapis.com/v1/" in url, url
+
+    # And a name that is not a template name has no host to derive, so it is
+    # refused outright rather than defaulting to one.
+    import pytest
+
+    for bad in ("https://evil.example/v1", "templates/t", ""):
+        with pytest.raises(ValueError):
+            ModelArmor(template=bad, token=lambda: "x")
