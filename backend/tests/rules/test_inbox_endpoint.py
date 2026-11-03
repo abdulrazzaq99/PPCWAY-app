@@ -32,9 +32,11 @@ from ppcway.ads.mirror import (
 from ppcway.api.app import create_app
 from ppcway.auth import google
 from ppcway.auth.models import UserAccount
+from ppcway.chat import transcript as _transcript  # noqa: F401 - registers its table
 from ppcway.config import Settings
 from ppcway.db.base import Base
 from ppcway.db.session import get_session
+from ppcway.model import log as _prompt_log  # noqa: F401 - registers its table
 from ppcway.opt import consent as _consent  # noqa: F401 - registers its table
 from ppcway.opt.models import OptimizationAction
 from ppcway.org.places import home_for
@@ -95,6 +97,12 @@ def connected(client: TestClient, factory: sessionmaker[Session]) -> str:
                 customer_id=CUSTOMER,
                 customer_name="Alpha Plumbing",
                 currency="CAD",
+                # Without this the second guardrail refuses every proposal
+                # with "we cannot tell what state this account is in", which
+                # is correct and is also what production looks like until a
+                # structure sync has read `customer.status`.
+                account_status="ENABLED",
+                status_read_at=datetime.now(UTC) - timedelta(hours=2),
             )
         )
         session.commit()
@@ -332,3 +340,72 @@ def test_turning_off_something_never_on_says_so(
         token = connected(client, factory)
         off = client.delete("/v1/otto/auto-apply", headers={"x-session-token": token}).json()
     assert off["on"] is False and off["was_on"] is False
+
+
+# --- the inbox reads the log, so a card can be answered (the 1.2/2.2 join) ---
+
+
+def test_a_written_proposal_appears_with_an_id_and_can_be_answered(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    """The gap this closed: cards computed on read had no id, so nothing in
+    the inbox could be approved. A card a merchant cannot answer is not an
+    inbox."""
+    from ppcway.opt.nightly import tonight
+
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        mirror(factory)
+
+        # The nightly pass writes what the rules found.
+        night = tonight(factory, Settings(environment="test"))
+        assert night.proposed == 1, night.trouble
+
+        said = client.get("/v1/otto/inbox", headers={"x-session-token": token}).json()
+        card = said["cards"][0]
+        assert card["id"], "a written proposal has an id"
+        assert card["answerable"] is True
+        assert card["status"] == "awaiting_approval"
+        assert card["expires_at"], "and a date it stops being on offer"
+
+        # And the id the screen shows is the one the endpoint answers.
+        answered = client.post(
+            f"/v1/otto/actions/{card['id']}/approve",
+            headers={"x-session-token": token},
+        )
+        assert answered.status_code == 200, answered.text
+        assert answered.json()["status"] in {"approved", "rejected"}
+
+
+def test_what_has_not_been_written_yet_is_shown_without_buttons(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    """An account that connected an hour ago has nothing in the log, and an
+    empty inbox saying "nothing worth changing" would be a lie about an
+    account nobody has looked at."""
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        mirror(factory)
+        said = client.get("/v1/otto/inbox", headers={"x-session-token": token}).json()
+    card = said["cards"][0]
+    assert card["id"] == ""
+    assert card["answerable"] is False
+    assert card["status"] == "found"
+    assert card["reason"], "but it still says what was found and why"
+
+
+def test_a_card_already_written_is_not_also_previewed(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    """Otherwise the same finding appears twice, once answerable and once not."""
+    from ppcway.opt.nightly import tonight
+
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        mirror(factory)
+        tonight(factory, Settings(environment="test"))
+        said = client.get("/v1/otto/inbox", headers={"x-session-token": token}).json()
+    assert len(said["cards"]) == 1

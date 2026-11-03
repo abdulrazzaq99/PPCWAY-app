@@ -1,0 +1,81 @@
+/*
+  What an Otto card looks like once it has crossed the wire. Written out
+  rather than inferred, because the inbox is the product and a field quietly
+  renamed on the server should break the build here rather than render as
+  "undefined" to a merchant.
+*/
+export type Verdict = "real" | "normal" | "thin" | "none";
+
+export type Cite = {
+  id: string;
+  value: number;
+  unit: string;
+  as_of: string;
+  verdict: Verdict;
+};
+
+export type Card = {
+  /** The written row's id, or empty for something found but not yet offered. */
+  id: string;
+  status: string;
+  /** False where there is no row yet, so there is nothing to approve. */
+  answerable: boolean;
+  expires_at?: string | null;
+  rule_id: string;
+  rule_version: number;
+  kind: string;
+  title: string;
+  about: string;
+  target: { kind: string; id: string; label: string };
+  reason: string;
+  /** Where the words came from. A screen may say so; the brief's AI disclosure needs it. */
+  reason_from: string;
+  reason_is_ours: boolean;
+  impact: {
+    money_a_month: number;
+    currency: string;
+    confidence: number;
+    words: string;
+    blocking: boolean;
+  };
+  evidence: Cite[];
+  undo: string;
+  reversible: boolean;
+  risk: "low" | "medium" | "high";
+  route: "owner" | "expert";
+  priority: number;
+  as_of: string | null;
+};
+
+export type Inbox = {
+  connected: boolean;
+  cards: Card[];
+  held_back: number;
+  used_this_week: number;
+  room_left: number;
+  nothing_because: string;
+  /** Which rules ran, and which the client has not specified yet. */
+  ran: string[];
+  not_specified: string[];
+  ran_at: string;
+  target_cost_per_lead?: number;
+};
+
+export type Said = { kind: string; words: string };
+
+export function money(amount: number, currency: string): string {
+  const whole = amount.toLocaleString("en-GB", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  // The code beside the number rather than a bare symbol: a symbol is the
+  // fastest way to show a Canadian merchant euros.
+  return currency ? `${whole} ${currency}` : whole;
+}
+
+export function when(stamp: string | null): string {
+  if (!stamp) return "";
+  const read = new Date(stamp);
+  if (Number.isNaN(read.getTime())) return "";
+  return read.toLocaleDateString("en-GB", { day: "numeric", month: "long" });
+}

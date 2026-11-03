@@ -1,28 +1,31 @@
 import type { Metadata } from "next";
-import { Header, PwPage } from "@/components/pw/shell";
-import { NotBuilt } from "@/components/pw/states";
+import { AskOtto } from "@/components/otto/ask";
+import { Header, HeaderLink, PwPage } from "@/components/pw/shell";
 
 export const metadata: Metadata = { title: "Chat with Otto · PPCway" };
 
+/*
+  Ask Otto. Read-only: it looks things up in your own account and explains
+  them, and it cannot change anything from here. Where it has something worth
+  doing it writes a card to the inbox, which is still your decision.
+*/
 export default function ChatPage() {
   return (
     <>
-      <Header eyebrow="Otto" title="Chat with Otto" />
+      <Header
+        eyebrow="Otto"
+        title="Chat with Otto"
+        right={<HeaderLink href="/otto">See the inbox</HeaderLink>}
+      />
       <PwPage>
-        <NotBuilt
-          title="Ask Otto is not switched on yet"
-          needs="It waits on the same machinery as the Otto inbox: the tools that let it read your account safely, and the change pipeline that means a suggestion can only become a change with your yes."
-        >
-          <p>
-            It will answer plain questions about your own numbers — why calls dropped on Sunday,
-            which service brings the cheapest leads, whether you will go over budget this month —
-            and show the figures it used, so you can check it.
-          </p>
-          <p>
-            It will never change anything on its own. When it suggests something, you get the same
-            card you would get from the inbox, and nothing happens until you approve it.
-          </p>
-        </NotBuilt>
+        <p className="text-pw-ink-700 max-w-[680px] text-[15px] leading-[21px]">
+          Ask about your own numbers — why calls dropped, which service brings the cheapest leads,
+          whether you will go over budget this month. Otto shows the figures it used, so you can
+          check it.
+        </p>
+        <div className="max-w-[760px]">
+          <AskOtto />
+        </div>
       </PwPage>
     </>
   );

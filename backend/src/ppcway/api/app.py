@@ -8,16 +8,18 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterator
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hmac import compare_digest
+from json import dumps as json_dumps
 from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -115,7 +117,7 @@ from ppcway.org.places import (
     remove,
     role_of,
 )
-from ppcway.rules.inbox import cards_for
+from ppcway.rules.offered import inbox_for
 from ppcway.share.links import make_link, open_link, revoke
 from ppcway.share.models import ShareLink
 
@@ -1244,17 +1246,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # spend threshold and leaves only its hundred-click one, which is again
         # the safe direction: fewer proposals, not weaker ones.
         held = account_numbers(session, connection.customer_id, currency=connection.currency)
-        said = cards_for(
+        # The written proposals, which have ids and can therefore be
+        # answered, plus anything the rules find that has no row yet, marked
+        # as a preview. See `rules.offered` for why both.
+        return inbox_for(
             session,
-            connection.customer_id,
+            organization_id=place.id,
+            customer_id=connection.customer_id,
             currency=connection.currency,
             target_cost_per_lead=held.cost_per_lead,
             protected=_brand_words(place, connection),
-        )
-        answer = said.as_dict()
-        answer["connected"] = True
-        answer["target_cost_per_lead"] = held.cost_per_lead
-        return answer
+        ).as_dict()
 
     def _brand_words(place: Organization, connection: AdsConnection) -> tuple[str, ...]:
         """Brand terms never to propose excluding.
@@ -1278,9 +1280,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(409, "No Google Ads account is connected.")
         return place, role_of(session, account, place), connection
 
-    def _answer(
-        said: object, action_id: str
-    ) -> dict[str, Any]:
+    def _answer(said: object, action_id: str) -> dict[str, Any]:
         from ppcway.opt.answer import Answered
 
         assert isinstance(said, Answered)
@@ -1479,6 +1479,166 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "was_on": gone is not None,
             "stopped_at": gone.withdrawn_at.isoformat() if gone and gone.withdrawn_at else None,
         }
+
+    def _models() -> Any:
+        """The model service, or None where this deployment has no Vertex set up.
+
+        None is an ordinary state and not a fault: everything that takes a
+        model takes `None` and falls back to words computed in code. Until the
+        client enables Claude on Vertex AI this is what production looks like,
+        and the cards it produces are correct -- just plainer.
+        """
+        from ppcway.model.service import Models
+
+        if not (settings.vertex_project and settings.model_prompt_version):
+            return None
+        return Models(
+            project=settings.vertex_project,
+            region=settings.vertex_region,
+            prompt_version=settings.model_prompt_version,
+        )
+
+    @app.post("/v1/internal/nightly")
+    def scheduled_nightly(
+        x_sync_key: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Run the rules over every connected account, for the nightly scheduler.
+
+        Writes proposals and applies nothing: the write gate, the kill switches
+        and a consent record all have to agree before anything reaches Google,
+        and none of that is decided here.
+
+        Run in the request rather than in a background task, so the scheduler
+        gets a report it can act on and a failure is visible as a failed job
+        rather than as a 200 with nothing behind it.
+        """
+        from ppcway.opt.nightly import tonight
+
+        expected = settings.sync_key.get_secret_value() if settings.sync_key else ""
+        if not expected or not x_sync_key or not compare_digest(x_sync_key, expected):
+            raise HTTPException(403, "Not for you.")
+        return tonight(session_factory(), settings, models=_models()).as_dict()
+
+    @app.post("/v1/otto/ask")
+    async def otto_ask(
+        body: dict[str, Any],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> StreamingResponse:
+        """Ask Otto one question, streaming what it is doing as it does it.
+
+        Server-sent events, because the brief asks for streamed status lines
+        and a four-second wait with "reading what people searched for" on it is
+        a different experience from four seconds of nothing.
+
+        One event per thing that happens, each a JSON object with a `kind`:
+        `looking` while a lookup runs, `writing` while a proposal is written,
+        `answer` for the words, `trouble` where it could not. The last event is
+        always one of `answer` or `trouble`, so a client knows when to stop.
+        """
+        from ppcway.chat import ask as asking
+        from ppcway.chat import transcript as transcripts
+
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        role = role_of(session, account, place)
+        try:
+            asking.may_chat(role)
+        except asking.NotAllowed as exc:
+            raise HTTPException(403, str(exc)) from None
+
+        question = str(body.get("question", "")).strip()
+        if not question:
+            raise HTTPException(400, "Ask something.")
+
+        connection = _connection(session, account)
+        customer_id = connection.customer_id if connection else ""
+        if not customer_id:
+            raise HTTPException(409, "Connect your Google Ads account and Otto can read it.")
+
+        # Both ceilings, before a single token is spent. The brief's per-plan
+        # cap and PPCWay's own spend ceiling.
+        standing = transcripts.this_month(session, place.id)
+        if not standing.may_ask:
+            raise HTTPException(429, standing.because)
+
+        models = _models()
+        if models is None:
+            raise HTTPException(
+                503,
+                "Otto is not switched on in this deployment yet. The figures are all"
+                " on your dashboard in the meantime.",
+            )
+
+        held = transcripts.open_conversation(
+            session,
+            organization_id=place.id,
+            account_id=account.id,
+            customer_id=customer_id,
+            about=question,
+        )
+
+        def events() -> Iterator[str]:
+            said = ""
+            source = "refused"
+            looked: list[str] = []
+            for step in asking.answer(
+                models,
+                session,
+                question,
+                organization_id=place.id,
+                customer_id=customer_id,
+                currency=connection.currency if connection else "",
+                role=role,
+                connection=connection,
+            ):
+                if step.kind in {"looking", "writing"}:
+                    looked.append(step.words)
+                if step.kind == "answer":
+                    said, source = step.words, "model"
+                if step.kind == "trouble":
+                    said, source = step.words, "refused"
+                yield f"data: {json_dumps({'kind': step.kind, 'words': step.words})}\n\n"
+
+            # Written whatever happened. A transcript of the answers that
+            # worked is not a transcript.
+            with session_factory()() as own:
+                transcripts.record_turn(
+                    own,
+                    conversation_id=held.id,
+                    organization_id=place.id,
+                    question=question,
+                    answer=said,
+                    answer_from=source,
+                    tools_used=looked,
+                    figure_ids=[],
+                    invented=[],
+                )
+            yield 'data: {"kind": "done"}\n\n'
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={
+                # Otherwise a proxy buffers the whole stream and the status
+                # lines all arrive at once with the answer, which is worse than
+                # not having them.
+                "Cache-Control": "no-cache, no-transform",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @app.get("/v1/otto/disclosure")
+    def otto_disclosure() -> dict[str, Any]:
+        """What the panel header and the first message have to say.
+
+        Served rather than written into the page, so the words a merchant is
+        shown and the words PPCWay can prove it showed them are the same
+        string. The brief requires both.
+        """
+        from ppcway.chat.ask import DISCLOSURE
+
+        return {"first_message": DISCLOSURE, "header": "Otto · AI assistant"}
 
     @app.get("/v1/ads/business")
     def ads_business(

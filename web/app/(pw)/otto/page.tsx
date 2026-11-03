@@ -1,26 +1,33 @@
 import type { Metadata } from "next";
-import { Header, PwPage } from "@/components/pw/shell";
-import { NotBuilt } from "@/components/pw/states";
+import { OttoInbox } from "@/components/otto/inbox";
+import { Header, HeaderLink, PwPage } from "@/components/pw/shell";
+import { readInbox } from "@/lib/otto-server";
 
 export const metadata: Metadata = { title: "Otto inbox · PPCway" };
 
-export default function OttoPage() {
+/*
+  The inbox. The client's brief calls it the product, and this is the screen
+  that stopped being a placeholder: one card per change worth making, with the
+  figures behind it, what it should be worth, and how to put it back.
+
+  Read on the server while the page renders rather than fetched on mount, so a
+  merchant opening it sees the cards rather than a blank panel and then a flash.
+*/
+export default async function OttoPage() {
+  const { inbox, trouble } = await readInbox();
   return (
     <>
-      <Header eyebrow="Otto" title="Otto inbox" />
+      <Header
+        eyebrow="Otto"
+        title="Otto inbox"
+        right={<HeaderLink href="/chat">Ask Otto a question</HeaderLink>}
+      />
       <PwPage>
-        <NotBuilt title="Otto is not watching your account yet">
-          <p>
-            When it is, this is where its work arrives: one card per change worth making, with the
-            reason in plain words, the evidence behind it, what it should be worth, and how to put
-            it back if it is not.
-          </p>
-          <p>
-            Small, safe changes — blocking a search that wastes money, pausing an ad Google has
-            disapproved — go through on your standing yes and are reported here. Anything that moves
-            money waits for your tap. Anything large waits for your expert first.
-          </p>
-        </NotBuilt>
+        <p className="text-pw-ink-700 max-w-[680px] text-[15px] leading-[21px]">
+          Each of these is a change worth making, with the figures behind it. Nothing happens until
+          you say so, and anything that does can be put back.
+        </p>
+        <OttoInbox inbox={inbox} trouble={trouble} />
       </PwPage>
     </>
   );
