@@ -69,7 +69,7 @@ def test_an_action_cannot_be_deleted(
     logged: tuple[sessionmaker[Session], uuid.UUID, uuid.UUID],
 ) -> None:
     db, _place, action = logged
-    said = _refuses(db, "DELETE FROM optimization_action WHERE id = :i", {"i": action})
+    said = _refuses(db, "DELETE FROM opt_action WHERE id = :i", {"i": action})
     assert "append-only" in said
     with db() as session:
         assert session.get(OptimizationAction, action) is not None
@@ -82,12 +82,12 @@ def test_the_log_still_records_what_became_of_a_proposal(
     db, _place, action = logged
     _allows(
         db,
-        "UPDATE optimization_action SET status = 'approved', approved_at = :t WHERE id = :i",
+        "UPDATE opt_action SET status = 'approved', approved_at = :t WHERE id = :i",
         {"t": datetime.now(UTC), "i": action},
     )
     _allows(
         db,
-        "UPDATE optimization_action SET status = 'applied', applied_at = :t WHERE id = :i",
+        "UPDATE opt_action SET status = 'applied', applied_at = :t WHERE id = :i",
         {"t": datetime.now(UTC), "i": action},
     )
     with db() as session:
@@ -108,7 +108,7 @@ def test_a_change_cannot_be_applied_without_first_being_approved(
     """
     db, _place, action = logged
     said = _refuses(
-        db, "UPDATE optimization_action SET status = 'applied' WHERE id = :i", {"i": action}
+        db, "UPDATE opt_action SET status = 'applied' WHERE id = :i", {"i": action}
     )
     assert "not an allowed transition" in said
 
@@ -120,12 +120,12 @@ def test_an_offer_nobody_answered_expires_and_goes_no_further(
     db, _place, action = logged
     _allows(
         db,
-        "UPDATE optimization_action SET status = 'awaiting_approval' WHERE id = :i",
+        "UPDATE opt_action SET status = 'awaiting_approval' WHERE id = :i",
         {"i": action},
     )
-    _allows(db, "UPDATE optimization_action SET status = 'expired' WHERE id = :i", {"i": action})
+    _allows(db, "UPDATE opt_action SET status = 'expired' WHERE id = :i", {"i": action})
     said = _refuses(
-        db, "UPDATE optimization_action SET status = 'approved' WHERE id = :i", {"i": action}
+        db, "UPDATE opt_action SET status = 'approved' WHERE id = :i", {"i": action}
     )
     assert "not an allowed transition" in said
 
@@ -142,7 +142,7 @@ def test_the_database_allows_exactly_what_the_model_says_it_does(
     """
     with db() as session:
         body = session.scalar(
-            sa.text("SELECT prosrc FROM pg_proc WHERE proname = 'optimization_action_append_only'")
+            sa.text("SELECT prosrc FROM pg_proc WHERE proname = 'opt_action_append_only'")
         )
     assert body, "the trigger function is not installed"
     inside = body[body.index("ARRAY[") + len("ARRAY[") : body.index("]", body.index("ARRAY["))]
@@ -166,10 +166,10 @@ def test_an_outcome_is_final(
     logged: tuple[sessionmaker[Session], uuid.UUID, uuid.UUID], to: str, why: str
 ) -> None:
     db, _place, action = logged
-    _allows(db, "UPDATE optimization_action SET status = 'approved' WHERE id = :i", {"i": action})
-    _allows(db, "UPDATE optimization_action SET status = 'applied' WHERE id = :i", {"i": action})
+    _allows(db, "UPDATE opt_action SET status = 'approved' WHERE id = :i", {"i": action})
+    _allows(db, "UPDATE opt_action SET status = 'applied' WHERE id = :i", {"i": action})
     said = _refuses(
-        db, "UPDATE optimization_action SET status = :s WHERE id = :i", {"s": to, "i": action}
+        db, "UPDATE opt_action SET status = :s WHERE id = :i", {"s": to, "i": action}
     )
     assert "not an allowed transition" in said, why
 
@@ -199,10 +199,10 @@ def test_the_evidence_for_an_action_cannot_be_changed(
     column, value = column_and_value
     said = _refuses(
         db,
-        f"UPDATE optimization_action SET {column} = {value} WHERE id = :i",
+        f"UPDATE opt_action SET {column} = {value} WHERE id = :i",
         {"i": action},
     )
-    assert f"optimization_action.{column} is evidence and may not change" in said
+    assert f"opt_action.{column} is evidence and may not change" in said
 
 
 def test_a_moved_action_cannot_be_moved_to_another_business(
@@ -211,7 +211,7 @@ def test_a_moved_action_cannot_be_moved_to_another_business(
     db, _place, action = logged
     said = _refuses(
         db,
-        "UPDATE optimization_action SET organization_id = :o WHERE id = :i",
+        "UPDATE opt_action SET organization_id = :o WHERE id = :i",
         {"o": uuid.uuid4(), "i": action},
     )
     assert "organization_id is evidence" in said
@@ -233,26 +233,26 @@ def test_a_written_explanation_cannot_be_rewritten(
 ) -> None:
     """Empty to a value once -- the model may write the words later -- then frozen."""
     db, _place, action = logged
-    _allows(db, f"UPDATE optimization_action SET {column} = {first} WHERE id = :i", {"i": action})
+    _allows(db, f"UPDATE opt_action SET {column} = {first} WHERE id = :i", {"i": action})
     said = _refuses(
-        db, f"UPDATE optimization_action SET {column} = {second} WHERE id = :i", {"i": action}
+        db, f"UPDATE opt_action SET {column} = {second} WHERE id = :i", {"i": action}
     )
-    assert f"optimization_action.{column} was already written" in said
+    assert f"opt_action.{column} was already written" in said
 
 
 def test_when_a_change_was_applied_cannot_be_backdated(
     logged: tuple[sessionmaker[Session], uuid.UUID, uuid.UUID],
 ) -> None:
     db, _place, action = logged
-    _allows(db, "UPDATE optimization_action SET status = 'approved' WHERE id = :i", {"i": action})
+    _allows(db, "UPDATE opt_action SET status = 'approved' WHERE id = :i", {"i": action})
     _allows(
         db,
-        "UPDATE optimization_action SET status = 'applied', applied_at = now() WHERE id = :i",
+        "UPDATE opt_action SET status = 'applied', applied_at = now() WHERE id = :i",
         {"i": action},
     )
     said = _refuses(
         db,
-        "UPDATE optimization_action SET applied_at = now() - interval '30 days' WHERE id = :i",
+        "UPDATE opt_action SET applied_at = now() - interval '30 days' WHERE id = :i",
         {"i": action},
     )
     assert "applied_at was already written" in said
@@ -274,10 +274,10 @@ def _a_version(db: sessionmaker[Session]) -> tuple[uuid.UUID, uuid.UUID]:
 @pytest.mark.parametrize(
     "statement",
     [
-        "UPDATE guardrail_config SET max_daily_budget = 5000 WHERE id = :i",
-        "UPDATE guardrail_config SET max_change_pct = 90 WHERE id = :i",
-        "UPDATE guardrail_config SET version = 2 WHERE id = :i",
-        "DELETE FROM guardrail_config WHERE id = :i",
+        "UPDATE opt_guardrail_config SET max_daily_budget = 5000 WHERE id = :i",
+        "UPDATE opt_guardrail_config SET max_change_pct = 90 WHERE id = :i",
+        "UPDATE opt_guardrail_config SET version = 2 WHERE id = :i",
+        "DELETE FROM opt_guardrail_config WHERE id = :i",
     ],
 )
 def test_the_limits_that_authorised_an_action_cannot_be_edited_afterwards(
@@ -287,7 +287,7 @@ def test_the_limits_that_authorised_an_action_cannot_be_edited_afterwards(
     make every action citing it a lie, so a limit change is a new version."""
     _place, limits = _a_version(db)
     said = _refuses(db, statement, {"i": limits})
-    assert "guardrail_config is immutable" in said or "DELETE is forbidden" in said
+    assert "opt_guardrail_config is immutable" in said or "DELETE is forbidden" in said
 
 
 def test_a_new_version_is_how_limits_change(db: sessionmaker[Session]) -> None:

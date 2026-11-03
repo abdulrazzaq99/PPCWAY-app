@@ -106,8 +106,8 @@ DIRECT = (
     "ads_connection",
     "audit_request",
     "share_link",
-    "guardrail_config",
-    "optimization_action",
+    "opt_guardrail_config",
+    "opt_action",
 )
 
 #: Tables that reach the tenant through the connection that owns the account

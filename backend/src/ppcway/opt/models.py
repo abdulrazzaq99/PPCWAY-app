@@ -188,7 +188,7 @@ class GuardrailConfig(Base):
     months later — which is what a merchant dispute actually requires.
     """
 
-    __tablename__ = "guardrail_config"
+    __tablename__ = "opt_guardrail_config"
     #: A version is never reused, because an action points back at one to say
     #: which limits authorised it.
     __table_args__ = (UniqueConstraint("organization_id", "version", name="one_version_once"),)
@@ -244,7 +244,7 @@ class GuardrailConfig(Base):
 class OptimizationAction(Base):
     """One proposed change, and what became of it."""
 
-    __tablename__ = "optimization_action"
+    __tablename__ = "opt_action"
     id: Mapped[uuid.UUID] = _pk()
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organization.id"), index=True)
     #: The Google Ads account this touches. Checked against the merchant's own
@@ -325,7 +325,7 @@ class OptimizationAction(Base):
 
     #: An undo is an action in its own right, pointing at what it reverses.
     undo_of: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("optimization_action.id"), nullable=True, index=True
+        ForeignKey("opt_action.id"), nullable=True, index=True
     )
     #: True when this change may still be put back. Structure can be reverted;
     #: money already spent cannot, and neither can Google's learning state.

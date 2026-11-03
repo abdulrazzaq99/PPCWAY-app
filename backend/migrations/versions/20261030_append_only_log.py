@@ -18,7 +18,7 @@ could have quietly changed. So the guarantee belongs where no code path, no
 migration shortcut and no psql session can route around it.
 
 **Why this allows some UPDATEs when F2's wording says they must fail.** The
-brief's "done when" reads *UPDATE and DELETE on optimization_action fail at the
+brief's "done when" reads *UPDATE and DELETE on opt_action fail at the
 database*, and taken literally that forbids every update. But the brief's own
 specification of the table, two sections later, gives `status` eight values and
 columns named `approved by, applied at, reverted at` -- a row whose status
@@ -41,7 +41,7 @@ proof of concept did and what Blueprint §8.4 asks for:
 An UPDATE that is not one of those fails at the database. Rewriting history is
 what F2 forbids, and that is forbidden absolutely.
 
-`guardrail_config` gets the stricter rule -- no UPDATE at all, no DELETE -- and
+`opt_guardrail_config` gets the stricter rule -- no UPDATE at all, no DELETE -- and
 needs no transition list, because a limit change is a new version by design.
 An action points back at a version to say which limits authorised it, so a
 version whose numbers could be edited in place would make every action that
@@ -106,13 +106,13 @@ def _append_only_sql() -> str:
     for column in IMMUTABLE:
         guards.append(
             f"  IF NEW.{column} IS DISTINCT FROM OLD.{column} THEN\n"
-            f"    RAISE EXCEPTION 'optimization_action.{column} is evidence and may not change';\n"
+            f"    RAISE EXCEPTION 'opt_action.{column} is evidence and may not change';\n"
             f"  END IF;"
         )
     for column in IMMUTABLE_JSON:
         guards.append(
             f"  IF NEW.{column}::text IS DISTINCT FROM OLD.{column}::text THEN\n"
-            f"    RAISE EXCEPTION 'optimization_action.{column} is evidence and may not change';\n"
+            f"    RAISE EXCEPTION 'opt_action.{column} is evidence and may not change';\n"
             f"  END IF;"
         )
     for column in WRITE_ONCE_TEXT:
@@ -120,7 +120,7 @@ def _append_only_sql() -> str:
             f"  IF COALESCE(OLD.{column}, '') <> ''"
             f" AND NEW.{column} IS DISTINCT FROM OLD.{column} THEN\n"
             f"    RAISE EXCEPTION"
-            f" 'optimization_action.{column} was already written and may not change';\n"
+            f" 'opt_action.{column} was already written and may not change';\n"
             f"  END IF;"
         )
     for column in WRITE_ONCE_VALUE:
@@ -128,24 +128,24 @@ def _append_only_sql() -> str:
             f"  IF OLD.{column} IS NOT NULL"
             f" AND NEW.{column} IS DISTINCT FROM OLD.{column} THEN\n"
             f"    RAISE EXCEPTION"
-            f" 'optimization_action.{column} was already written and may not change';\n"
+            f" 'opt_action.{column} was already written and may not change';\n"
             f"  END IF;"
         )
     checks = "\n\n".join(guards)
     allowed = ",".join(f"'{t}'" for t in TRANSITIONS)
     return f"""
-CREATE OR REPLACE FUNCTION optimization_action_append_only() RETURNS trigger AS $fn$
+CREATE OR REPLACE FUNCTION opt_action_append_only() RETURNS trigger AS $fn$
 DECLARE
   allowed text[] := ARRAY[{allowed}];
 BEGIN
   IF TG_OP = 'DELETE' THEN
-    RAISE EXCEPTION 'optimization_action is append-only: DELETE is forbidden';
+    RAISE EXCEPTION 'opt_action is append-only: DELETE is forbidden';
   END IF;
 
   IF NEW.status IS DISTINCT FROM OLD.status
      AND NOT ((OLD.status || '>' || NEW.status) = ANY(allowed)) THEN
     RAISE EXCEPTION
-      'optimization_action: % -> % is not an allowed transition', OLD.status, NEW.status;
+      'opt_action: % -> % is not an allowed transition', OLD.status, NEW.status;
   END IF;
 
 {checks}
@@ -154,25 +154,25 @@ BEGIN
 END;
 $fn$ LANGUAGE plpgsql;
 
-CREATE TRIGGER optimization_action_append_only_trg
-  BEFORE UPDATE OR DELETE ON optimization_action
-  FOR EACH ROW EXECUTE FUNCTION optimization_action_append_only();
+CREATE TRIGGER opt_action_append_only_trg
+  BEFORE UPDATE OR DELETE ON opt_action
+  FOR EACH ROW EXECUTE FUNCTION opt_action_append_only();
 """
 
 
 GUARDRAIL_IMMUTABLE = """
-CREATE OR REPLACE FUNCTION guardrail_config_immutable() RETURNS trigger AS $fn$
+CREATE OR REPLACE FUNCTION opt_guardrail_config_immutable() RETURNS trigger AS $fn$
 BEGIN
   IF TG_OP = 'DELETE' THEN
-    RAISE EXCEPTION 'guardrail_config is immutable: DELETE is forbidden';
+    RAISE EXCEPTION 'opt_guardrail_config is immutable: DELETE is forbidden';
   END IF;
-  RAISE EXCEPTION 'guardrail_config is immutable; write a new version instead';
+  RAISE EXCEPTION 'opt_guardrail_config is immutable; write a new version instead';
 END;
 $fn$ LANGUAGE plpgsql;
 
-CREATE TRIGGER guardrail_config_immutable_trg
-  BEFORE UPDATE OR DELETE ON guardrail_config
-  FOR EACH ROW EXECUTE FUNCTION guardrail_config_immutable();
+CREATE TRIGGER opt_guardrail_config_immutable_trg
+  BEFORE UPDATE OR DELETE ON opt_guardrail_config
+  FOR EACH ROW EXECUTE FUNCTION opt_guardrail_config_immutable();
 """
 
 
@@ -186,7 +186,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     if op.get_bind().dialect.name != "postgresql":
         return
-    op.execute("DROP TRIGGER IF EXISTS guardrail_config_immutable_trg ON guardrail_config")
-    op.execute("DROP FUNCTION IF EXISTS guardrail_config_immutable()")
-    op.execute("DROP TRIGGER IF EXISTS optimization_action_append_only_trg ON optimization_action")
-    op.execute("DROP FUNCTION IF EXISTS optimization_action_append_only()")
+    op.execute("DROP TRIGGER IF EXISTS opt_guardrail_config_immutable_trg ON opt_guardrail_config")
+    op.execute("DROP FUNCTION IF EXISTS opt_guardrail_config_immutable()")
+    op.execute("DROP TRIGGER IF EXISTS opt_action_append_only_trg ON opt_action")
+    op.execute("DROP FUNCTION IF EXISTS opt_action_append_only()")

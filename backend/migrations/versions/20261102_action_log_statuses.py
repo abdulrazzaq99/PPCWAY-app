@@ -50,9 +50,9 @@ import sqlalchemy as sa
 from alembic import op
 
 _TRIGGER = """
-CREATE TRIGGER optimization_action_append_only_trg
-  BEFORE UPDATE OR DELETE ON optimization_action
-  FOR EACH ROW EXECUTE FUNCTION optimization_action_append_only()
+CREATE TRIGGER opt_action_append_only_trg
+  BEFORE UPDATE OR DELETE ON opt_action
+  FOR EACH ROW EXECUTE FUNCTION opt_action_append_only()
 """
 
 revision = "b6c7d8e9f0a1"
@@ -128,13 +128,13 @@ def _append_only_sql(
     for column in immutable:
         guards.append(
             f"  IF NEW.{column} IS DISTINCT FROM OLD.{column} THEN\n"
-            f"    RAISE EXCEPTION 'optimization_action.{column} is evidence and may not change';\n"
+            f"    RAISE EXCEPTION 'opt_action.{column} is evidence and may not change';\n"
             f"  END IF;"
         )
     for column in immutable_json:
         guards.append(
             f"  IF NEW.{column}::text IS DISTINCT FROM OLD.{column}::text THEN\n"
-            f"    RAISE EXCEPTION 'optimization_action.{column} is evidence and may not change';\n"
+            f"    RAISE EXCEPTION 'opt_action.{column} is evidence and may not change';\n"
             f"  END IF;"
         )
     for column in write_once_text:
@@ -142,7 +142,7 @@ def _append_only_sql(
             f"  IF COALESCE(OLD.{column}, '') <> ''"
             f" AND NEW.{column} IS DISTINCT FROM OLD.{column} THEN\n"
             f"    RAISE EXCEPTION"
-            f" 'optimization_action.{column} was already written and may not change';\n"
+            f" 'opt_action.{column} was already written and may not change';\n"
             f"  END IF;"
         )
     for column in write_once_value:
@@ -150,24 +150,24 @@ def _append_only_sql(
             f"  IF OLD.{column} IS NOT NULL"
             f" AND NEW.{column} IS DISTINCT FROM OLD.{column} THEN\n"
             f"    RAISE EXCEPTION"
-            f" 'optimization_action.{column} was already written and may not change';\n"
+            f" 'opt_action.{column} was already written and may not change';\n"
             f"  END IF;"
         )
     checks = "\n\n".join(guards)
     allowed = ",".join(f"'{t}'" for t in transitions)
     return f"""
-CREATE OR REPLACE FUNCTION optimization_action_append_only() RETURNS trigger AS $fn$
+CREATE OR REPLACE FUNCTION opt_action_append_only() RETURNS trigger AS $fn$
 DECLARE
   allowed text[] := ARRAY[{allowed}];
 BEGIN
   IF TG_OP = 'DELETE' THEN
-    RAISE EXCEPTION 'optimization_action is append-only: DELETE is forbidden';
+    RAISE EXCEPTION 'opt_action is append-only: DELETE is forbidden';
   END IF;
 
   IF NEW.status IS DISTINCT FROM OLD.status
      AND NOT ((OLD.status || '>' || NEW.status) = ANY(allowed)) THEN
     RAISE EXCEPTION
-      'optimization_action: % -> % is not an allowed transition', OLD.status, NEW.status;
+      'opt_action: % -> % is not an allowed transition', OLD.status, NEW.status;
   END IF;
 
 {checks}
@@ -179,7 +179,7 @@ $fn$ LANGUAGE plpgsql;
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("optimization_action") as batch:
+    with op.batch_alter_table("opt_action") as batch:
         batch.add_column(
             sa.Column("risk", sa.String(length=10), nullable=False, server_default="medium")
         )
@@ -192,17 +192,17 @@ def upgrade() -> None:
         batch.add_column(sa.Column("window_end", sa.Date(), nullable=True))
         batch.add_column(sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True))
         batch.add_column(sa.Column("reverted_at", sa.DateTime(timezone=True), nullable=True))
-    op.create_index("ix_optimization_action_risk", "optimization_action", ["risk"])
-    op.create_index("ix_optimization_action_proposed_by", "optimization_action", ["proposed_by"])
-    op.create_index("ix_optimization_action_expires_at", "optimization_action", ["expires_at"])
+    op.create_index("ix_opt_action_risk", "opt_action", ["risk"])
+    op.create_index("ix_opt_action_proposed_by", "opt_action", ["proposed_by"])
+    op.create_index("ix_opt_action_expires_at", "opt_action", ["expires_at"])
 
     bind = op.get_bind()
     if bind.dialect.name != "postgresql":
         return
     # The trigger forbids every UPDATE it does not recognise, including this
     # one, so it goes before the rename rather than after it.
-    op.execute("DROP TRIGGER IF EXISTS optimization_action_append_only_trg ON optimization_action")
-    op.execute("UPDATE optimization_action SET status = 'proposed' WHERE status = 'pending'")
+    op.execute("DROP TRIGGER IF EXISTS opt_action_append_only_trg ON opt_action")
+    op.execute("UPDATE opt_action SET status = 'proposed' WHERE status = 'pending'")
     op.execute(
         sa.text(
             _append_only_sql(
@@ -229,13 +229,13 @@ def downgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
         op.execute(
-            "DROP TRIGGER IF EXISTS optimization_action_append_only_trg ON optimization_action"
+            "DROP TRIGGER IF EXISTS opt_action_append_only_trg ON opt_action"
         )
-        op.execute("UPDATE optimization_action SET status = 'pending' WHERE status = 'proposed'")
-    op.drop_index("ix_optimization_action_expires_at", table_name="optimization_action")
-    op.drop_index("ix_optimization_action_proposed_by", table_name="optimization_action")
-    op.drop_index("ix_optimization_action_risk", table_name="optimization_action")
-    with op.batch_alter_table("optimization_action") as batch:
+        op.execute("UPDATE opt_action SET status = 'pending' WHERE status = 'proposed'")
+    op.drop_index("ix_opt_action_expires_at", table_name="opt_action")
+    op.drop_index("ix_opt_action_proposed_by", table_name="opt_action")
+    op.drop_index("ix_opt_action_risk", table_name="opt_action")
+    with op.batch_alter_table("opt_action") as batch:
         batch.drop_column("reverted_at")
         batch.drop_column("expires_at")
         batch.drop_column("window_end")

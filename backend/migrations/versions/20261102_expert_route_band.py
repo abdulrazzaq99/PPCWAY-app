@@ -17,7 +17,7 @@ refusal from a check that could not route them anywhere, which is how a
 guardrail ends up switched off rather than respected.
 
 The defaults move for rows created from here on. Existing rows are left alone
-deliberately -- `guardrail_config` is immutable by trigger, because an action
+deliberately -- `opt_guardrail_config` is immutable by trigger, because an action
 cites a version to say which limits authorised it, and rewriting the numbers
 inside a version that actions already point at would make every one of those
 actions misdescribe itself. A business on the old limits moves by having a new
@@ -40,7 +40,7 @@ def upgrade() -> None:
     # and batch mode rebuilds the table instead. The test suite runs these
     # migrations against SQLite, so a Postgres-only spelling here is a
     # migration nothing exercises until it reaches production.
-    with op.batch_alter_table("guardrail_config") as batch:
+    with op.batch_alter_table("opt_guardrail_config") as batch:
         batch.add_column(
             sa.Column(
                 "expert_max_change_pct", sa.Float(), nullable=False, server_default="50.0"
@@ -55,7 +55,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("guardrail_config") as batch:
+    with op.batch_alter_table("opt_guardrail_config") as batch:
         batch.alter_column(
             "max_daily_change_pct", server_default="50.0", existing_type=sa.Float()
         )

@@ -102,7 +102,7 @@ def two(pg_engine: Engine) -> Iterator[tuple[sessionmaker[Session], Business, Bu
     """Two businesses, each new, and nothing cleaned up afterwards.
 
     There is no teardown on purpose, and the reason is itself a result: the
-    first version of this fixture ended with `DELETE FROM optimization_action`
+    first version of this fixture ended with `DELETE FROM opt_action`
     and could not, because F2's trigger forbids DELETE on that table with no
     exception and no privileged path. So each test plants its own businesses
     under ids nobody else uses, and the throwaway database is dropped whole.

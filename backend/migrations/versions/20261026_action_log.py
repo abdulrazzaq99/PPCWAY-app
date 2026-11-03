@@ -17,7 +17,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.create_table(
-        "guardrail_config",
+        "opt_guardrail_config",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("organization_id", sa.Uuid(), nullable=False),
         sa.Column("version", sa.Integer(), nullable=False, server_default="1"),
@@ -36,19 +36,19 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column("created_by", sa.Uuid(), nullable=True),
         sa.ForeignKeyConstraint(
-            ["organization_id"], ["organization.id"], name="fk_guardrail_config_organization_id"
+            ["organization_id"], ["organization.id"], name="fk_opt_guardrail_config_organization_id"
         ),
         sa.ForeignKeyConstraint(
-            ["created_by"], ["account.id"], name="fk_guardrail_config_created_by"
+            ["created_by"], ["account.id"], name="fk_opt_guardrail_config_created_by"
         ),
-        sa.PrimaryKeyConstraint("id", name="pk_guardrail_config"),
+        sa.PrimaryKeyConstraint("id", name="pk_opt_guardrail_config"),
         sa.UniqueConstraint("organization_id", "version", name="one_version_once"),
     )
-    op.create_index("ix_guardrail_config_organization_id", "guardrail_config", ["organization_id"])
-    op.create_index("ix_guardrail_config_version", "guardrail_config", ["version"])
+    op.create_index("ix_opt_guardrail_config_organization_id", "opt_guardrail_config", ["organization_id"])
+    op.create_index("ix_guardrail_config_version", "opt_guardrail_config", ["version"])
 
     op.create_table(
-        "optimization_action",
+        "opt_action",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("organization_id", sa.Uuid(), nullable=False),
         sa.Column("customer_id", sa.String(20), nullable=False, server_default=""),
@@ -78,15 +78,15 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column("applied_at", sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(
-            ["organization_id"], ["organization.id"], name="fk_optimization_action_organization_id"
+            ["organization_id"], ["organization.id"], name="fk_opt_action_organization_id"
         ),
         sa.ForeignKeyConstraint(
-            ["undo_of"], ["optimization_action.id"], name="fk_optimization_action_undo_of"
+            ["undo_of"], ["opt_action.id"], name="fk_opt_action_undo_of"
         ),
         sa.ForeignKeyConstraint(
-            ["approved_by"], ["account.id"], name="fk_optimization_action_approved_by"
+            ["approved_by"], ["account.id"], name="fk_opt_action_approved_by"
         ),
-        sa.PrimaryKeyConstraint("id", name="pk_optimization_action"),
+        sa.PrimaryKeyConstraint("id", name="pk_opt_action"),
     )
     for column in (
         "organization_id",
@@ -99,9 +99,9 @@ def upgrade() -> None:
         "undo_of",
         "created_at",
     ):
-        op.create_index(f"ix_optimization_action_{column}", "optimization_action", [column])
+        op.create_index(f"ix_opt_action_{column}", "opt_action", [column])
 
 
 def downgrade() -> None:
-    op.drop_table("optimization_action")
-    op.drop_table("guardrail_config")
+    op.drop_table("opt_action")
+    op.drop_table("opt_guardrail_config")

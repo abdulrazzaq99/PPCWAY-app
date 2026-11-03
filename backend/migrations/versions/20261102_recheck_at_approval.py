@@ -29,7 +29,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("optimization_action") as batch:
+    with op.batch_alter_table("opt_action") as batch:
         batch.add_column(sa.Column("rechecked", sa.JSON(), nullable=True))
         batch.add_column(sa.Column("rechecked_at", sa.DateTime(timezone=True), nullable=True))
 
@@ -42,17 +42,17 @@ def upgrade() -> None:
     # revision left them.
     op.execute(
         """
-        CREATE OR REPLACE FUNCTION optimization_action_recheck_once() RETURNS trigger AS $fn$
+        CREATE OR REPLACE FUNCTION opt_action_recheck_once() RETURNS trigger AS $fn$
         BEGIN
           IF OLD.rechecked IS NOT NULL
              AND NEW.rechecked::text IS DISTINCT FROM OLD.rechecked::text THEN
             RAISE EXCEPTION
-              'optimization_action.rechecked was already written and may not change';
+              'opt_action.rechecked was already written and may not change';
           END IF;
           IF OLD.rechecked_at IS NOT NULL
              AND NEW.rechecked_at IS DISTINCT FROM OLD.rechecked_at THEN
             RAISE EXCEPTION
-              'optimization_action.rechecked_at was already written and may not change';
+              'opt_action.rechecked_at was already written and may not change';
           END IF;
           RETURN NEW;
         END;
@@ -61,9 +61,9 @@ def upgrade() -> None:
     )
     op.execute(
         """
-        CREATE TRIGGER optimization_action_recheck_once_trg
-          BEFORE UPDATE ON optimization_action
-          FOR EACH ROW EXECUTE FUNCTION optimization_action_recheck_once()
+        CREATE TRIGGER opt_action_recheck_once_trg
+          BEFORE UPDATE ON opt_action
+          FOR EACH ROW EXECUTE FUNCTION opt_action_recheck_once()
         """
     )
 
@@ -71,9 +71,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     if op.get_bind().dialect.name == "postgresql":
         op.execute(
-            "DROP TRIGGER IF EXISTS optimization_action_recheck_once_trg ON optimization_action"
+            "DROP TRIGGER IF EXISTS opt_action_recheck_once_trg ON opt_action"
         )
-        op.execute("DROP FUNCTION IF EXISTS optimization_action_recheck_once()")
-    with op.batch_alter_table("optimization_action") as batch:
+        op.execute("DROP FUNCTION IF EXISTS opt_action_recheck_once()")
+    with op.batch_alter_table("opt_action") as batch:
         batch.drop_column("rechecked_at")
         batch.drop_column("rechecked")
