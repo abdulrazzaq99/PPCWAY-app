@@ -24,6 +24,7 @@ exactly this. The `SafeTarget` here is therefore built by hand, below the check,
 which is the only altitude at which the question "what does httpcore do with the
 address it was given" can be asked at all.
 """
+
 import ast
 import pathlib
 import socket
@@ -65,7 +66,9 @@ LOOPBACK = "127.0.0.1"
 TLS = pathlib.Path(__file__).resolve().parent / "loopback_tls"
 
 BODY = b"<html><body>hi</body></html>"
-REPLY = b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: %d\r\n\r\n" % len(BODY) + BODY
+REPLY = (
+    b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: %d\r\n\r\n" % len(BODY) + BODY
+)
 
 
 class Listener:
@@ -391,8 +394,7 @@ def two_names_through(transport: httpx.HTTPTransport, listener: Listener) -> lis
     return outcomes
 
 
-def test_a_pooled_connection_really_does_carry_only_the_first_names_certificate_check(
-) -> None:
+def test_a_pooled_connection_really_does_carry_only_the_first_names_certificate_check() -> None:
     """**THE CONTROL, AND IT IS THE FINDING.** With httpx's default pooling, the
     second name rides the first one's connection: one TCP connection, one
     handshake carrying only the first name, and a `200` for a host this
@@ -418,8 +420,7 @@ def test_a_pooled_connection_really_does_carry_only_the_first_names_certificate_
     ], "the second request really was for the other name"
 
 
-def test_the_second_name_on_one_address_is_verified_rather_than_riding_the_first(
-) -> None:
+def test_the_second_name_on_one_address_is_verified_rather_than_riding_the_first() -> None:
     """The same two requests through the limits `build_client` gives production:
     two connections, two handshakes, and the certificate that does not name
     `victim.example` refuses it."""
@@ -427,9 +428,7 @@ def test_the_second_name_on_one_address_is_verified_rather_than_riding_the_first
     with loopback_only():
         listener = Listener(tls=True)
         listener.serve(2)
-        transport = httpx.HTTPTransport(
-            retries=0, verify=verify, limits=fetch.NO_CONNECTION_REUSE
-        )
+        transport = httpx.HTTPTransport(retries=0, verify=verify, limits=fetch.NO_CONNECTION_REUSE)
         try:
             outcomes = two_names_through(transport, listener)
         finally:
@@ -544,8 +543,9 @@ def test_inside_the_lift_a_write_on_a_socket_whose_peer_is_not_loopback_is_refus
     set comes off the decision table, keyed on the decision `send` uses.
     """
     peer_check = LOOPBACK_DECISIONS["send"]
-    doors = [(owner, name) for owner, name in CLOSED_DOORS
-             if LOOPBACK_DECISIONS.get(name) is peer_check]
+    doors = [
+        (owner, name) for owner, name in CLOSED_DOORS if LOOPBACK_DECISIONS.get(name) is peer_check
+    ]
     assert len(doors) >= 6, (
         f"only {len(doors)} peer-checked doors found; the walk is not seeing the table"
     )
@@ -570,8 +570,7 @@ def test_inside_the_lift_a_unix_pair_may_be_written_to() -> None:
         # `socketpair` is closed like every other way of making a socket.
         here, there = socket.socketpair()
         try:
-            assert here.getpeername() == "", (
-                "an unnamed pair: no address, in either direction")
+            assert here.getpeername() == "", "an unnamed pair: no address, in either direction"
             here.sendall(b"ping")
             assert there.recv(4) == b"ping"
         finally:

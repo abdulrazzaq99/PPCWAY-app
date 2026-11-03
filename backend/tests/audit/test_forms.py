@@ -12,7 +12,9 @@ SEARCH = '<form role="search"><input type="search" name="s"><input type="submit"
 
 
 def test_a_contact_form_is_found_and_its_provider_named() -> None:
-    f = detect_forms([("https://x.ca/contact", CONTACT)], ["https://x.ca/", "https://x.ca/thank-you"])
+    f = detect_forms(
+        [("https://x.ca/contact", CONTACT)], ["https://x.ca/", "https://x.ca/thank-you"]
+    )
     assert f.contact_form and f.provider == "WPForms" and f.on_page == "https://x.ca/contact"
     assert f.thank_you_url == "https://x.ca/thank-you"
     assert f.has_action

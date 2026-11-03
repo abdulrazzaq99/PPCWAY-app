@@ -23,6 +23,7 @@ The other half of the same idea is `_pinned_transport`: `crawl` REFUSES an
 ordinary `httpx.Client`, because one would resolve the host itself and put the
 window straight back, with every functional test still green.
 """
+
 import ast
 import dataclasses
 import gzip
@@ -185,9 +186,7 @@ def test_a_thin_site_reports_that_manual_entry_is_needed() -> None:
     The wizard must degrade to asking the merchant rather than generating
     plausible-sounding copy from nothing."""
     _site, client = a_site({"/": "<html><body><div id='root'></div></body></html>"})
-    result = run(
-        client, "https://thin.example/", resolver=FakeResolver({"thin.example": PUBLIC})
-    )
+    result = run(client, "https://thin.example/", resolver=FakeResolver({"thin.example": PUBLIC}))
     assert result.source == SOURCE_INSUFFICIENT
     assert len(result.page_text) < MIN_TEXT_FOR_A_USABLE_PROFILE
 
@@ -281,7 +280,7 @@ def test_a_link_to_another_host_on_the_same_scheme_is_not_followed() -> None:
     site, client = a_site(
         {
             "/": Reply(
-                body=b'<html><body><p>home page words</p>'
+                body=b"<html><body><p>home page words</p>"
                 b'<a href="http://elsewhere.example/deals">supplier</a>'
                 b'<a href="/second">ours</a></body></html>'
             ),
@@ -385,9 +384,7 @@ def test_every_address_is_checked_separately_rather_than_only_the_first() -> Non
     must say nothing about the second. The first address here refuses to connect
     and the second is private: the fallback must be REFUSED, not taken."""
     site, client = a_site({"/": Reply(error=httpx.ConnectError("no route"))})
-    mixed = SafeTarget(
-        url=URL, scheme="https", host=HOST, port=443, addresses=(PUBLIC, PRIVATE)
-    )
+    mixed = SafeTarget(url=URL, scheme="https", host=HOST, port=443, addresses=(PUBLIC, PRIVATE))
     with pytest.raises(BlockedAddress):
         client.send(client.build_request("GET", URL, extensions={SAFE_TARGET_EXTENSION: mixed}))
     assert site.connections == [PUBLIC], "the second address must never have been connected to"
@@ -492,7 +489,9 @@ def test_the_transport_overrides_a_host_header_it_was_handed() -> None:
     site, client = a_site({"/": "<html><body>ok</body></html>"})
     target = assert_safe_url(URL, resolver=FakeResolver({HOST: PUBLIC}))
     request = client.build_request(
-        "GET", URL, headers={"Host": "somewhere.else.example"},
+        "GET",
+        URL,
+        headers={"Host": "somewhere.else.example"},
         extensions={SAFE_TARGET_EXTENSION: target},
     )
     client.send(request).close()
@@ -514,9 +513,7 @@ def test_the_redirect_cap_is_the_shared_constant_rather_than_a_copy() -> None:
     and this is what says so.
     """
     mentions = {
-        node.name: [n.id for n in ast.walk(node) if isinstance(n, ast.Name)].count(
-            "MAX_REDIRECTS"
-        )
+        node.name: [n.id for n in ast.walk(node) if isinstance(n, ast.Name)].count("MAX_REDIRECTS")
         for node in ast.walk(FETCH_TREE)
         if isinstance(node, ast.FunctionDef)
     }
@@ -581,9 +578,7 @@ def test_the_host_header_is_written_the_way_http_requires(
     `http://host:443/` passes the SSRF check and needs a port in the header; and
     `SafeTarget.host` comes from `urlsplit().hostname`, which STRIPS the brackets
     off an IPv6 literal, so putting them back is this function's job."""
-    target = SafeTarget(
-        url=URL, scheme=scheme, host=host, port=port, addresses=(PUBLIC,)
-    )
+    target = SafeTarget(url=URL, scheme=scheme, host=host, port=port, addresses=(PUBLIC,))
     assert authority(target) == expected
 
 
@@ -674,9 +669,7 @@ def test_a_domain_typed_in_its_punycode_form_is_crawled_rather_than_refused() ->
     site, client = a_site(
         {
             "/robots.txt": Reply(body=b"", content_type="text/plain"),
-            "/": Reply(
-                body="<html><body><h1>Bücher</h1><p>a bookshop</p></body></html>".encode()
-            ),
+            "/": Reply(body="<html><body><h1>Bücher</h1><p>a bookshop</p></body></html>".encode()),
         }
     )
     result = run(client, f"https://{punycode}/", resolver=FakeResolver({punycode: PUBLIC}))
@@ -763,8 +756,7 @@ def test_build_client_defaults_to_a_real_transport() -> None:
 def redirect_chain(hops: int) -> dict[str, Reply]:
     """`/hop/0` through `/hop/{hops-1}` redirect; `/hop/{hops}` is a page."""
     pages: dict[str, Reply] = {
-        f"/hop/{index}": Reply(status=302, location=f"/hop/{index + 1}")
-        for index in range(hops)
+        f"/hop/{index}": Reply(status=302, location=f"/hop/{index + 1}") for index in range(hops)
     }
     pages[f"/hop/{hops}"] = Reply(
         body=b"<html><body><h1>Arrived</h1><p>the end of the chain</p></body></html>"
@@ -1036,8 +1028,10 @@ def _refused_while_reading_robots_txt():
 def _refused_because_the_client_is_not_pinned():
     """A refusal that never reached an address at all, through the third route
     out of `crawl` - the client guard, which also ran before any handler."""
-    return httpx.Client(transport=FakeSite({"/": "<html><body>ok</body></html>"})), URL, (
-        FakeResolver({HOST: PUBLIC})
+    return (
+        httpx.Client(transport=FakeSite({"/": "<html><body>ok</body></html>"})),
+        URL,
+        (FakeResolver({HOST: PUBLIC})),
     )
 
 
@@ -1104,8 +1098,7 @@ def _rebinding_mid_crawl():
     site, client = a_site(
         {
             "/": Reply(
-                body=b'<html><body><p>home page words</p>'
-                b'<a href="/second">x</a></body></html>'
+                body=b'<html><body><p>home page words</p><a href="/second">x</a></body></html>'
             ),
             "/second": Reply(body=b"<html><body><p>the second page</p></body></html>"),
         }
@@ -1161,9 +1154,7 @@ ROBOTS_CASES = (
     pytest.param(
         "User-agent: *\nDisallow: /\nAllow: /public/", "/public/x", True, id="longest-match-wins"
     ),
-    pytest.param(
-        "User-agent: *\nDisallow: /a\nAllow: /a", "/a", True, id="allow-breaks-a-tie"
-    ),
+    pytest.param("User-agent: *\nDisallow: /a\nAllow: /a", "/a", True, id="allow-breaks-a-tie"),
     pytest.param(
         "User-agent: EvilBot\nDisallow: /\n\nUser-agent: *\nDisallow: /private",
         "/public",
@@ -1194,9 +1185,7 @@ ROBOTS_CASES = (
 
 
 @pytest.mark.parametrize("text,path,allowed", ROBOTS_CASES)
-def test_the_robots_reader_agrees_with_the_standard(
-    text: str, path: str, allowed: bool
-) -> None:
+def test_the_robots_reader_agrees_with_the_standard(text: str, path: str, allowed: bool) -> None:
     assert parse_robots(text).allows(path) is allowed
 
 
@@ -1320,7 +1309,9 @@ def test_a_redirect_onto_another_origin_reads_that_origins_robots_first() -> Non
 
     result = run(client, f"https://{ALPHA}/", resolver=FakeResolver(BOTH_HOSTS))
 
-    assert (f"https://{BETA}", "/robots.txt") in site.asked, "the other origin has its own rules to read"
+    assert (f"https://{BETA}", "/robots.txt") in site.asked, (
+        "the other origin has its own rules to read"
+    )
     assert (f"https://{BETA}", "/secret/page.html") not in site.asked
     assert result.pages == ()
 
@@ -1372,7 +1363,7 @@ def a_site_that_redirects_http_to_https(disallow: bytes = b"") -> Origins:
                     content_type="text/plain",
                 ),
                 "/": Reply(
-                    body=b'<html><body><h1>Alpha Plumbing</h1>'
+                    body=b"<html><body><h1>Alpha Plumbing</h1>"
                     b"<p>Emergency call-outs across the city, licensed and insured, with a "
                     b"same-day guarantee on every burst pipe and blocked drain we are called "
                     b"to. Family-owned since 1998, and every engineer on the van is fully "
@@ -1458,15 +1449,14 @@ def test_the_entry_pages_redirect_sets_the_scope_and_nothing_else_widens_it() ->
             f"https://{ALPHA}": {
                 "/robots.txt": Reply(body=b"", content_type="text/plain"),
                 "/": Reply(
-                    body=b'<html><body><p>home page words</p>'
-                    b'<a href="/away">away</a></body></html>'
+                    body=b'<html><body><p>home page words</p><a href="/away">away</a></body></html>'
                 ),
                 "/away": Reply(status=302, location=f"https://{BETA}/landing"),
             },
             f"https://{BETA}": {
                 "/robots.txt": Reply(body=b"", content_type="text/plain"),
                 "/landing": Reply(
-                    body=b'<html><body><p>another site entirely</p>'
+                    body=b"<html><body><p>another site entirely</p>"
                     b'<a href="/deeper">deeper</a></body></html>'
                 ),
                 "/deeper": Reply(body=b"<html><body><p>should never be read</p></body></html>"),
@@ -1565,7 +1555,7 @@ def test_two_origins_differing_in_one_thing_do_not_share_one_robots_file(
             served_origin(elsewhere): {
                 "/robots.txt": Reply(body=b"", content_type="text/plain"),
                 "/": Reply(
-                    body=b'<html><body><p>the site it moved to</p>'
+                    body=b"<html><body><p>the site it moved to</p>"
                     b'<a href="/kept">more</a></body></html>'
                 ),
                 "/kept": Reply(body=b"<html><body><p>the page that is allowed</p></body></html>"),
@@ -1599,9 +1589,7 @@ def test_a_robots_file_behind_an_endless_redirect_chain_stops_the_crawl() -> Non
         )
         for index in range(MAX_REDIRECTS + 2)
     }
-    pages["/robots.txt"] = Reply(
-        status=301, location="/robots-0.txt", content_type="text/plain"
-    )
+    pages["/robots.txt"] = Reply(status=301, location="/robots-0.txt", content_type="text/plain")
     pages["/"] = Reply(body=b"<html><body><p>home page words</p></body></html>")
     site, client = a_site(pages)
 
@@ -1753,8 +1741,7 @@ def a_gzip_stream_that_decodes_to_nothing(length: int) -> bytes:
     return stream
 
 
-def test_a_compressed_body_costs_one_cap_of_MEMORY_rather_than_what_it_expands_to(
-) -> None:
+def test_a_compressed_body_costs_one_cap_of_MEMORY_rather_than_what_it_expands_to() -> None:
     """**THE CAP BOUNDS THE COST, AND PEAK HEAP IS WHERE THAT IS TRUE OR NOT.**
 
     A body that comes off the wire smaller than the cap and expands past it is
@@ -1787,7 +1774,7 @@ def test_a_compressed_body_costs_one_cap_of_MEMORY_rather_than_what_it_expands_t
         "the point is a body that is TINY on the wire and enormous once decoded"
     )
     wire = 500
-    chunks = tuple(compressed[index:index + wire] for index in range(0, len(compressed), wire))
+    chunks = tuple(compressed[index : index + wire] for index in range(0, len(compressed), wire))
     first = zlib.decompressobj(16 + zlib.MAX_WBITS).decompress(chunks[0], MAX_RESPONSE_BYTES)
     assert 0 < len(first) < MAX_RESPONSE_BYTES, (
         "one chunk must decode to SOME of the budget and not all of it, or a budget that "
@@ -1816,7 +1803,7 @@ def test_a_compressed_body_that_decodes_to_nothing_still_stops_being_read() -> N
     then it stops, whatever the body decodes to."""
     chunk = 300_000
     wire = a_gzip_stream_that_decodes_to_nothing(MAX_RESPONSE_BYTES * 3)
-    chunks = tuple(wire[index:index + chunk] for index in range(0, len(wire), chunk))
+    chunks = tuple(wire[index : index + chunk] for index in range(0, len(wire), chunk))
     assert len(chunks) == 20
     site, client = a_site({"/": Reply(chunks=chunks, content_encoding="gzip")})
 
@@ -1852,8 +1839,11 @@ def test_a_body_in_an_encoding_the_crawler_cannot_bound_is_not_read() -> None:
     decompress a bounded amount of contributes nothing, rather than being handed
     to a decoder that has no size argument."""
     _site, client = a_site(
-        {"/": Reply(body=b"<html><body><p>brotli, unasked for</p></body></html>",
-                    content_encoding="br")}
+        {
+            "/": Reply(
+                body=b"<html><body><p>brotli, unasked for</p></body></html>", content_encoding="br"
+            )
+        }
     )
     result = run(client, URL, resolver=FakeResolver({HOST: PUBLIC}))
     assert result.pages == ()
@@ -1891,7 +1881,7 @@ def test_a_body_that_is_not_the_gzip_it_claims_to_be_does_not_end_the_crawl(
     _site, client = a_site(
         {
             "/": Reply(
-                body=b'<html><body><p>home page words here</p>'
+                body=b"<html><body><p>home page words here</p>"
                 b'<a href="/broken">b</a><a href="/good">g</a></body></html>'
             ),
             "/broken": Reply(body=body, content_encoding="gzip"),
@@ -2004,17 +1994,18 @@ def test_a_response_with_no_content_type_is_read_as_html() -> None:
     """Hand-rolled servers on small-business hosting omit it, and refusing them
     would fail exactly the sites this module exists for."""
     _site, client = a_site(
-        {"/": Reply(body=b"<html><body><p>plain and unlabelled</p></body></html>",
-                    content_type=None)}
+        {
+            "/": Reply(
+                body=b"<html><body><p>plain and unlabelled</p></body></html>", content_type=None
+            )
+        }
     )
     result = run(client, URL, resolver=FakeResolver({HOST: PUBLIC}))
     assert [page.url for page in result.pages] == [URL]
 
 
 def test_the_media_types_are_the_ones_worth_parsing() -> None:
-    assert HTML_CONTENT_TYPES == frozenset(
-        {"text/html", "application/xhtml+xml", "text/plain"}
-    )
+    assert HTML_CONTENT_TYPES == frozenset({"text/html", "application/xhtml+xml", "text/plain"})
     assert "text/plain" in HTML_CONTENT_TYPES, (
         "robots.txt is served as text/plain, so dropping it here makes every site "
         "look as though it has no robots file at all"

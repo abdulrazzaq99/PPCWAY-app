@@ -33,7 +33,19 @@ from ppcway.db.base import Base
 from ppcway.model.jobs import HAIKU, OPUS, SONNET
 from ppcway.org.models import Organization
 
-NOW = datetime(2026, 11, 3, 12, 0, tzinfo=UTC)
+
+#: Relative to the real clock, not a pinned calendar date. These fixtures feed
+#: guardrails that compare `refreshed_at` against `datetime.now`, and
+#: `staleness_minutes` is 180 -- so a hardcoded "today" made this file pass for
+#: the first three hours of one particular day and fail for every hour after.
+#: It did exactly that: the suite was green in the morning and red by midday on
+#: 3 November 2026, with nothing changed in between.
+def _now() -> datetime:
+    """The moment the tests started, as a real instant."""
+    return datetime.now(UTC)
+
+
+NOW = _now()
 
 
 @pytest.fixture

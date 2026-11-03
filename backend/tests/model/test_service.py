@@ -83,6 +83,12 @@ class NoScreener:
 def _models(reply: Reply | Exception, **over: Any) -> tuple[Models, FakeClient]:
     client = FakeClient(reply)
     settings: dict[str, Any] = {
+        # Vertex explicitly: these tests predate OpenRouter and check the
+        # Vertex dialect -- `output_config`, adaptive thinking, bare model
+        # names. The default provider is OpenRouter now, so saying nothing
+        # would quietly point them at the other branch and they would be
+        # testing a request shape they were never written for.
+        "provider": "vertex",
         "project": "ppcway-staging",
         "region": US_REGION,
         "prompt_version": VERSION,
@@ -211,13 +217,13 @@ def test_blocked_input_never_reaches_the_model() -> None:
 def test_the_global_endpoint_is_refused() -> None:
     """The brief pins processing to the United States. 'global' is not a shorter spelling."""
     with pytest.raises(ValueError, match="global endpoint is not used"):
-        Models(project="p", region="global", prompt_version=VERSION)
+        Models(provider="vertex", project="p", region="global", prompt_version=VERSION)
 
 
 def test_an_unconfigured_service_says_so_rather_than_guessing() -> None:
     from ppcway.model.service import ModelUnavailable
 
-    models = Models(project="", region=US_REGION, prompt_version="")
+    models = Models(provider="vertex", project="", region=US_REGION, prompt_version="")
     assert not models.ready
     with pytest.raises(ModelUnavailable, match="not set up"):
         models.ask(Job.INTERNAL, system="s", said="q")
@@ -259,4 +265,4 @@ def test_the_region_is_a_named_us_region_not_the_multi_region() -> None:
     assert US_REGION == "us-central1"
     assert US_REGION != "us", "the multi-region cannot serve Anthropic rawPredict"
     assert US_REGION.startswith("us-"), "the client pinned processing to the United States"
-    assert Models(project="p", prompt_version="v").region == US_REGION
+    assert Models(provider="vertex", project="p", prompt_version="v").region == US_REGION

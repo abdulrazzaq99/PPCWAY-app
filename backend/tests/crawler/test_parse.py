@@ -11,6 +11,7 @@ The second is that **NOTHING ON THE PAGE IS EXECUTED, AND NOTHING FROM A
 generator, and `<script>window.x = 1</script>` is the smallest witness that the
 tag's contents are dropped rather than rendered.
 """
+
 import ast
 import dataclasses
 import pathlib
@@ -513,9 +514,11 @@ def test_the_link_schemes_are_the_two_the_crawler_speaks() -> None:
 
 
 def test_links_are_capped() -> None:
-    html = "<html><body>" + "".join(
-        f'<a href="/p{index}">x</a>' for index in range(MAX_LINKS + 5)
-    ) + "</body></html>"
+    html = (
+        "<html><body>"
+        + "".join(f'<a href="/p{index}">x</a>' for index in range(MAX_LINKS + 5))
+        + "</body></html>"
+    )
     assert len(extract(html, URL).links) == MAX_LINKS
 
 

@@ -9,7 +9,12 @@ HTML = """
 
 
 def test_structured_data_gives_hours_and_reviews() -> None:
-    t = detect_trust([("https://x.ca/", HTML)], address="1 Main St", page_text="TSSA licence no. 0012345 Licensed and insured", links=["https://x.ca/privacy"])
+    t = detect_trust(
+        [("https://x.ca/", HTML)],
+        address="1 Main St",
+        page_text="TSSA licence no. 0012345 Licensed and insured",
+        links=["https://x.ca/privacy"],
+    )
     assert t.structured_local_business and t.hours
     assert t.reviews.startswith("4.9 stars from 212 reviews")
     assert t.licence.endswith("0012345") and t.insured and t.privacy_policy

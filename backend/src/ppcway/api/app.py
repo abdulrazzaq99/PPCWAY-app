@@ -1488,11 +1488,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         client enables Claude on Vertex AI this is what production looks like,
         and the cards it produces are correct -- just plainer.
         """
-        from ppcway.model.service import Models
+        from ppcway.model.service import OPENROUTER, Models
+
+        if settings.model_provider == OPENROUTER:
+            key = settings.openrouter_api_key
+            if not (key and settings.model_prompt_version):
+                return None
+            return Models(
+                provider=OPENROUTER,
+                # Unwrapped here and nowhere else. `SecretStr` is what keeps it
+                # out of a settings dump; `Models.api_key` is repr-suppressed
+                # for the same reason on the other side.
+                api_key=key.get_secret_value(),
+                prompt_version=settings.model_prompt_version,
+                site=settings.openrouter_site,
+                title=settings.openrouter_title,
+                only=settings.openrouter_only,
+                screener=_screener(),
+            )
 
         if not (settings.vertex_project and settings.model_prompt_version):
             return None
         return Models(
+            provider="vertex",
             project=settings.vertex_project,
             region=settings.vertex_region,
             prompt_version=settings.model_prompt_version,

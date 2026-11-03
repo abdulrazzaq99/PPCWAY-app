@@ -22,9 +22,63 @@ from typing import Final
 #: Vertex AI takes the bare first-party model id for current-generation models,
 #: with no publisher prefix and no date suffix. Only dated snapshots use the
 #: `@version` form, and none of these are snapshots.
+#:
+#: These stay the canonical names *in this application*: a tier names one of
+#: these, and translation to a provider's own spelling happens once, in
+#: `for_openrouter`.
+#:
+#: `Answer.model` is a different thing and deliberately so -- it records what
+#: the provider echoed back, which is the model that actually answered rather
+#: than the one we asked for. On OpenRouter that is the dotted, prefixed
+#: spelling. Blueprint §7.6 wants an ad traceable to the exact model, and the
+#: truth of what served it is worth more than a tidy spelling. It also means
+#: the prompt log needs no separate provider column: an `anthropic/` prefix
+#: only ever comes from OpenRouter.
 SONNET: Final = "claude-sonnet-5-5"
 HAIKU: Final = "claude-haiku-5-5"
 OPUS: Final = "claude-opus-5-5"
+
+#: OpenRouter spells the same three models differently: an `anthropic/` prefix
+#: and dots where Vertex has hyphens. Read off OpenRouter's own model list
+#: rather than guessed, because `claude-sonnet-5-5` is not a model there and
+#: the failure would be a 404 on the first merchant question.
+FOR_OPENROUTER: Final[dict[str, str]] = {
+    SONNET: "anthropic/claude-sonnet-5.5",
+    HAIKU: "anthropic/claude-haiku-5.5",
+    OPUS: "anthropic/claude-opus-5.5",
+}
+
+
+def for_openrouter(model: str) -> str:
+    """One canonical model name in OpenRouter's spelling.
+
+    Refuses rather than passing an unknown name through. A name that is not in
+    the table is either a new model nobody has mapped or a typo, and both are
+    better found here than as a 404 while somebody is waiting for an answer.
+    """
+    try:
+        return FOR_OPENROUTER[model]
+    except KeyError:
+        raise ValueError(
+            f"no OpenRouter spelling is recorded for {model!r}. OpenRouter uses"
+            f" 'anthropic/claude-sonnet-5.5' where Vertex uses 'claude-sonnet-5-5',"
+            f" so a name cannot simply be passed through. Known: "
+            + ", ".join(sorted(FOR_OPENROUTER))
+        ) from None
+
+
+#: What OpenRouter's `reasoning.effort` accepts. Our own ladder has five rungs
+#: and OpenRouter's has four, so `xhigh` and `max` both arrive as `high`. That
+#: is a real loss of control and it is written down here rather than hidden:
+#: the one job that asks for more than `high` is ad drafting, and on OpenRouter
+#: it gets `high`.
+OPENROUTER_EFFORTS: Final[dict[str, str]] = {
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "xhigh": "high",
+    "max": "high",
+}
 
 
 class Job(StrEnum):

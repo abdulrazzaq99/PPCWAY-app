@@ -107,9 +107,7 @@ def test_a_change_cannot_be_applied_without_first_being_approved(
     changes always need a person.
     """
     db, _place, action = logged
-    said = _refuses(
-        db, "UPDATE opt_action SET status = 'applied' WHERE id = :i", {"i": action}
-    )
+    said = _refuses(db, "UPDATE opt_action SET status = 'applied' WHERE id = :i", {"i": action})
     assert "not an allowed transition" in said
 
 
@@ -124,9 +122,7 @@ def test_an_offer_nobody_answered_expires_and_goes_no_further(
         {"i": action},
     )
     _allows(db, "UPDATE opt_action SET status = 'expired' WHERE id = :i", {"i": action})
-    said = _refuses(
-        db, "UPDATE opt_action SET status = 'approved' WHERE id = :i", {"i": action}
-    )
+    said = _refuses(db, "UPDATE opt_action SET status = 'approved' WHERE id = :i", {"i": action})
     assert "not an allowed transition" in said
 
 
@@ -168,9 +164,7 @@ def test_an_outcome_is_final(
     db, _place, action = logged
     _allows(db, "UPDATE opt_action SET status = 'approved' WHERE id = :i", {"i": action})
     _allows(db, "UPDATE opt_action SET status = 'applied' WHERE id = :i", {"i": action})
-    said = _refuses(
-        db, "UPDATE opt_action SET status = :s WHERE id = :i", {"s": to, "i": action}
-    )
+    said = _refuses(db, "UPDATE opt_action SET status = :s WHERE id = :i", {"s": to, "i": action})
     assert "not an allowed transition" in said, why
 
 
@@ -234,9 +228,7 @@ def test_a_written_explanation_cannot_be_rewritten(
     """Empty to a value once -- the model may write the words later -- then frozen."""
     db, _place, action = logged
     _allows(db, f"UPDATE opt_action SET {column} = {first} WHERE id = :i", {"i": action})
-    said = _refuses(
-        db, f"UPDATE opt_action SET {column} = {second} WHERE id = :i", {"i": action}
-    )
+    said = _refuses(db, f"UPDATE opt_action SET {column} = {second} WHERE id = :i", {"i": action})
     assert f"opt_action.{column} was already written" in said
 
 

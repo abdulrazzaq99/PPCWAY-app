@@ -104,6 +104,26 @@ class Settings(BaseSettings):
     open_to: str = ""
 
     #: Otto's model service. Claude runs on Google Cloud Vertex AI, so there is
+    #: Which way this deployment reaches Claude: "openrouter" or "vertex".
+    #: The owner moved to OpenRouter on 3 November; Vertex is kept working
+    #: because the client approved it on 30 October and may want it back, and
+    #: because a seam that still has two live sides is a seam that still works.
+    model_provider: str = "openrouter"
+
+    #: OpenRouter's key. Unlike the Vertex path, this deployment now does hold
+    #: a model credential, which is the price of the move: it goes in Secret
+    #: Manager and never in the image.
+    openrouter_api_key: SecretStr | None = None
+    #: Sent as HTTP-Referer and X-Title, which is how OpenRouter attributes
+    #: usage on its own dashboards. Not security, just legibility of the bill.
+    openrouter_site: str = "https://app.ppcway.com"
+    openrouter_title: str = "PPCWay"
+    #: Providers OpenRouter may route to. Pinned to Anthropic's own first-party
+    #: serving: the client's condition was no training on customer data, and
+    #: the honest way to hold that is to not let a prompt reach a reseller
+    #: whose terms nobody here has read.
+    openrouter_only: str = "anthropic"
+
     #: no Anthropic API key here and never should be: authentication is
     #: Google's, from the environment's application default credentials.
     vertex_project: str = ""

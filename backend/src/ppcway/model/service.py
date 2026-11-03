@@ -54,7 +54,13 @@ from typing import Any, Final, Protocol, runtime_checkable
 
 import anthropic
 
-from ppcway.model.jobs import Job, Tier, tier_for
+from ppcway.model.jobs import (
+    OPENROUTER_EFFORTS,
+    Job,
+    Tier,
+    for_openrouter,
+    tier_for,
+)
 
 log = logging.getLogger(__name__)
 
@@ -159,19 +165,50 @@ class Answer:
 MUST_SCREEN = frozenset({Job.CHAT})
 
 
+#: The two ways this deployment can reach Claude.
+VERTEX: Final = "vertex"
+OPENROUTER: Final = "openrouter"
+PROVIDERS: Final = (OPENROUTER, VERTEX)
+
+#: OpenRouter's Anthropic-native endpoint. It serves the Messages API rather
+#: than only OpenAI's shape -- probing both paths unauthenticated returns an
+#: Anthropic-shaped error from this one and an OpenAI-shaped error from
+#: `/chat/completions` -- so the request body below is the same one Vertex
+#: gets, and the SDK is the same SDK.
+OPENROUTER_BASE: Final = "https://openrouter.ai/api/v1"
+
+
 @dataclass(frozen=True, slots=True)
 class Models:
     """How this deployment reaches Claude. Built once, passed where needed."""
 
-    project: str
+    #: Vertex's project. Empty on OpenRouter, where it means nothing.
+    project: str = ""
     region: str = US_REGION
     prompt_version: str = ""
     #: Injected, so a test drives this without credentials and without network.
     client: Any | None = None
     screener: Screener | None = None
+    #: Which provider. OpenRouter since 3 November, per the owner.
+    provider: str = OPENROUTER
+    #: OpenRouter's key, held as a plain string here because the SDK needs one.
+    #: Read from `SecretStr` at the edge and never logged: `__repr__` is
+    #: suppressed below so a dataclass dump cannot print it.
+    api_key: str = field(default="", repr=False)
+    site: str = "https://app.ppcway.com"
+    title: str = "PPCWay"
+    #: Providers OpenRouter may route to, comma-separated. Empty means no
+    #: restriction, which this deployment does not use.
+    only: str = "anthropic"
 
     def __post_init__(self) -> None:
-        if self.region == REFUSED_REGION:
+        if self.provider not in PROVIDERS:
+            raise ValueError(
+                f"model provider must be one of {', '.join(PROVIDERS)}, not"
+                f" {self.provider!r}. An unrecognised provider would otherwise"
+                f" fall through to whichever branch happened to be last."
+            )
+        if self.provider == VERTEX and self.region == REFUSED_REGION:
             raise ValueError(
                 "the global endpoint is not used: the client's brief pins model"
                 " processing to the United States multi-region, and 'global'"
@@ -181,19 +218,92 @@ class Models:
 
     @property
     def ready(self) -> bool:
-        return bool(self.project and self.region and self.prompt_version)
+        """Whether this provider has what it needs. Each needs different things."""
+        if not self.prompt_version:
+            return False
+        if self.provider == OPENROUTER:
+            return bool(self.api_key)
+        return bool(self.project and self.region)
+
+    @property
+    def on_openrouter(self) -> bool:
+        return self.provider == OPENROUTER
+
+    def model_for(self, tier: Tier) -> str:
+        """The tier's model in this provider's own spelling."""
+        return for_openrouter(tier.model) if self.on_openrouter else tier.model
 
     def _client(self) -> Any:
         if self.client is not None:
             return self.client
         if not self.ready:
             raise ModelUnavailable(
-                "the model service is not set up: VERTEX_PROJECT, VERTEX_REGION and"
-                " MODEL_PROMPT_VERSION must all be set. Nothing was sent."
+                "the model service is not set up: on OpenRouter it needs"
+                " OPENROUTER_API_KEY and MODEL_PROMPT_VERSION; on Vertex it needs"
+                " VERTEX_PROJECT, VERTEX_REGION and MODEL_PROMPT_VERSION."
+                " Nothing was sent."
+            )
+        if self.on_openrouter:
+            # The same SDK against OpenRouter's Anthropic-native endpoint. The
+            # referer and title are how OpenRouter attributes usage on its own
+            # dashboards; neither is security.
+            return anthropic.Anthropic(
+                base_url=OPENROUTER_BASE,
+                api_key=self.api_key,
+                default_headers={"HTTP-Referer": self.site, "X-Title": self.title},
             )
         # Google's credentials, from the environment. No API key is passed,
-        # because there is none in this deployment to pass.
+        # because on this path there is none in this deployment to pass.
         return anthropic.AnthropicVertex(project_id=self.project, region=self.region)
+
+    def _routing(self) -> dict[str, Any]:
+        """OpenRouter's provider routing, which is how the data promise is kept.
+
+        `data_collection: "deny"` refuses any provider that may retain or train
+        on what is sent, and `only` pins routing to Anthropic's own first-party
+        serving. The client's condition was no training on customer data; on
+        Vertex that came from Google's terms, and on OpenRouter it has to be
+        asked for in every request, because the default is to route wherever is
+        cheapest.
+
+        `allow_fallbacks: False` is the part that makes the other two mean
+        something: without it, a refused provider is a reason to try the next
+        one rather than to stop.
+        """
+        routing: dict[str, Any] = {
+            "data_collection": "deny",
+            "allow_fallbacks": False,
+        }
+        wanted = [one.strip() for one in self.only.split(",") if one.strip()]
+        if wanted:
+            routing["only"] = wanted
+        return routing
+
+    def _tuning(self, tier: Tier) -> dict[str, Any]:
+        """How hard the model may think, in whichever dialect the provider takes.
+
+        Vertex takes Anthropic's own `output_config.effort` and adaptive
+        thinking. OpenRouter takes its own `reasoning.effort`, with four rungs
+        where ours has five, so `xhigh` and `max` arrive as `high` -- see
+        `OPENROUTER_EFFORTS`. `output_config` is not sent to OpenRouter at all:
+        it is a first-party parameter and a proxy that does not recognise it
+        would reject the whole request rather than ignore the field.
+        """
+        if self.on_openrouter:
+            # One `extra_body`, built once. Two helpers each returning their own
+            # would collide on the keyword and raise TypeError at the call --
+            # which is the sort of thing that only shows up on the first real
+            # request, so they are merged here instead.
+            return {
+                "extra_body": {
+                    "reasoning": {"effort": OPENROUTER_EFFORTS.get(tier.effort, "high")},
+                    "provider": self._routing(),
+                }
+            }
+        return {
+            "output_config": {"effort": tier.effort},
+            "thinking": {"type": "adaptive"},
+        }
 
     def ask(
         self,
@@ -239,7 +349,7 @@ class Models:
         started = time.monotonic()
         try:
             said_back = self._client().messages.create(
-                model=tier.model,
+                model=self.model_for(tier),
                 max_tokens=tier.max_tokens,
                 **({"tools": ours} if ours else {}),
                 system=[
@@ -250,8 +360,7 @@ class Models:
                     }
                 ],
                 messages=messages,
-                output_config={"effort": tier.effort},
-                thinking={"type": "adaptive"},
+                **self._tuning(tier),
             )
         except (anthropic.AnthropicError, OSError) as exc:
             # One type out, by design: the SDK has twenty-odd error classes and

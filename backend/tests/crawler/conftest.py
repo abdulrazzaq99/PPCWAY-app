@@ -24,6 +24,7 @@ something specific at `ssrf.py` - a name that answers differently the second
 time, a host with one good address and one bad one, a chain of redirects that
 only turns hostile on the third hop.
 """
+
 import dataclasses
 import ipaddress
 import pathlib
@@ -258,8 +259,9 @@ class FakeSite(httpx.BaseTransport):
             self.resolutions.append((host, port))
             if self.resolver is None:
                 raise socket.gaierror(
-                    socket.EAI_NONAME, f"this fake site was given the name {host!r} and has "
-                    f"no resolver, so it cannot connect to it"
+                    socket.EAI_NONAME,
+                    f"this fake site was given the name {host!r} and has "
+                    f"no resolver, so it cannot connect to it",
                 )
             answers = self.resolver(host, port)
             return str(answers[0][4][0])

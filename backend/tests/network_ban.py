@@ -108,6 +108,7 @@ FREE.** The lift opens `socketpair` explicitly, but until `ON_THIS_MACHINE` was
 added it then refused every WRITE on the pair - so an event loop could be built
 and never woken, and the symptom was a hang with no error. See that constant.
 """
+
 import contextlib
 import ipaddress
 import pathlib
@@ -397,9 +398,7 @@ LOOPBACK_DECISIONS: dict[str, object] = {
 
 #: Captured at import for the same reason `CLOSED_DOORS` is: arming REBINDS these
 #: names, so by the time a lift runs the module no longer holds the real ones.
-ORIGINAL_DOORS: tuple[object, ...] = tuple(
-    getattr(owner, name) for owner, name in CLOSED_DOORS
-)
+ORIGINAL_DOORS: tuple[object, ...] = tuple(getattr(owner, name) for owner, name in CLOSED_DOORS)
 
 
 def _only_loopback(door, pick, name):  # type: ignore[no-untyped-def]

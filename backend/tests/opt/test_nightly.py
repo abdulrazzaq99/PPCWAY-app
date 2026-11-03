@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -27,8 +27,20 @@ from ppcway.opt.models import OptimizationAction, Status
 from ppcway.opt.nightly import tonight
 from ppcway.org.models import Organization
 
-TODAY = date(2026, 11, 3)
-NOW = datetime(2026, 11, 3, 2, 0, tzinfo=UTC)
+
+#: Relative to the real clock, not a pinned calendar date. These fixtures feed
+#: guardrails that compare `refreshed_at` against `datetime.now`, and
+#: `staleness_minutes` is 180 -- so a hardcoded "today" made this file pass for
+#: the first three hours of one particular day and fail for every hour after.
+#: It did exactly that: the suite was green in the morning and red by midday on
+#: 3 November 2026, with nothing changed in between.
+def _now() -> datetime:
+    """The moment the tests started, as a real instant."""
+    return datetime.now(UTC)
+
+
+TODAY = _now().date()
+NOW = _now()
 
 
 @pytest.fixture

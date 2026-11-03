@@ -23,6 +23,7 @@ see either one. `test_the_module_writes_down_no_address_ranges` and
 `test_the_routability_decision_reads_exactly_three_properties` are the first;
 the `_binding` assertions are the second.
 """
+
 import ast
 import dataclasses
 import inspect
@@ -404,13 +405,16 @@ def test_the_property_pin_reads_the_decision_and_not_a_mention_elsewhere(tmp_pat
 
     # The evasion: a hand-written range check, with the property reads left in
     # place as decoration. The decision reads NOTHING off the argument.
-    assert properties(
-        "def f(ip):\n"
-        "    _judged = (ip.is_global, ip.is_multicast, ip.is_reserved, ip.is_site_local)\n"
-        "    if not _blocked_by_integer_bounds(int(ip)):\n"
-        "        return None\n"
-        "    return 'no'\n"
-    ) == set()
+    assert (
+        properties(
+            "def f(ip):\n"
+            "    _judged = (ip.is_global, ip.is_multicast, ip.is_reserved, ip.is_site_local)\n"
+            "    if not _blocked_by_integer_bounds(int(ip)):\n"
+            "        return None\n"
+            "    return 'no'\n"
+        )
+        == set()
+    )
 
     # And a decision reached without an `if` at all fails loudly rather than
     # reporting an empty set that looks like the evasion above.
@@ -476,18 +480,24 @@ def test_the_denylist_of_properties_the_plan_specified_admits_seven_of_these() -
 
     def the_plans_rule(ip):
         return not (
-            ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
             or ip.is_unspecified
         )
 
     admitted = sorted(
-        address
-        for address in BLOCKED_ADDRESSES
-        if the_plans_rule(ipaddress.ip_address(address))
+        address for address in BLOCKED_ADDRESSES if the_plans_rule(ipaddress.ip_address(address))
     )
     assert admitted == [
-        "100.100.100.200", "100.64.0.1", "224.0.0.1", "239.255.255.250",
-        "fec0::1", "feff::1", "ff02::1",
+        "100.100.100.200",
+        "100.64.0.1",
+        "224.0.0.1",
+        "239.255.255.250",
+        "fec0::1",
+        "feff::1",
+        "ff02::1",
     ]
     for address in admitted:
         assert ssrf._routability_problem(ipaddress.ip_address(address)) is not None
@@ -605,7 +615,10 @@ def test_the_default_ports_are_a_literal_and_cover_every_allowed_scheme() -> Non
 
 def test_the_metadata_table_is_a_literal_and_names_the_four_endpoints() -> None:
     assert set(CLOUD_METADATA_ADDRESSES) == {
-        "169.254.169.254", "fd00:ec2::254", "100.100.100.200", "192.0.0.192",
+        "169.254.169.254",
+        "fd00:ec2::254",
+        "100.100.100.200",
+        "192.0.0.192",
     }
     assert isinstance(_binding("CLOUD_METADATA_ADDRESSES"), ast.Dict)
 
@@ -882,7 +895,9 @@ def test_a_host_in_any_spelling_is_refused_once_the_resolver_has_spoken(
         assert_safe_url(f"http://{spelling}/", resolver=fake_resolver({spelling: "127.0.0.1"}))
 
 
-@pytest.mark.parametrize("url", ["http://[::1]/", "http://[::ffff:127.0.0.1]/", "http://[fd00::1]/"])
+@pytest.mark.parametrize(
+    "url", ["http://[::1]/", "http://[::ffff:127.0.0.1]/", "http://[fd00::1]/"]
+)
 def test_a_bracketed_ipv6_literal_is_unwrapped_and_refused(url, fake_resolver) -> None:
     host = url.removeprefix("http://[").removesuffix("]/")
     with pytest.raises(BlockedAddress):
@@ -926,9 +941,9 @@ def test_the_scheme_table_is_the_size_it_looks() -> None:
 
 
 def test_an_uppercase_scheme_is_still_http(fake_resolver) -> None:
-    target = assert_safe_url("HTTP://Alphaplumbing.Example/x", resolver=fake_resolver(
-        {HOST: "93.184.216.34"}
-    ))
+    target = assert_safe_url(
+        "HTTP://Alphaplumbing.Example/x", resolver=fake_resolver({HOST: "93.184.216.34"})
+    )
     assert (target.scheme, target.host, target.port) == ("http", HOST, 80)
 
 
@@ -1089,11 +1104,11 @@ def test_the_idna_codec_refuses_an_over_long_dns_label_with_a_unicode_error() ->
 #: unsubscriptable one, and a table of nothing but empty tuples would pass
 #: against a guard that only caught `IndexError`.
 MALFORMED_ANSWERS = (
-    [(2, 1, 6, "", ())],           # a 5-tuple whose sockaddr is empty - IndexError
-    [(2, 1, 6, "")],               # a 4-wide answer - IndexError
-    [None],                        # not an answer at all - TypeError
-    [(2, 1, 6, "", None)],         # no sockaddr - TypeError
-    [(2, 1, 6, "", 7)],            # a sockaddr that is not a sequence - TypeError
+    [(2, 1, 6, "", ())],  # a 5-tuple whose sockaddr is empty - IndexError
+    [(2, 1, 6, "")],  # a 4-wide answer - IndexError
+    [None],  # not an answer at all - TypeError
+    [(2, 1, 6, "", None)],  # no sockaddr - TypeError
+    [(2, 1, 6, "", 7)],  # a sockaddr that is not a sequence - TypeError
     # Re-review N2: the guard caught `IndexError`, so it was itself a denylist of
     # the failures somebody thought of. A mapping is subscriptable and is NOT a
     # sequence, so `sockaddr[0]` is a `KeyError` - which escaped the guard
@@ -1209,9 +1224,7 @@ REDIRECT_ATTACKS = (
 #: of literals, which left row 3 - the `/../../` Location - driving nothing at
 #: all: `len(REDIRECT_ATTACKS) == 7` read like seven attacks and was four.
 REDIRECTS_TO_A_BAD_ADDRESS = tuple(
-    (location, resolves_to)
-    for location, resolves_to in REDIRECT_ATTACKS
-    if resolves_to is not None
+    (location, resolves_to) for location, resolves_to in REDIRECT_ATTACKS if resolves_to is not None
 )
 REDIRECTS_THAT_CHANGE_SCHEME = tuple(
     location
@@ -1231,8 +1244,12 @@ def test_a_redirect_to_a_private_address_is_refused(location, resolves_to, fake_
     only ran on the URL the merchant typed. The protocol-relative form is the
     one worth naming: `Location: //169.254.169.254/` inherits `https` and looks
     like a path."""
-    answers = {HOST: "93.184.216.34", "169.254.169.254": "169.254.169.254",
-               "127.0.0.1": "127.0.0.1", "sneaky.example": "10.1.2.3"}
+    answers = {
+        HOST: "93.184.216.34",
+        "169.254.169.254": "169.254.169.254",
+        "127.0.0.1": "127.0.0.1",
+        "sneaky.example": "10.1.2.3",
+    }
     with pytest.raises(BlockedAddress) as refused:
         assert_safe_redirect(URL, location, resolver=fake_resolver(answers))
     assert refused.value.address == resolves_to, (
@@ -1269,11 +1286,13 @@ def test_a_chain_that_only_turns_hostile_on_the_third_hop_is_caught_there(fake_r
     its own resolved address, so the chain is refused where it turns and not
     before.
     """
-    resolver = fake_resolver({
-        HOST: "93.184.216.34",
-        "cdn.example": "8.8.8.8",
-        "metadata.internal": "169.254.169.254",
-    })
+    resolver = fake_resolver(
+        {
+            HOST: "93.184.216.34",
+            "cdn.example": "8.8.8.8",
+            "metadata.internal": "169.254.169.254",
+        }
+    )
     chain = ["/promo", "https://cdn.example/asset", "http://metadata.internal/latest/meta-data/"]
 
     here = URL
@@ -1519,8 +1538,7 @@ def test_the_guarded_directories_carry_the_same_ban_marker() -> None:
 
     tests_root = pathlib.Path(__file__).resolve().parents[1]
     conftests = sorted(
-        path for path in tests_root.rglob("conftest.py")
-        if BAN_INSTALLED_HERE in path.read_text()
+        path for path in tests_root.rglob("conftest.py") if BAN_INSTALLED_HERE in path.read_text()
     )
     # The proof of concept had three guarded directories (crawler, llm, workflows).
     # This repository starts with the crawler alone; the count grows as the LLM and
@@ -1567,7 +1585,9 @@ def test_a_refusal_never_repeats_a_password_back(fake_resolver) -> None:
     """An exception message is the one place a secret is certain to be written
     down: a log line, and through Task 27 a merchant-facing string."""
     with pytest.raises(BlockedAddress) as refused:
-        assert_safe_url("http://alice:hunter2@alphaplumbing.example:22/", resolver=fake_resolver({}))
+        assert_safe_url(
+            "http://alice:hunter2@alphaplumbing.example:22/", resolver=fake_resolver({})
+        )
     assert "hunter2" not in str(refused.value)
     assert "***@" in str(refused.value), "the shape is kept so the message is still useful"
 
@@ -1587,9 +1607,9 @@ def test_a_refusal_does_not_quote_an_unbounded_url(fake_resolver) -> None:
 #: merchant-facing and log-bound, and `_safe_to_echo` is the one place with the
 #: responsibility.
 UNWRITEABLE_HOSTS = (
-    "a\x07b.example",           # BEL, which a terminal reading a log would ring
-    "x\x08\x08\x08y.example",   # backspaces, which rewrite what was already printed
-    "alpha\ud800.example",      # a lone surrogate: str.encode("utf-8") RAISES on it
+    "a\x07b.example",  # BEL, which a terminal reading a log would ring
+    "x\x08\x08\x08y.example",  # backspaces, which rewrite what was already printed
+    "alpha\ud800.example",  # a lone surrogate: str.encode("utf-8") RAISES on it
 )
 
 
@@ -1699,8 +1719,12 @@ def test_a_refusal_that_never_reached_an_address_carries_none(fake_resolver) -> 
     """`BlockedAddress.address` is `None` rather than absent for the refusals
     that stop before DNS, so `fetch.py` can log it unconditionally instead of
     guarding every call site with `getattr`."""
-    for url in ("file:///etc/passwd", "http://user:pw@alphaplumbing.example/",
-                "http://alphaplumbing.example:6379/", "https://alphaplumbing.example/"):
+    for url in (
+        "file:///etc/passwd",
+        "http://user:pw@alphaplumbing.example/",
+        "http://alphaplumbing.example:6379/",
+        "https://alphaplumbing.example/",
+    ):
         with pytest.raises(BlockedAddress) as refused:
             assert_safe_url(url, resolver=fake_resolver({}))
         assert refused.value.address is None, url

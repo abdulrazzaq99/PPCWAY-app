@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import sqlalchemy as sa
@@ -15,8 +15,21 @@ from ppcway.gateway import quota, switch
 from ppcway.gateway.quota import A_DAY, SHOUT_AT
 
 CUSTOMER = "2580586343"
-TODAY = date(2026, 11, 2)
-NOW = datetime(2026, 11, 2, 12, 0, tzinfo=UTC)
+
+
+#: Relative to the real clock, not a pinned calendar date. These fixtures feed
+#: guardrails that compare `refreshed_at` against `datetime.now`, and
+#: `staleness_minutes` is 180 -- so a hardcoded "today" made this file pass for
+#: the first three hours of one particular day and fail for every hour after.
+#: It did exactly that: the suite was green in the morning and red by midday on
+#: 3 November 2026, with nothing changed in between.
+def _now() -> datetime:
+    """The moment the tests started, as a real instant."""
+    return datetime.now(UTC)
+
+
+TODAY = _now().date()
+NOW = _now()
 
 
 @pytest.fixture
@@ -143,7 +156,10 @@ def test_each_day_starts_again(db: sessionmaker[Session]) -> None:
     with db() as session:
         quota.spend(session, CUSTOMER, 400, today=TODAY)
         session.commit()
-        assert quota.room_today(session, CUSTOMER, today=date(2026, 11, 3)).used == 0
+        # The day after, whichever day that is. Naming a date here is what
+        # made this file depend on the calendar in the first place.
+        tomorrow = TODAY + timedelta(days=1)
+        assert quota.room_today(session, CUSTOMER, today=tomorrow).used == 0
 
 
 def test_the_eighty_percent_alert_fires_once_a_day(db: sessionmaker[Session]) -> None:
