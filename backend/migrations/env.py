@@ -25,7 +25,8 @@ import ppcway.model.log
 import ppcway.opt.consent
 import ppcway.opt.models
 import ppcway.org.models
-import ppcway.share.models  # noqa: F401
+import ppcway.share.models
+import ppcway.staff.models  # noqa: F401
 from ppcway.config import load_settings
 from ppcway.db.base import Base
 
