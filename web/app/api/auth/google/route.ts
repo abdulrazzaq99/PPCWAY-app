@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { landingFor } from "@/app/api/auth/register/route";
 import { RAN_HERE_COOKIE, SESSION_COOKIE, cookieOptions } from "@/lib/session";
 
 /*
@@ -30,7 +31,12 @@ export async function POST(request: Request) {
         { status: res.status === 401 ? 401 : 502 },
       );
     }
-    const reply = NextResponse.json({ person: said.person });
+    // Same rule as the password form: staff land on the panel without having
+    // to know its address, and everybody else lands on their own dashboard.
+    const reply = NextResponse.json({
+      person: said.person,
+      landing: await landingFor(said.token),
+    });
     reply.cookies.set(SESSION_COOKIE, said.token, cookieOptions);
 
     // The audits they ran here before signing in become theirs.

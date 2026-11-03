@@ -7,6 +7,34 @@ import { SESSION_COOKIE, cookieOptions } from "@/lib/session";
 */
 const BACKEND = process.env.BACKEND_URL ?? "http://localhost:8300";
 
+/*
+  Where this person belongs once they are in.
+
+  Asked here rather than offered on the login page. A "sign in as staff" option
+  would have to be visible to everybody who can see the login form -- every
+  merchant and every stranger -- and it would tell all of them that an internal
+  panel exists and roughly where. Who somebody is, is already known the moment
+  they sign in, so there is nothing to ask them.
+
+  `whoami` answers 200 with `staff: false` for everybody else, so this costs
+  one quick request at sign-in and never fails a sign-in: if it cannot be
+  reached, the person lands on their own dashboard, which is where almost
+  everybody belongs anyway.
+*/
+async function landingFor(token: string): Promise<string> {
+  try {
+    const res = await fetch(`${BACKEND}/v1/admin/whoami`, {
+      headers: { "x-session-token": token },
+      cache: "no-store",
+    });
+    if (!res.ok) return "/home";
+    const said = (await res.json().catch(() => ({}))) as { staff?: boolean };
+    return said.staff ? "/admin" : "/home";
+  } catch {
+    return "/home";
+  }
+}
+
 async function signedIn(path: string, body: unknown): Promise<NextResponse> {
   try {
     const res = await fetch(`${BACKEND}${path}`, {
@@ -26,7 +54,10 @@ async function signedIn(path: string, body: unknown): Promise<NextResponse> {
         { status: res.status === 200 ? 400 : res.status },
       );
     }
-    const reply = NextResponse.json({ person: said.person });
+    const reply = NextResponse.json({
+      person: said.person,
+      landing: await landingFor(said.token),
+    });
     reply.cookies.set(SESSION_COOKIE, said.token, cookieOptions);
     return reply;
   } catch {
@@ -40,4 +71,4 @@ export async function POST(request: Request) {
   return signedIn("/v1/auth/register", body);
 }
 
-export { signedIn };
+export { landingFor, signedIn };

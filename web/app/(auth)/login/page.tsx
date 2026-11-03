@@ -18,7 +18,13 @@ function LoginPageInner() {
   const signedOut = params.get("reason") === "signed-out";
   const agency = params.get("brand") === "brightpath";
   const router = useRouter();
-  const next = params.get("next") || "/home";
+  /*
+    Where to go afterwards. An explicit `next` wins -- somebody who followed a
+    link to a particular page should land on it -- and otherwise the server
+    decides from who they turn out to be. Staff land on the internal panel
+    without having to know its address.
+  */
+  const next = params.get("next") || "";
   const [working, setWorking] = useState(false);
   const [trouble, setTrouble] = useState("");
 
@@ -36,12 +42,15 @@ function LoginPageInner() {
           password: String(form.get("password") ?? ""),
         }),
       });
+      const said = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        landing?: string;
+      };
       if (res.ok) {
-        router.replace(next);
+        router.replace(next || said.landing || "/home");
         router.refresh();
         return;
       }
-      const said = (await res.json().catch(() => ({}))) as { error?: string };
       setTrouble(said.error ?? "That address and password do not match.");
     } catch {
       setTrouble("We could not reach the service. Try again in a minute.");

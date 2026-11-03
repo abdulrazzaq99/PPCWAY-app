@@ -33,7 +33,7 @@ declare global {
 
 export function GoogleButton({
   label = "Continue with Google",
-  next = "/overview",
+  next = "",
 }: {
   label?: string;
   next?: string;
@@ -54,12 +54,17 @@ export function GoogleButton({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ credential: reply.credential }),
         });
+        const said = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          landing?: string;
+        };
         if (!res.ok) {
-          const said = (await res.json().catch(() => ({}))) as { error?: string };
           setError(said.error ?? "Google signed you in, but we could not finish. Try again.");
           return;
         }
-        router.replace(next);
+        // Same rule as the password form: an explicit `next` wins, otherwise
+        // the server decides from who this turns out to be.
+        router.replace(next || said.landing || "/home");
         router.refresh();
       } catch {
         setError("We could not reach the sign-in service. Try again in a minute.");

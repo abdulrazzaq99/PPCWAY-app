@@ -64,8 +64,21 @@ export function StaffBar({
             </span>
           </>
         ) : null}
-        <span className="text-pw-night-muted ml-auto">
-          {who.who ? who.who : "signed in"} &middot; every account you open is recorded
+        <span className="ml-auto flex items-center gap-3">
+          <span className="text-pw-night-muted">
+            {who.who ? who.who : "signed in"} &middot; every account you open is recorded
+          </span>
+          {/*
+            A way out. Staff have their own dashboard like anybody else, and
+            landing on the panel at sign-in would otherwise strand them here
+            with nothing but the address bar to get home.
+          */}
+          <a
+            href="/home"
+            className="text-pw-night-text underline underline-offset-2 hover:no-underline"
+          >
+            Leave the panel
+          </a>
         </span>
       </div>
     </div>
