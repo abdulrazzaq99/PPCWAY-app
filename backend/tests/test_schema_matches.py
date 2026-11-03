@@ -31,6 +31,7 @@ from ppcway.ads import mirror as _mirror  # noqa: F401
 from ppcway.ads import models as _ads  # noqa: F401
 from ppcway.audit import models as _audit  # noqa: F401
 from ppcway.auth import models as _auth  # noqa: F401
+from ppcway.chat import transcript as _transcript  # noqa: F401
 from ppcway.db.base import Base
 from ppcway.gateway import quota as _quota  # noqa: F401
 from ppcway.gateway import switch as _switch  # noqa: F401

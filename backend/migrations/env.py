@@ -17,6 +17,7 @@ import ppcway.ads.mirror
 import ppcway.ads.models
 import ppcway.audit.models
 import ppcway.auth.models
+import ppcway.chat.transcript
 import ppcway.gateway.quota
 import ppcway.gateway.switch
 import ppcway.mail.models
