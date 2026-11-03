@@ -366,9 +366,7 @@ def merchants(session: Session, *, look_for: str = "", most: int = 100) -> list[
         last = None
         if customer_id:
             last = session.scalar(
-                select(func.max(SyncRun.finished_at)).where(
-                    SyncRun.customer_id == customer_id
-                )
+                select(func.max(SyncRun.finished_at)).where(SyncRun.customer_id == customer_id)
             )
         out.append(
             MerchantRow(

@@ -28,7 +28,13 @@ THE_DOOR = "ppcway.gateway.google"
 #: as one batch through the gateway; full rollback on any failure*. It reaches
 #: the seam -- `port`, `switch` -- and not the module that sends, which is the
 #: distinction the first test below actually enforces.
-MAY_USE_THE_GATEWAY = {"gateway", "api", "builder"}
+#:
+#: `staff` is on it because the internal panel holds the kill switch. An admin
+#: panel that could not stop writes would be an admin panel in name only, and
+#: the switch is the seam: `staff.controls` imports `gateway.switch` and
+#: `gateway.quota` and nothing else. The first test below still holds the line
+#: that matters -- no package outside `gateway` may reach `gateway.google`.
+MAY_USE_THE_GATEWAY = {"gateway", "api", "builder", "staff"}
 
 
 def _imports(path: pathlib.Path) -> set[str]:
