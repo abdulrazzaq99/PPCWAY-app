@@ -18,7 +18,7 @@ import pytest
 
 from ppcway.model.jobs import HAIKU, OPUS, SONNET, Job
 from ppcway.model.service import (
-    US_MULTI_REGION,
+    US_REGION,
     Answer,
     Models,
     NotScreened,
@@ -84,7 +84,7 @@ def _models(reply: Reply | Exception, **over: Any) -> tuple[Models, FakeClient]:
     client = FakeClient(reply)
     settings: dict[str, Any] = {
         "project": "ppcway-staging",
-        "region": US_MULTI_REGION,
+        "region": US_REGION,
         "prompt_version": VERSION,
         "client": client,
         "screener": YesScreener(),
@@ -217,7 +217,7 @@ def test_the_global_endpoint_is_refused() -> None:
 def test_an_unconfigured_service_says_so_rather_than_guessing() -> None:
     from ppcway.model.service import ModelUnavailable
 
-    models = Models(project="", region=US_MULTI_REGION, prompt_version="")
+    models = Models(project="", region=US_REGION, prompt_version="")
     assert not models.ready
     with pytest.raises(ModelUnavailable, match="not set up"):
         models.ask(Job.INTERNAL, system="s", said="q")
@@ -245,3 +245,18 @@ def test_a_bug_in_our_own_request_is_not_reported_as_google_being_down() -> None
     models, _ = _models(TypeError("create() got an unexpected keyword argument"))
     with pytest.raises(TypeError):
         models.ask(Job.INTERNAL, system="s", said="q")
+
+
+def test_the_region_is_a_named_us_region_not_the_multi_region() -> None:
+    """Found by asking the live API, not by reading about it.
+
+    `rawPredict` on an Anthropic model in the `us` multi-region answers 501
+    UNIMPLEMENTED -- the multi-region serves Google's own publisher models and
+    not this one. `us-central1` lists all thirteen Anthropic models and
+    `us-east5` lists none, so the default has to be a named region. It still
+    has to be a US one, because that is the client's residency decision.
+    """
+    assert US_REGION == "us-central1"
+    assert US_REGION != "us", "the multi-region cannot serve Anthropic rawPredict"
+    assert US_REGION.startswith("us-"), "the client pinned processing to the United States"
+    assert Models(project="p", prompt_version="v").region == US_REGION

@@ -107,10 +107,14 @@ class Settings(BaseSettings):
     #: no Anthropic API key here and never should be: authentication is
     #: Google's, from the environment's application default credentials.
     vertex_project: str = ""
-    #: The United States multi-region, per the client's decision of 30 October.
+    #: A named United States region, which keeps the client's residency
+    #: decision of 30 October. Not the `us` multi-region: `rawPredict` on an
+    #: Anthropic model there answers 501 UNIMPLEMENTED, which was found by
+    #: probing the live API rather than by reading about it. `us-central1`
+    #: serves all thirteen Anthropic models; `us-east5` serves none.
     #: "global" is refused in `model.service`, not here, because the refusal
     #: belongs with the code that would otherwise send the request.
-    vertex_region: str = "us"
+    vertex_region: str = "us-central1"
     #: Which version of our own prompt wording produced an answer. Every answer
     #: carries it, so a bad prompt can be traced to the ads it wrote after the
     #: prompt has been fixed. Blueprint §7.6.

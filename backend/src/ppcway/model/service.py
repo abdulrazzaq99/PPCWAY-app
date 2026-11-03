@@ -8,10 +8,18 @@ A constraint of that kind is only worth stating if something enforces it, so
 one appears. Blueprint §18.2: an architectural rule that is not enforced
 mechanically decays.
 
-**Vertex AI, in the United States multi-region.** `region="us"`, from settings,
-and `"global"` is refused outright rather than accepted as a shorter spelling:
-the brief says the global endpoint is not used, and the difference between the
-two is which countries a prompt may be processed in. There is no Anthropic API
+**Vertex AI, in a named United States region.** `region="us-central1"`, from
+settings, and `"global"` is refused outright rather than accepted as a shorter
+spelling: the brief says the global endpoint is not used, and the difference
+between the two is which countries a prompt may be processed in.
+
+`"us"`, the United States multi-region, is not usable and that was established
+by asking rather than by reading: `rawPredict` on an Anthropic model there
+answers **501 UNIMPLEMENTED**. The multi-region serves Google's own publisher
+models and not this one. `us-central1` lists all thirteen Anthropic models;
+`us-east5` lists none. So the default is a named US region, which keeps the
+client's residency decision of 30 October -- processing in the United States --
+while actually being a place the request can land. There is no Anthropic API
 key anywhere in this package -- authentication is Google's, from the
 environment's own application default credentials, which is also why nothing
 here has a secret to leak.
@@ -51,7 +59,10 @@ from ppcway.model.jobs import Job, Tier, tier_for
 log = logging.getLogger(__name__)
 
 #: The endpoint the brief says to use, and the one it says not to.
-US_MULTI_REGION = "us"
+#: A named US region rather than the `us` multi-region, which answers 501
+#: UNIMPLEMENTED for Anthropic models. Still the United States, as the client
+#: decided; just a region that serves them.
+US_REGION = "us-central1"
 REFUSED_REGION = "global"
 
 
@@ -147,7 +158,7 @@ class Models:
     """How this deployment reaches Claude. Built once, passed where needed."""
 
     project: str
-    region: str = US_MULTI_REGION
+    region: str = US_REGION
     prompt_version: str = ""
     #: Injected, so a test drives this without credentials and without network.
     client: Any | None = None
@@ -159,7 +170,7 @@ class Models:
                 "the global endpoint is not used: the client's brief pins model"
                 " processing to the United States multi-region, and 'global'"
                 " would let a prompt be served from anywhere. Set"
-                f" VERTEX_REGION to {US_MULTI_REGION!r} or a named US region."
+                f" VERTEX_REGION to {US_REGION!r} or another named US region."
             )
 
     @property
