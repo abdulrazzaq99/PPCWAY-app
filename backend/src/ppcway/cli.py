@@ -97,9 +97,79 @@ def gate() -> int:
     return 0 if standing.passed else 1
 
 
+def staff(email: str, level: str, because: str) -> int:
+    """Give somebody internal access, or take it away.
+
+    Here rather than as an endpoint because of the bootstrap problem: only a
+    principal may grant staff access, and a fresh deployment has no principal
+    to do it. An endpoint that solved that would be an endpoint that can create
+    a principal without one -- a back door, however carefully it is gated. A
+    command needs the database URL, and whoever holds that needs no back door.
+
+    An empty level withdraws. The reason is required either way, because
+    `staff_grant` exists to be read back and a row that does not say why
+    cannot be.
+    """
+    from sqlalchemy import func, select
+
+    from ppcway.auth.models import UserAccount
+    from ppcway.db.session import session_factory
+    from ppcway.staff.guard import grant, level_of, withdraw
+    from ppcway.staff.models import Level
+
+    wanted = (level or "").strip().lower()
+    known = ", ".join(one.value for one in Level)
+    if wanted and wanted not in {one.value for one in Level}:
+        print(f"level must be one of: {known} (or empty to withdraw)")
+        return 2
+    if not (because or "").strip():
+        print('say why: --because "the reason this access was given"')
+        return 2
+
+    with session_factory()() as session:
+        account = session.scalars(
+            select(UserAccount).where(func.lower(UserAccount.email) == email.strip().lower())
+        ).first()
+        if account is None:
+            print(
+                f"nobody has signed in as {email}. They have to sign in once first --"
+                f" a grant points at an account, and there is no account yet."
+            )
+            return 1
+        if not wanted:
+            gone = withdraw(session, account_id=account.id, by_account_id=None, because=because)
+            session.commit()
+            print(f"{email} no longer has access." if gone else f"{email} had no access.")
+            return 0
+        grant(
+            session,
+            account_id=account.id,
+            level=Level(wanted),
+            # No granter recorded: this is the bootstrap path, and a false one
+            # would be worse than none.
+            by_account_id=None,
+            because=because,
+        )
+        session.commit()
+        held = level_of(session, account)
+        print(f"{email} now has {held.value if held else 'no'} access.")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if argv and argv[0] == "gate":
         return gate()
+    if argv and argv[0] == "staff":
+        rest = argv[1:]
+        if not rest:
+            print('usage: python -m ppcway.cli staff <email> <level> --because "why"')
+            print("       level: support, engineer, principal, or omitted to withdraw")
+            return 2
+        wanted_level = rest[1] if len(rest) > 1 and not rest[1].startswith("--") else ""
+        reason = ""
+        if "--because" in rest:
+            reason = " ".join(rest[rest.index("--because") + 1 :])
+        return staff(rest[0], wanted_level, reason)
     if argv and argv[0] == "post":
         return post("--dry" in argv)
     if len(argv) >= 2 and argv[0] == "find":
@@ -109,7 +179,8 @@ def main(argv: list[str]) -> int:
             "usage: python -m ppcway.cli audit <site> [--json]\n"
             '       python -m ppcway.cli find "<name>" ["<town>"]\n'
             "       python -m ppcway.cli post [--dry]\n"
-            "       python -m ppcway.cli gate"
+            "       python -m ppcway.cli gate\n"
+            '       python -m ppcway.cli staff <email> <level> --because "why"'
         )
         return 2
     report = run_audit(argv[1], load_settings())
