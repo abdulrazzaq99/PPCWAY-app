@@ -2778,6 +2778,458 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ).all()
         return [AuditOut(id=r.id, site=r.site, status=r.status, error=r.error) for r in rows]
 
+    # ---- the internal panel -------------------------------------------------
+    #
+    # Everything under /v1/admin is PPCWay's own staff looking at somebody
+    # else's business. Three things are true of every route here and none of
+    # them are optional.
+    #
+    # It is gated on `staff_grant` and never on `org.Role`. `Role.ADMIN` is a
+    # merchant's own admin, and wiring these routes to it would hand every
+    # merchant's admin a window into every other merchant's business.
+    #
+    # The refusal is the same shape whether somebody is not staff or is staff
+    # at too low a level, because the difference is not a stranger's business.
+    #
+    # Opening one named business is written down. `note_look` is called by the
+    # endpoint rather than by the view underneath, because a record written
+    # where it is convenient goes missing the moment somebody adds a second
+    # caller.
+
+    def _staff_error(exc: Exception) -> HTTPException:
+        """Turn a guard refusal into the right status.
+
+        403 for both, deliberately. A 404 would leak whether the panel exists
+        and a 401 would invite a sign-in that cannot help.
+        """
+        from ppcway.staff.guard import NotAllowed, NotStaff
+
+        if isinstance(exc, NotStaff):
+            return HTTPException(403, str(exc))
+        if isinstance(exc, NotAllowed):
+            return HTTPException(403, str(exc))
+        return HTTPException(403, "Not for you.")
+
+    def _staff(session: Session, token: str | None, capability: str) -> tuple[Any, Any]:
+        """The caller and their level, having checked they may do this."""
+        from ppcway.staff.guard import NotAllowed, NotStaff, require
+
+        account = _signed_in(session, token)
+        try:
+            return account, require(session, account, capability)
+        except (NotStaff, NotAllowed) as exc:
+            raise _staff_error(exc) from None
+
+    @app.get("/v1/admin/whoami")
+    def admin_whoami(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Whether the person asking is staff, and what they may do.
+
+        The screen asks this first. It returns 200 with `staff: false` rather
+        than 403, because this is the one route whose answer is "no" for most
+        people and a console error on every page load is noise.
+        """
+        from ppcway.staff.controls import levels_for_screen
+        from ppcway.staff.guard import level_of
+        from ppcway.staff.models import MAY
+
+        account = _signed_in(session, x_session_token)
+        held = level_of(session, account)
+        if held is None:
+            return {"staff": False, "level": "", "may": [], "levels": []}
+        return {
+            "staff": True,
+            "level": held.value,
+            "may": sorted(MAY[held]),
+            "levels": [{"level": one, "what": what} for one, what in levels_for_screen()],
+            "who": account.email,
+        }
+
+    @app.get("/v1/admin/overview")
+    def admin_overview(
+        session: Annotated[Session, Depends(get_session)],
+        window: str = "7d",
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Every figure the overview screen shows, measured over one window."""
+        from ppcway.staff import stats
+        from ppcway.staff.controls import standing
+
+        _account, _level = _staff(session, x_session_token, "read_platform")
+        said = stats.platform(session, window=window)
+        where = standing(
+            session,
+            _account,
+            writes_enabled=settings.ads_writes_enabled,
+            auto_apply_enabled=settings.otto_auto_apply,
+        )
+
+        def figure(one: stats.Count) -> dict[str, Any]:
+            return {
+                "label": one.label,
+                "value": one.value,
+                "window": one.window,
+                "known": one.known,
+                "change": one.change,
+                "words": one.words,
+            }
+
+        return {
+            "at": said.at.isoformat(),
+            "window": said.window,
+            "healthy": said.healthy,
+            "trouble": list(said.trouble),
+            "writes": {
+                "anything_can_be_written": where.anything_can_be_written,
+                "words": where.words,
+                "stops": [
+                    {"scope": one.scope, "because": one.because, "ours": one.ours}
+                    for one in where.stops
+                ],
+            },
+            "figures": {
+                name: figure(getattr(said, name))
+                for name in (
+                    "merchants",
+                    "connected",
+                    "people",
+                    "proposed",
+                    "waiting",
+                    "applied",
+                    "reverted",
+                    "refused",
+                    "model_calls",
+                    "model_tokens",
+                    "model_trouble",
+                    "syncs_failed",
+                    "syncs_stuck",
+                )
+            },
+        }
+
+    @app.get("/v1/admin/merchants")
+    def admin_merchants(
+        session: Annotated[Session, Depends(get_session)],
+        look_for: str = "",
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Every business, with enough on each row to decide who needs help."""
+        from ppcway.staff import stats
+        from ppcway.staff.guard import note_look
+
+        account, level = _staff(session, x_session_token, "read_merchant")
+        rows = stats.merchants(session, look_for=look_for)
+        # The list, not one business. Recorded without an organisation rather
+        # than not at all: "who went looking through the customer list" is a
+        # question worth being able to answer too.
+        note_look(session, account=account, level=level, place=None, looked_at="list")
+        session.commit()
+        return {
+            "merchants": [
+                {
+                    "organization_id": str(one.organization_id),
+                    "name": one.name,
+                    "customer_id": one.customer_id,
+                    "connected": one.connected,
+                    "account_status": one.account_status,
+                    "people": one.people,
+                    "waiting": one.waiting,
+                    "applied": one.applied,
+                    "last_sync": one.last_sync.isoformat() if one.last_sync else None,
+                    "trouble": one.trouble,
+                }
+                for one in rows
+            ],
+            "looked_for": look_for,
+        }
+
+    @app.get("/v1/admin/merchants/{organization_id}")
+    def admin_merchant(
+        organization_id: UUID,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """One business, and the changes proposed for it.
+
+        This is the route the record exists for: a member of staff opening a
+        named merchant's account.
+        """
+        from ppcway.opt.models import OptimizationAction
+        from ppcway.staff.guard import note_look
+
+        account, level = _staff(session, x_session_token, "read_merchant")
+        place = session.get(Organization, organization_id)
+        if place is None:
+            raise HTTPException(404, "We have no record of that business.")
+
+        note_look(session, account=account, level=level, place=place, looked_at="merchant")
+        session.commit()
+
+        connection = session.scalars(
+            select(AdsConnection).where(AdsConnection.organization_id == place.id).limit(1)
+        ).first()
+        actions = session.scalars(
+            select(OptimizationAction)
+            .where(OptimizationAction.organization_id == place.id)
+            .order_by(OptimizationAction.created_at.desc())
+            .limit(100)
+        )
+        return {
+            "organization_id": str(place.id),
+            "name": place.name or "(unnamed)",
+            "created_at": place.created_at.isoformat() if place.created_at else None,
+            "connection": (
+                {
+                    "customer_id": connection.customer_id,
+                    "customer_name": connection.customer_name,
+                    "currency": connection.currency,
+                    "account_status": connection.account_status or "",
+                }
+                if connection
+                else None
+            ),
+            "changes": [
+                {
+                    "id": str(row.id),
+                    "kind": row.kind,
+                    "status": row.status,
+                    "risk": getattr(row, "risk", "") or "",
+                    "reason": row.reason or "",
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                }
+                for row in actions
+            ],
+        }
+
+    @app.get("/v1/admin/merchants/{organization_id}/who-looked")
+    def admin_who_looked(
+        organization_id: UUID,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Every time staff opened this business.
+
+        Here for the panel, and the same reading is what a merchant would be
+        shown. The promise that their data is theirs is worth more if the
+        exceptions can be listed.
+        """
+        from ppcway.staff.guard import who_looked
+
+        _staff(session, x_session_token, "read_merchant")
+        return {
+            "looks": [
+                {
+                    "at": one.at.isoformat(),
+                    "looked_at": one.looked_at,
+                    "level": one.level,
+                    "account_id": str(one.account_id),
+                }
+                for one in who_looked(session, organization_id=organization_id)
+            ]
+        }
+
+    @app.get("/v1/admin/platform")
+    def admin_platform(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """The settings that govern behaviour, and what is stopped."""
+        from ppcway.staff.controls import flags, may_stop_writes, standing
+
+        account, _level = _staff(session, x_session_token, "read_platform")
+        where = standing(
+            session,
+            account,
+            writes_enabled=settings.ads_writes_enabled,
+            auto_apply_enabled=settings.otto_auto_apply,
+        )
+        return {
+            "words": where.words,
+            "anything_can_be_written": where.anything_can_be_written,
+            "may_stop_writes": may_stop_writes(session, account),
+            "stops": [
+                {
+                    "scope": one.scope,
+                    "customer_id": one.customer_id,
+                    "because": one.because,
+                    "ours": one.ours,
+                    "pulled_at": one.pulled_at.isoformat() if one.pulled_at else None,
+                }
+                for one in where.stops
+            ],
+            "flags": [
+                {
+                    "name": one.name,
+                    "on": one.on,
+                    "what_it_does": one.what_it_does,
+                    "changeable": one.changeable,
+                    "why_not": one.why_not,
+                }
+                for one in flags(
+                    session,
+                    account,
+                    writes_enabled=settings.ads_writes_enabled,
+                    auto_apply_enabled=settings.otto_auto_apply,
+                    open_to=settings.open_to,
+                    model_provider=settings.model_provider,
+                    armor_template=settings.model_armor_template,
+                )
+            ],
+        }
+
+    @app.post("/v1/admin/platform/stop")
+    def admin_stop_writes(
+        body: dict[str, str],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Stop writes, for one account or all of them. Principal only."""
+        from ppcway.staff import controls
+
+        account, _level = _staff(session, x_session_token, "stop_writes")
+        try:
+            stopped = controls.stop_writes(
+                session,
+                account,
+                customer_id=(body.get("customer_id") or "").strip(),
+                because=body.get("because") or "",
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        session.commit()
+        return {"stopped": True, "scope": stopped.scope, "words": stopped.words}
+
+    @app.post("/v1/admin/platform/release")
+    def admin_release_writes(
+        body: dict[str, str],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Let writes resume. Principal only."""
+        from ppcway.staff import controls
+
+        account, _level = _staff(session, x_session_token, "stop_writes")
+        lifted = controls.release_writes(
+            session, account, customer_id=(body.get("customer_id") or "").strip()
+        )
+        session.commit()
+        if lifted is None:
+            return {"released": False, "words": "Nothing was stopped."}
+        return {"released": True, "scope": lifted.scope, "words": "Writes can resume."}
+
+    @app.get("/v1/admin/quota")
+    def admin_quota(
+        session: Annotated[Session, Depends(get_session)],
+        customer_id: str = "",
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """What is left of an account's daily Google Ads operations."""
+        from ppcway.staff import controls
+
+        account, _level = _staff(session, x_session_token, "read_platform")
+        if not customer_id.strip():
+            raise HTTPException(422, "Name the Google Ads account to look at.")
+        room = controls.quota_today(session, account, customer_id=customer_id.strip())
+        return {
+            "customer_id": room.customer_id,
+            "used": room.used,
+            "allowance": room.allowance,
+            "left": room.left,
+            "share_used": round(room.share_used, 4),
+            "tight": room.tight,
+            "words": room.words,
+            "day": room.day.isoformat(),
+        }
+
+    @app.get("/v1/admin/staff")
+    def admin_staff_list(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Who has staff access, and the whole history of grants.
+
+        The history, not the current state alone. "Who could see this in March"
+        is the question these tables exist to answer.
+        """
+        from ppcway.staff.models import StaffGrant
+
+        _staff(session, x_session_token, "grant_staff")
+        rows = session.scalars(select(StaffGrant).order_by(StaffGrant.at.desc()).limit(200))
+        return {
+            "grants": [
+                {
+                    "account_id": str(one.account_id),
+                    "level": one.level,
+                    "granted": one.granted,
+                    "because": one.because,
+                    "by_account_id": str(one.by_account_id) if one.by_account_id else None,
+                    "at": one.at.isoformat(),
+                }
+                for one in rows
+            ]
+        }
+
+    @app.post("/v1/admin/staff")
+    def admin_grant_staff(
+        body: dict[str, str],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Give or take away staff access. Principal only.
+
+        By email rather than by account id, because the person doing it is
+        reading a name off a message and not a database.
+        """
+        from ppcway.staff.guard import grant, withdraw
+        from ppcway.staff.models import Level
+
+        account, _level = _staff(session, x_session_token, "grant_staff")
+        email = (body.get("email") or "").strip().lower()
+        if not email:
+            raise HTTPException(422, "Name the person's email address.")
+        them = session.scalars(
+            select(UserAccount).where(func.lower(UserAccount.email) == email).limit(1)
+        ).first()
+        if them is None:
+            raise HTTPException(
+                404,
+                "Nobody with that address has signed in yet. They have to sign in"
+                " once before they can be given access.",
+            )
+        if them.id == account.id:
+            raise HTTPException(
+                422,
+                "You cannot change your own access. Ask another principal, so that"
+                " no single person can quietly promote themselves.",
+            )
+
+        wanted = (body.get("level") or "").strip().lower()
+        because = body.get("because") or ""
+        if wanted in ("", "none", "withdraw"):
+            withdraw(session, account_id=them.id, by_account_id=account.id, because=because)
+            session.commit()
+            return {"level": "", "words": f"{email} no longer has access."}
+        try:
+            level = Level(wanted)
+        except ValueError:
+            raise HTTPException(
+                422, f"Level must be one of: {', '.join(one.value for one in Level)}."
+            ) from None
+        try:
+            grant(
+                session,
+                account_id=them.id,
+                level=level,
+                by_account_id=account.id,
+                because=because,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        session.commit()
+        return {"level": level.value, "words": f"{email} now has {level.value} access."}
+
     return app
 
 
