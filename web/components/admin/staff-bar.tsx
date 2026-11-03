@@ -1,4 +1,5 @@
 import type { Whoami } from "@/lib/admin";
+import { SignOut } from "./sign-out";
 
 /*
   The one piece of chrome this panel adds to the app's own vocabulary, and the
@@ -69,9 +70,12 @@ export function StaffBar({
             {who.who ? who.who : "signed in"} &middot; every account you open is recorded
           </span>
           {/*
-            A way out. Staff have their own dashboard like anybody else, and
-            landing on the panel at sign-in would otherwise strand them here
-            with nothing but the address bar to get home.
+            Two ways out, because they are different things and conflating them
+            is what made somebody ask where the sign-out was. "Leave the panel"
+            goes to your own dashboard and you stay signed in; "Sign out" ends
+            the session. The shell these screens are built from has no account
+            menu at all, so without this there was no sign-out anywhere on an
+            internal screen.
           */}
           <a
             href="/home"
@@ -79,6 +83,10 @@ export function StaffBar({
           >
             Leave the panel
           </a>
+          <span className="text-pw-night-border-strong" aria-hidden>
+            |
+          </span>
+          <SignOut />
         </span>
       </div>
     </div>
