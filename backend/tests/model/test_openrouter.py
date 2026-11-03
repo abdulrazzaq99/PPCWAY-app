@@ -145,10 +145,16 @@ def test_every_tier_has_an_effort_openrouter_accepts() -> None:
 # --- setup, and the key ------------------------------------------------------
 
 
-def test_the_anthropic_native_endpoint_is_used() -> None:
-    """OpenRouter serves the Messages API, not only OpenAI's shape, so the
-    request body is the same one Vertex gets and the SDK is the same SDK."""
-    assert OPENROUTER_BASE == "https://openrouter.ai/api/v1"
+def test_the_base_url_does_not_carry_its_own_version_segment() -> None:
+    """OpenRouter serves the Messages API, so the body and the SDK are the same
+    as Vertex's. But the SDK appends `/v1/messages` itself.
+
+    A base of `.../api/v1` therefore asks for `/api/v1/v1/messages` and gets a
+    flat 404 with no hint as to why. That was the first version of this file,
+    it read perfectly, and it failed on the very first real call.
+    """
+    assert OPENROUTER_BASE == "https://openrouter.ai/api"
+    assert not OPENROUTER_BASE.endswith("/v1"), "the SDK adds this itself"
 
 
 def test_no_key_means_not_set_up_rather_than_a_failed_request() -> None:

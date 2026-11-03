@@ -170,12 +170,17 @@ VERTEX: Final = "vertex"
 OPENROUTER: Final = "openrouter"
 PROVIDERS: Final = (OPENROUTER, VERTEX)
 
-#: OpenRouter's Anthropic-native endpoint. It serves the Messages API rather
-#: than only OpenAI's shape -- probing both paths unauthenticated returns an
-#: Anthropic-shaped error from this one and an OpenAI-shaped error from
-#: `/chat/completions` -- so the request body below is the same one Vertex
-#: gets, and the SDK is the same SDK.
-OPENROUTER_BASE: Final = "https://openrouter.ai/api/v1"
+#: OpenRouter's base, and note what is *not* here: no `/v1`.
+#:
+#: OpenRouter does serve Anthropic's native Messages API -- a real call to
+#: `POST /api/v1/messages` returns an Anthropic-shaped body -- so the request
+#: below is the same one Vertex gets and the SDK is the same SDK. But the SDK
+#: appends `/v1/messages` itself, so a base of `.../api/v1` asks for
+#: `/api/v1/v1/messages` and gets a flat 404 with no hint as to why.
+#:
+#: Found by making the call. The guess in the first version of this file was
+#: `.../api/v1`, which reads correctly and fails every time.
+OPENROUTER_BASE: Final = "https://openrouter.ai/api"
 
 
 @dataclass(frozen=True, slots=True)
