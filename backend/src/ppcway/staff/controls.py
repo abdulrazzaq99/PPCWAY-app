@@ -363,3 +363,33 @@ def levels_for_screen() -> tuple[tuple[str, str], ...]:
             "The kill switch, the settings, and granting access to other people.",
         ),
     )
+
+
+def quota_everywhere(
+    session: Session,
+    account: UserAccount | None,
+    *,
+    today: date | None = None,
+) -> list[Room]:
+    """Every connected account's quota today, tightest first.
+
+    Tightest first because the screen's job is to show who is about to run out,
+    and an alphabetical list makes somebody read all of it to find out.
+    """
+    require(session, account, "read_platform")
+    from ppcway.ads.models import AdsConnection
+
+    day = today or datetime.now(UTC).date()
+    seen: set[str] = set()
+    out: list[Room] = []
+    for row in session.scalars(select(AdsConnection).where(AdsConnection.customer_id != "")):
+        customer_id = row.customer_id or ""
+        if not customer_id or customer_id in seen:
+            continue
+        seen.add(customer_id)
+        found = quota.room_today(session, customer_id, today=day)
+        out.append(
+            Room(customer_id=customer_id, used=found.used, allowance=found.allowance, day=day)
+        )
+    out.sort(key=lambda one: one.share_used, reverse=True)
+    return out

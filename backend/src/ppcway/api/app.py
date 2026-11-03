@@ -3143,6 +3143,89 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "day": room.day.isoformat(),
         }
 
+    @app.get("/v1/admin/jobs")
+    def admin_jobs(
+        session: Annotated[Session, Depends(get_session)],
+        kind: str = "",
+        failed_only: bool = False,
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """The scheduled jobs' most recent runs, newest first."""
+        from datetime import datetime as _dt
+
+        from ppcway.staff import stats
+
+        _staff(session, x_session_token, "run_job")
+        now = _dt.now(UTC)
+        runs = stats.jobs(session, kind=kind, failed_only=failed_only, now=now)
+        return {
+            "runs": [
+                {
+                    "id": str(one.id),
+                    "customer_id": one.customer_id,
+                    "kind": one.kind,
+                    "status": one.status,
+                    "stage": one.stage,
+                    "stuck": one.stuck(now),
+                    "took_seconds": one.took_seconds,
+                    "started_at": one.started_at.isoformat() if one.started_at else None,
+                    "words": one.words(now),
+                }
+                for one in runs
+            ]
+        }
+
+    @app.get("/v1/admin/errors")
+    def admin_errors(
+        session: Annotated[Session, Depends(get_session)],
+        window: str = "7d",
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Everything that failed recently, from both sources in one list.
+
+        Jobs and model calls fail for unrelated reasons, and two tables would
+        make somebody read both to find out whether anything is wrong.
+        """
+        from ppcway.staff import stats
+
+        _staff(session, x_session_token, "read_errors")
+        return {
+            "window": window,
+            "faults": [
+                {
+                    "where": one.where,
+                    "what": one.what,
+                    "customer_id": one.customer_id,
+                    "at": one.at.isoformat() if one.at else None,
+                }
+                for one in stats.faults(session, window=window)
+            ],
+        }
+
+    @app.get("/v1/admin/quota/all")
+    def admin_quota_all(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Every connected account's quota today, tightest first."""
+        from ppcway.staff import controls
+
+        account, _level = _staff(session, x_session_token, "read_platform")
+        return {
+            "accounts": [
+                {
+                    "customer_id": one.customer_id,
+                    "used": one.used,
+                    "allowance": one.allowance,
+                    "left": one.left,
+                    "share_used": round(one.share_used, 4),
+                    "tight": one.tight,
+                    "words": one.words,
+                }
+                for one in controls.quota_everywhere(session, account)
+            ]
+        }
+
     @app.get("/v1/admin/staff")
     def admin_staff_list(
         session: Annotated[Session, Depends(get_session)],

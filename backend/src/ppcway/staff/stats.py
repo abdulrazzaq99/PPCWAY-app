@@ -400,3 +400,142 @@ def merchants(session: Session, *, look_for: str = "", most: int = 100) -> list[
             )
         )
     return out
+
+
+def _aware(when: datetime) -> datetime:
+    """A time that can be subtracted from `now`, whatever the driver returned.
+
+    SQLite hands back naive datetimes even for a `DateTime(timezone=True)`
+    column, so arithmetic against an aware `now` raises. `opt.guardrails`
+    already does this for the same reason; doing it here rather than at each
+    call site means the next reader cannot forget.
+    """
+    return when if when.tzinfo else when.replace(tzinfo=UTC)
+
+
+@dataclass(frozen=True, slots=True)
+class JobRun:
+    """One run of one scheduled job, as the jobs screen shows it."""
+
+    id: uuid.UUID
+    customer_id: str
+    kind: str
+    status: str
+    stage: str
+    trouble: str
+    started_at: datetime
+    finished_at: datetime | None
+
+    @property
+    def took_seconds(self) -> int | None:
+        """None while it is still running, which is not the same as instant."""
+        if self.finished_at is None:
+            return None
+        return max(0, int((_aware(self.finished_at) - _aware(self.started_at)).total_seconds()))
+
+    def stuck(self, now: datetime) -> bool:
+        return self.finished_at is None and (_aware(now) - _aware(self.started_at)) > STUCK_AFTER
+
+    def words(self, now: datetime) -> str:
+        if self.stuck(now):
+            hours = int((_aware(now) - _aware(self.started_at)).total_seconds() // 3600)
+            return f"Started {hours} h ago and never finished."
+        if self.trouble:
+            return self.trouble
+        if self.finished_at is None:
+            return "Still running."
+        return f"Finished in {self.took_seconds} s."
+
+
+def jobs(
+    session: Session,
+    *,
+    kind: str = "",
+    failed_only: bool = False,
+    most: int = 100,
+    now: datetime | None = None,
+) -> list[JobRun]:
+    """The most recent runs, newest first.
+
+    Newest first rather than oldest, because the question somebody brings to
+    this screen is almost always "what just happened", not "what happened
+    first". The stuck ones surface anyway: they have no finish time, so they
+    read as trouble whatever their age.
+    """
+    now = now or datetime.now(UTC)
+    wanted = select(SyncRun).order_by(SyncRun.started_at.desc()).limit(most)
+    if kind.strip():
+        wanted = wanted.where(SyncRun.kind == kind.strip())
+    if failed_only:
+        wanted = wanted.where(SyncRun.status == "failed")
+    return [
+        JobRun(
+            id=row.id,
+            customer_id=row.customer_id or "",
+            kind=row.kind or "",
+            status=row.status or "",
+            stage=row.stage or "",
+            trouble=row.trouble or "",
+            started_at=row.started_at,
+            finished_at=row.finished_at,
+        )
+        for row in session.scalars(wanted)
+    ]
+
+
+@dataclass(frozen=True, slots=True)
+class Fault:
+    """One thing that went wrong, from wherever it went wrong.
+
+    Jobs and model calls fail for unrelated reasons, and a screen that showed
+    them in separate tables would make somebody read both to find out whether
+    anything is wrong. One list, with `where` saying which.
+    """
+
+    where: str
+    what: str
+    customer_id: str
+    at: datetime
+
+    @property
+    def words(self) -> str:
+        return self.what
+
+
+def faults(
+    session: Session, *, window: str = "7d", most: int = 100, now: datetime | None = None
+) -> list[Fault]:
+    """Everything that failed recently, newest first, from both sources."""
+    now = now or datetime.now(UTC)
+    since = _since(window if window in WINDOWS else "7d", now)
+
+    out: list[Fault] = [
+        Fault(
+            where=f"sync ({row.kind})",
+            what=row.trouble or "The job failed and said nothing.",
+            customer_id=row.customer_id or "",
+            at=row.started_at,
+        )
+        for row in session.scalars(
+            select(SyncRun)
+            .where(SyncRun.started_at >= since, SyncRun.status == "failed")
+            .order_by(SyncRun.started_at.desc())
+            .limit(most)
+        )
+    ]
+    out += [
+        Fault(
+            where=f"model ({row.job})",
+            what=row.trouble or "The model call failed and said nothing.",
+            customer_id=row.customer_id or "",
+            at=row.created_at,
+        )
+        for row in session.scalars(
+            select(PromptLog)
+            .where(PromptLog.created_at >= since, PromptLog.trouble != "")
+            .order_by(PromptLog.created_at.desc())
+            .limit(most)
+        )
+    ]
+    out.sort(key=lambda one: one.at, reverse=True)
+    return out[:most]

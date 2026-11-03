@@ -1,5 +1,18 @@
-import { Staff } from "@/components/app/admin-views";
+import type { Metadata } from "next";
+import { AdminStaff } from "@/components/admin/live";
+import { NotForYou } from "@/components/admin/staff-bar";
+import { readGrants, readWhoami } from "@/lib/admin-server";
 
-export default function Page() {
-  return <Staff />;
+export const metadata: Metadata = { title: "Access · PPCWay admin" };
+
+/*
+  Who has internal access, and every grant and withdrawal there has ever been.
+  Only principal access can read this: knowing who can see what is itself
+  something not everybody needs.
+*/
+export default async function AdminStaffPage() {
+  const { data: who, trouble: whoTrouble } = await readWhoami();
+  if (!who?.staff) return <NotForYou trouble={whoTrouble} />;
+  const { data, trouble } = await readGrants();
+  return <AdminStaff who={who} grants={data?.grants ?? []} trouble={trouble} />;
 }

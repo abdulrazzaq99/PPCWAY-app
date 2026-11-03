@@ -564,3 +564,28 @@ def test_the_setting_is_reported_ahead_of_a_stop_when_both_are_true(
     assert "takes a deploy to change" in body["words"]
     assert body["anything_can_be_written"] is False
     assert [one["because"] for one in body["stops"]] == ["stopped during an incident"]
+
+
+def test_jobs_and_errors_need_engineer_access(
+    world: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    """Somebody answering a support ticket has no business in the error stream."""
+    app, factory = world
+    helper = signed_in(factory, "help@ppcway.com", Level.SUPPORT)
+    engineer = signed_in(factory, "eng@ppcway.com", Level.ENGINEER)
+    with TestClient(app) as client:
+        assert client.get("/v1/admin/jobs", headers=head(helper)).status_code == 403
+        assert client.get("/v1/admin/errors", headers=head(helper)).status_code == 403
+        assert client.get("/v1/admin/jobs", headers=head(engineer)).status_code == 200
+        assert client.get("/v1/admin/errors", headers=head(engineer)).status_code == 200
+
+
+def test_the_jobs_route_answers_with_an_empty_list_not_an_error(
+    world: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    """A fresh deployment has run nothing. That is not a fault."""
+    app, factory = world
+    token = signed_in(factory, "eng@ppcway.com", Level.ENGINEER)
+    with TestClient(app) as client:
+        assert client.get("/v1/admin/jobs", headers=head(token)).json() == {"runs": []}
+        assert client.get("/v1/admin/errors", headers=head(token)).json()["faults"] == []

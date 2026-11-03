@@ -134,3 +134,32 @@ export function moved(change: number | null): string {
   if (change === 0) return "No change";
   return change > 0 ? `Up ${count(change)}` : `Down ${count(Math.abs(change))}`;
 }
+
+export type JobRun = {
+  id: string;
+  customer_id: string;
+  kind: string;
+  status: string;
+  stage: string;
+  stuck: boolean;
+  took_seconds: number | null;
+  started_at: string | null;
+  words: string;
+};
+
+export type Fault = {
+  where: string;
+  what: string;
+  customer_id: string;
+  at: string | null;
+};
+
+export type Room = {
+  customer_id: string;
+  used: number;
+  allowance: number;
+  left: number;
+  share_used: number;
+  tight: boolean;
+  words: string;
+};

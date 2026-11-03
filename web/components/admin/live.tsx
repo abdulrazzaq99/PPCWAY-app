@@ -6,10 +6,14 @@ import {
   ago,
   count,
   moved,
+  type Fault,
+  type Grant,
   type Figure,
+  type JobRun,
   type MerchantRow,
   type Overview,
   type PlatformView,
+  type Room,
   type Whoami,
 } from "@/lib/admin";
 import { StaffBar } from "./staff-bar";
@@ -310,6 +314,264 @@ export function AdminPlatform({
             ) : null}
           </>
         ) : null}
+      </AppShell>
+    </>
+  );
+}
+
+/* ---------- jobs ---------- */
+
+export function AdminJobs({
+  who,
+  runs,
+  trouble,
+}: {
+  who: Whoami;
+  runs: JobRun[];
+  trouble: string;
+}) {
+  const stuck = runs.filter((one) => one.stuck);
+  const failed = runs.filter((one) => one.status === "failed");
+  return (
+    <>
+      <StaffBar who={who} />
+      <AppShell {...shellFor(who)} active="jobs">
+        <PageHead
+          title={
+            runs.length
+              ? stuck.length
+                ? `${count(stuck.length)} job${stuck.length > 1 ? "s" : ""} started and never finished.`
+                : failed.length
+                  ? `${count(failed.length)} of the last ${count(runs.length)} runs failed.`
+                  : `The last ${count(runs.length)} runs all finished.`
+              : "No jobs have run yet."
+          }
+          lead={
+            runs.length
+              ? "The scheduled jobs that read Google Ads, newest first."
+              : "A fresh deployment has run nothing. The syncs start on their own schedule."
+          }
+        />
+        {trouble ? <Trouble trouble={trouble} /> : null}
+        <TabsRow tabs={TABS} active="Jobs" />
+        {runs.length ? (
+          <DataTable
+            columns={[
+              { key: "kind", label: "Job", width: 140 },
+              { key: "account", label: "Account" },
+              { key: "state", label: "State" },
+              { key: "stage", label: "Reached" },
+              { key: "took", label: "Took", align: "right" },
+              { key: "when", label: "Started" },
+              { key: "says", label: "What happened" },
+            ]}
+            rows={runs.map((one) => ({
+              kind: one.kind,
+              account: one.customer_id || "—",
+              state: one.stuck ? (
+                <StatusWord tone="red">Stuck</StatusWord>
+              ) : one.status === "failed" ? (
+                <StatusWord tone="red">Failed</StatusWord>
+              ) : one.took_seconds === null ? (
+                <StatusWord tone="faint">Running</StatusWord>
+              ) : (
+                <StatusWord>Finished</StatusWord>
+              ),
+              stage: one.stage || "—",
+              /* An em dash rather than 0 s: still running is not instant. */
+              took: one.took_seconds === null ? "—" : `${count(one.took_seconds)} s`,
+              when: ago(one.started_at),
+              says: one.words,
+            }))}
+          />
+        ) : null}
+      </AppShell>
+    </>
+  );
+}
+
+/* ---------- errors ---------- */
+
+export function AdminErrors({
+  who,
+  faults,
+  trouble,
+  window,
+}: {
+  who: Whoami;
+  faults: Fault[];
+  trouble: string;
+  window: string;
+}) {
+  return (
+    <>
+      <StaffBar who={who} />
+      <AppShell {...shellFor(who)} active="errors">
+        <PageHead
+          title={
+            faults.length
+              ? `${count(faults.length)} thing${faults.length > 1 ? "s" : ""} failed in the last ${window}.`
+              : `Nothing failed in the last ${window}.`
+          }
+          lead={
+            faults.length
+              ? "Jobs and model calls together, newest first. They fail for unrelated reasons, but you only want to read one list."
+              : "Jobs and model calls are both counted here. An empty list is the healthy state."
+          }
+        />
+        {trouble ? <Trouble trouble={trouble} /> : null}
+        <TabsRow tabs={TABS} active="Jobs" />
+        {faults.length ? (
+          <DataTable
+            columns={[
+              { key: "where", label: "Where", width: 180 },
+              { key: "account", label: "Account" },
+              { key: "when", label: "When" },
+              { key: "what", label: "What went wrong" },
+            ]}
+            rows={faults.map((one) => ({
+              where: one.where,
+              account: one.customer_id || "—",
+              when: ago(one.at),
+              what: <StatusWord tone="red">{one.what}</StatusWord>,
+            }))}
+          />
+        ) : (
+          <Panel title="Nothing to look at">
+            <PanelText>
+              No job and no model call has failed in this window. If something is wrong and it is
+              not here, it did not get as far as being recorded.
+            </PanelText>
+          </Panel>
+        )}
+      </AppShell>
+    </>
+  );
+}
+
+/* ---------- quota ---------- */
+
+export function AdminQuota({
+  who,
+  accounts,
+  trouble,
+}: {
+  who: Whoami;
+  accounts: Room[];
+  trouble: string;
+}) {
+  const tight = accounts.filter((one) => one.tight);
+  return (
+    <>
+      <StaffBar who={who} />
+      <AppShell {...shellFor(who)} active="quota">
+        <PageHead
+          title={
+            accounts.length
+              ? tight.length
+                ? `${count(tight.length)} account${tight.length > 1 ? "s" : ""} close to the daily limit.`
+                : `${count(accounts.length)} accounts, none close to the limit.`
+              : "No connected accounts yet."
+          }
+          lead={
+            accounts.length
+              ? "Google allows a fixed number of operations per account per day. Tightest first."
+              : "Quota is counted per Google Ads account, so there is nothing to show until one is connected."
+          }
+        />
+        {trouble ? <Trouble trouble={trouble} /> : null}
+        <TabsRow tabs={TABS} active="Platform" />
+        {accounts.length ? (
+          <DataTable
+            columns={[
+              { key: "account", label: "Account", width: 200 },
+              { key: "used", label: "Used", align: "right" },
+              { key: "left", label: "Left", align: "right" },
+              { key: "share", label: "Share used", align: "right" },
+              { key: "says", label: "Today" },
+            ]}
+            rows={accounts.map((one) => ({
+              account: one.customer_id,
+              used: count(one.used),
+              left: count(one.left),
+              share: one.tight ? (
+                <StatusWord tone="red">{Math.round(one.share_used * 100)}%</StatusWord>
+              ) : (
+                `${Math.round(one.share_used * 100)}%`
+              ),
+              says: one.words,
+            }))}
+            total={{
+              account: `${count(accounts.length)} accounts`,
+              used: count(accounts.reduce((n, one) => n + one.used, 0)),
+            }}
+          />
+        ) : null}
+      </AppShell>
+    </>
+  );
+}
+
+/* ---------- who has access ---------- */
+
+export function AdminStaff({
+  who,
+  grants,
+  trouble,
+}: {
+  who: Whoami;
+  grants: Grant[];
+  trouble: string;
+}) {
+  const live = grants.filter((one) => one.granted);
+  return (
+    <>
+      <StaffBar who={who} />
+      <AppShell {...shellFor(who)} active="staff">
+        <PageHead
+          title={
+            grants.length
+              ? `${count(live.length)} grant${live.length === 1 ? "" : "s"} of access, and the whole history.`
+              : "Nobody has been given access yet."
+          }
+          lead={
+            /*
+              The history, not the current state alone. "Who could see this in
+              March" is the question these rows exist to answer, and a table
+              that only showed today could not answer it.
+            */
+            "Every grant and every withdrawal, newest first. Nothing here is ever deleted."
+          }
+        />
+        {trouble ? <Trouble trouble={trouble} /> : null}
+        <TabsRow tabs={TABS} active="Platform" />
+        {grants.length ? (
+          <DataTable
+            columns={[
+              { key: "level", label: "Level", width: 140 },
+              { key: "what", label: "Given or taken" },
+              { key: "when", label: "When" },
+              { key: "why", label: "Why" },
+            ]}
+            rows={grants.map((one) => ({
+              level: one.level,
+              what: one.granted ? (
+                <StatusWord>Given</StatusWord>
+              ) : (
+                <StatusWord tone="faint">Taken away</StatusWord>
+              ),
+              when: ago(one.at),
+              why: one.because || "—",
+            }))}
+          />
+        ) : (
+          <Panel title="Giving somebody access">
+            <PanelText>
+              Access is given by email, and the person has to have signed in once first. Every grant
+              needs a reason, because this list exists to be read back.
+            </PanelText>
+          </Panel>
+        )}
       </AppShell>
     </>
   );

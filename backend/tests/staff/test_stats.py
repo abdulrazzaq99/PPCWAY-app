@@ -422,3 +422,157 @@ def test_an_unnamed_business_is_still_listed(factory: sessionmaker[DbSession]) -
         place.name = ""
         session.commit()
         assert merchants(session)[0].name == "(unnamed)"
+
+
+# --- jobs and faults ---------------------------------------------------------
+
+
+def a_run(
+    session: DbSession,
+    *,
+    status: str = "ok",
+    kind: str = "structure",
+    ago_min: int = 20,
+    took_min: int | None = 1,
+    trouble: str = "",
+) -> None:
+    started = NOW - timedelta(minutes=ago_min)
+    session.add(
+        SyncRun(
+            id=uuid.uuid4(),
+            customer_id=CUSTOMER,
+            kind=kind,
+            status=status,
+            stage="campaigns",
+            trouble=trouble,
+            started_at=started,
+            finished_at=None if took_min is None else started + timedelta(minutes=took_min),
+        )
+    )
+    session.flush()
+
+
+def test_the_newest_run_comes_first(factory: sessionmaker[DbSession]) -> None:
+    """The question somebody brings to this screen is "what just happened"."""
+    from ppcway.staff.stats import jobs
+
+    with factory() as session:
+        a_run(session, kind="backfill", ago_min=300)
+        a_run(session, kind="today", ago_min=5)
+        session.commit()
+        assert [one.kind for one in jobs(session, now=NOW)] == ["today", "backfill"]
+
+
+def test_a_run_still_going_has_no_duration_rather_than_zero(
+    factory: sessionmaker[DbSession],
+) -> None:
+    """Still running is not the same as instant."""
+    from ppcway.staff.stats import jobs
+
+    with factory() as session:
+        a_run(session, took_min=None, ago_min=5)
+        session.commit()
+        one = jobs(session, now=NOW)[0]
+        assert one.took_seconds is None
+        assert one.words(NOW) == "Still running."
+        assert not one.stuck(NOW)
+
+
+def test_a_run_that_never_finished_is_called_stuck_with_its_age(
+    factory: sessionmaker[DbSession],
+) -> None:
+    from ppcway.staff.stats import jobs
+
+    with factory() as session:
+        a_run(session, took_min=None, ago_min=200)
+        session.commit()
+        one = jobs(session, now=NOW)[0]
+        assert one.stuck(NOW)
+        assert "never finished" in one.words(NOW)
+        assert "3 h ago" in one.words(NOW)
+
+
+def test_runs_can_be_narrowed_to_the_failures(factory: sessionmaker[DbSession]) -> None:
+    from ppcway.staff.stats import jobs
+
+    with factory() as session:
+        a_run(session, status="ok")
+        a_run(session, status="failed", trouble="Google refused the request", ago_min=10)
+        session.commit()
+        assert len(jobs(session, now=NOW)) == 2
+        only = jobs(session, failed_only=True, now=NOW)
+        assert [one.status for one in only] == ["failed"]
+        assert only[0].words(NOW) == "Google refused the request"
+
+
+def test_a_failure_with_nothing_to_say_still_says_something(
+    factory: sessionmaker[DbSession],
+) -> None:
+    """A blank cell tells a reader the screen is broken."""
+    from ppcway.staff.stats import faults
+
+    with factory() as session:
+        a_run(session, status="failed", trouble="")
+        session.commit()
+        assert "said nothing" in faults(session, now=NOW)[0].what
+
+
+def test_job_and_model_failures_arrive_in_one_list(
+    factory: sessionmaker[DbSession],
+) -> None:
+    """Two tables would make somebody read both to find out whether anything is
+    wrong."""
+    from ppcway.staff.stats import faults
+
+    with factory() as session:
+        a_run(session, status="failed", trouble="the sync broke", ago_min=30)
+        session.add(
+            PromptLog(
+                id=uuid.uuid4(),
+                job="chat",
+                model="m",
+                prompt_version="v",
+                customer_id=CUSTOMER,
+                trouble="the model timed out",
+                created_at=NOW - timedelta(minutes=10),
+            )
+        )
+        session.commit()
+        found = faults(session, now=NOW)
+        assert len(found) == 2
+        # Newest first, whichever source it came from.
+        assert found[0].where.startswith("model")
+        assert found[1].where.startswith("sync")
+
+
+def test_faults_outside_the_window_are_left_out(factory: sessionmaker[DbSession]) -> None:
+    from ppcway.staff.stats import faults
+
+    with factory() as session:
+        a_run(session, status="failed", trouble="old news", ago_min=60 * 24 * 40)
+        session.commit()
+        assert faults(session, window="7d", now=NOW) == []
+        assert len(faults(session, window="90d", now=NOW)) == 1
+
+
+def test_a_naive_timestamp_from_the_driver_does_not_crash_the_screen(
+    factory: sessionmaker[DbSession],
+) -> None:
+    """SQLite hands back naive datetimes even for a `DateTime(timezone=True)`
+    column, so arithmetic against an aware `now` raises TypeError.
+
+    Found by these tests rather than in production, where Postgres would have
+    hidden it until somebody ran the suite against SQLite -- or until a driver
+    changed. `opt.guardrails` already normalises for the same reason.
+    """
+    from ppcway.staff.stats import jobs
+
+    with factory() as session:
+        a_run(session, took_min=None, ago_min=5)
+        session.commit()
+        one = jobs(session, now=NOW)[0]
+        assert one.started_at.tzinfo is None, "the driver really did return naive"
+        # None of these may raise.
+        assert one.words(NOW)
+        assert one.stuck(NOW) is False
+        assert one.took_seconds is None

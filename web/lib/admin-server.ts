@@ -1,5 +1,15 @@
 import { cookies } from "next/headers";
-import type { Merchant, MerchantRow, Overview, PlatformView, Whoami } from "@/lib/admin";
+import type {
+  Fault,
+  Grant,
+  JobRun,
+  Merchant,
+  MerchantRow,
+  Overview,
+  PlatformView,
+  Room,
+  Whoami,
+} from "@/lib/admin";
 import { SESSION_COOKIE } from "@/lib/session";
 
 /*
@@ -63,4 +73,21 @@ export async function readMerchant(id: string): Promise<Read<Merchant>> {
 
 export async function readPlatform(): Promise<Read<PlatformView>> {
   return get<PlatformView>("/v1/admin/platform");
+}
+
+export async function readJobs(failedOnly = false): Promise<Read<{ runs: JobRun[] }>> {
+  const q = failedOnly ? "?failed_only=true" : "";
+  return get<{ runs: JobRun[] }>(`/v1/admin/jobs${q}`);
+}
+
+export async function readErrors(window = "7d"): Promise<Read<{ faults: Fault[] }>> {
+  return get<{ faults: Fault[] }>(`/v1/admin/errors?window=${encodeURIComponent(window)}`);
+}
+
+export async function readQuotaAll(): Promise<Read<{ accounts: Room[] }>> {
+  return get<{ accounts: Room[] }>("/v1/admin/quota/all");
+}
+
+export async function readGrants(): Promise<Read<{ grants: Grant[] }>> {
+  return get<{ grants: Grant[] }>("/v1/admin/staff");
 }
