@@ -1,14 +1,11 @@
 import Link from "next/link";
-import { AppShell, type Workspace } from "@/components/app/shell";
-import { PageHead, Panel, PanelText, TabsRow, Tile, Tiles } from "@/components/app/blocks";
-import { DataTable, StatusWord } from "@/components/app/table";
 import {
   ago,
   count,
   moved,
   type Fault,
-  type Grant,
   type Figure,
+  type Grant,
   type JobRun,
   type MerchantRow,
   type Overview,
@@ -16,144 +13,52 @@ import {
   type Room,
   type Whoami,
 } from "@/lib/admin";
+import { AllWell, Attention, Nothing, Page, Rows, State, Stats } from "./data";
+import { Nav } from "./nav";
 import { StaffBar } from "./staff-bar";
 
 /*
-  The internal screens, with real figures in them.
+  The internal screens.
 
-  These use the same blocks as every other screen in the app -- AppShell,
-  PageHead, Tiles, DataTable -- because the brief is that the admin side
-  follows the app, and the fastest way to follow it is to be built from it.
-  What differs is rhythm rather than materials: a merchant reading their own
-  dashboard needs reassurance, and somebody scanning forty businesses needs
-  density. So the tables are tight and the tiles are few.
+  They used to be seven copies of one layout: a page head, a tab row and a
+  table, every time. That is why they read as generated. The job each screen
+  does is different, so the shape each one takes is now different too.
 
-  Every sentence shown here was written by the backend. The screens do not
-  compose their own from the numbers, because the backend is the thing that
-  knows whether a figure is a count, a state, or unknown.
+  Merchants is a list you search. The overview is a verdict with figures under
+  it. Failures is a feed. Settings is prose with a table of record. Access is a
+  history. None of them is a dashboard of equal tiles, because none of them is
+  answering the question a dashboard answers.
+
+  Same tokens as the merchant app, same palette, same radii. Tighter, because
+  somebody here is scanning four hundred businesses and not reading about one.
 */
 
-const SHELL: { kind: "admin"; workspace: Workspace } = {
-  kind: "admin",
-  workspace: { name: "PPCWay admin", meta: "Internal" },
-};
-
-function shellFor(who: Whoami) {
-  return {
-    ...SHELL,
-    kind: (who.may.includes("stop_writes") ? "admin-super" : "admin") as "admin" | "admin-super",
-    workspace: {
-      name: "PPCWay admin",
-      meta: who.level ? `${who.level} access` : "Internal",
-    },
-    initials: (who.who ?? "PP").slice(0, 2).toUpperCase(),
-    period: "Today",
-  };
-}
-
-const TABS = [
-  { label: "Overview", href: "/admin/metrics" },
-  { label: "Merchants", href: "/admin" },
-  { label: "Platform", href: "/admin/platform" },
-  { label: "Jobs", href: "/admin/jobs" },
-];
-
-/*
-  What to say when a read failed. An internal screen during an incident is the
-  worst possible place for a white page, and "we could not reach the API" is
-  itself the most useful thing the panel can say at that moment.
-*/
-function Trouble({ trouble }: { trouble: string }) {
-  return (
-    <Panel title="The panel could not read this">
-      <PanelText>{trouble}</PanelText>
-    </Panel>
-  );
-}
-
-/* ---------- the overview ---------- */
-
-function tileFor(one: Figure | undefined, fallback: string) {
-  if (!one) return { label: fallback, value: "—", chip: "Not available" };
-  return {
-    label: one.label,
-    value: one.known ? count(one.value) : "Unknown",
-    chip: one.known ? moved(one.change) || one.window || undefined : "We cannot tell right now",
-    valueTone: one.known ? undefined : ("faint" as const),
-  };
-}
-
-export function AdminOverview({
+function Frame({
   who,
-  view,
-  trouble,
+  looking_at,
+  children,
 }: {
   who: Whoami;
-  view: Overview | null;
-  trouble: string;
+  looking_at?: string;
+  children: React.ReactNode;
 }) {
   return (
-    <>
-      <StaffBar who={who} />
-      <AppShell {...shellFor(who)} active="metrics">
-        <PageHead
-          title={
-            view
-              ? view.healthy
-                ? "Nothing needs a person right now."
-                : `${view.trouble.length} thing${view.trouble.length > 1 ? "s" : ""} need a person.`
-              : "The platform"
-          }
-          lead={
-            view
-              ? view.writes.words
-              : "Figures for every business on the platform, counted when this page loaded."
-          }
-        />
-        {trouble ? <Trouble trouble={trouble} /> : null}
-        {view ? (
-          <>
-            {/*
-              Trouble before figures. A person opening this screen at 2am is
-              looking for what is wrong, and making them read four tiles first
-              is making them work for it.
-            */}
-            {view.trouble.length ? (
-              <Panel title="What needs a person">
-                {view.trouble.map((one) => (
-                  <PanelText key={one}>{one}</PanelText>
-                ))}
-              </Panel>
-            ) : null}
-            <Tiles>
-              <Tile tone="brand" {...tileFor(view.figures.merchants, "Businesses")} />
-              <Tile {...tileFor(view.figures.connected, "Connected")} />
-              <Tile {...tileFor(view.figures.waiting, "Waiting")} />
-              <Tile {...tileFor(view.figures.proposed, "Proposed")} />
-            </Tiles>
-            <TabsRow tabs={TABS} active="Overview" />
-            <DataTable
-              columns={[
-                { key: "what", label: "Figure", width: 280 },
-                { key: "value", label: "Count", align: "right" },
-                { key: "over", label: "Measured over" },
-                { key: "says", label: "In words" },
-              ]}
-              rows={Object.values(view.figures).map((one) => ({
-                what: one.label,
-                value: one.known ? count(one.value) : <StatusWord tone="faint">Unknown</StatusWord>,
-                over: one.window || "right now",
-                says: one.words,
-              }))}
-            />
-          </>
-        ) : null}
-      </AppShell>
-    </>
+    <div className="bg-pw-ground min-h-[100dvh]">
+      <StaffBar who={who} looking_at={looking_at} />
+      <div className="mx-auto w-full max-w-[1200px] px-4 sm:px-6">
+        <Nav may={who.may} />
+      </div>
+      {children}
+    </div>
   );
 }
 
-/* ---------- the merchant list ---------- */
+function Trouble({ trouble }: { trouble: string }) {
+  if (!trouble) return null;
+  return <Attention items={[trouble]} />;
+}
+
+/* ---------- merchants ---------- */
 
 export function AdminMerchants({
   who,
@@ -168,154 +73,173 @@ export function AdminMerchants({
 }) {
   const needing = rows.filter((one) => one.trouble);
   return (
-    <>
-      <StaffBar who={who} />
-      <AppShell {...shellFor(who)} active="merchants">
-        <PageHead
-          title={
-            rows.length
-              ? needing.length
-                ? `${count(rows.length)} businesses, ${count(needing.length)} need a person.`
-                : `${count(rows.length)} businesses, all healthy.`
-              : "No businesses yet."
-          }
-          lead={
-            rows.length
-              ? "Opening one is recorded. Every account you look at is written down with your name on it."
-              : "When somebody signs up they appear here."
+    <Frame who={who}>
+      <Page
+        title={
+          rows.length
+            ? needing.length
+              ? `${count(needing.length)} of ${count(rows.length)} businesses need a person`
+              : `${count(rows.length)} businesses, all healthy`
+            : "No businesses yet"
+        }
+        lead={
+          rows.length
+            ? "Opening one is recorded against your name."
+            : "When somebody signs up they appear here."
+        }
+        side={
+          <form action="/admin" className="flex gap-2">
+            <label htmlFor="q" className="sr-only">
+              Search by name
+            </label>
+            <input
+              id="q"
+              name="q"
+              defaultValue={lookedFor}
+              placeholder="Search by name"
+              className="border-pw-border-input text-pw-ink placeholder:text-pw-ink-400 focus:border-pw-blue focus:ring-pw-blue/20 h-9 w-[180px] rounded-[10px] border bg-white px-3 text-[14px] outline-none focus:ring-2"
+            />
+            <button
+              type="submit"
+              className="bg-pw-blue hover:bg-pw-blue-hover h-9 rounded-[10px] px-3 text-[14px] font-medium text-white active:scale-[0.98]"
+            >
+              Search
+            </button>
+          </form>
+        }
+      >
+        <Trouble trouble={trouble} />
+        {needing.length ? (
+          <Attention items={needing.slice(0, 4).map((one) => `${one.name}: ${one.trouble}`)} />
+        ) : null}
+
+        <Rows
+          titleKey="name"
+          cols={[
+            { key: "name", label: "Business", width: 240 },
+            { key: "state", label: "Google Ads" },
+            { key: "waiting", label: "Waiting", num: true },
+            { key: "applied", label: "Applied", num: true },
+            { key: "people", label: "People", num: true, minor: true },
+            { key: "sync", label: "Last sync" },
+          ]}
+          rows={rows.map((one) => ({
+            id: one.organization_id,
+            name: (
+              <Link
+                href={`/admin?view=merchant&id=${one.organization_id}`}
+                className="text-pw-blue font-medium underline underline-offset-2"
+              >
+                {one.name}
+              </Link>
+            ),
+            state: one.connected ? (
+              <State tone={one.account_status === "ENABLED" ? "good" : "bad"}>
+                {one.account_status || "Connected"}
+              </State>
+            ) : (
+              <State tone="faint">Not connected</State>
+            ),
+            waiting: one.waiting ? count(one.waiting) : "0",
+            applied: count(one.applied),
+            people: count(one.people),
+            sync: one.connected ? ago(one.last_sync) : "—",
+          }))}
+          empty={
+            lookedFor ? (
+              <Nothing
+                title="Nothing matched"
+                words={`No business has a name like "${lookedFor}". Try part of the name rather than all of it.`}
+              />
+            ) : (
+              <Nothing
+                title="No businesses yet"
+                words="When somebody signs up and connects their Google Ads account, they appear here."
+              />
+            )
           }
         />
-        {trouble ? <Trouble trouble={trouble} /> : null}
-        <TabsRow tabs={TABS} active="Merchants" />
-        {rows.length ? (
-          <DataTable
-            columns={[
-              { key: "name", label: "Business", width: 260 },
-              { key: "state", label: "Google Ads" },
-              { key: "people", label: "People", align: "right" },
-              { key: "waiting", label: "Waiting", align: "right" },
-              { key: "applied", label: "Applied", align: "right" },
-              { key: "sync", label: "Last sync" },
-              { key: "says", label: "Needs a person" },
-            ]}
-            rows={rows.map((one) => ({
-              name: (
-                <Link
-                  href={`/admin?view=merchant&id=${one.organization_id}`}
-                  className="text-pw-blue font-medium underline underline-offset-2"
-                >
-                  {one.name}
-                </Link>
-              ),
-              state: one.connected ? (
-                <StatusWord tone={one.account_status === "ENABLED" ? undefined : "red"}>
-                  {one.account_status || "Connected"}
-                </StatusWord>
-              ) : (
-                <StatusWord tone="faint">Not connected</StatusWord>
-              ),
-              people: count(one.people),
-              waiting: one.waiting ? count(one.waiting) : "0",
-              applied: count(one.applied),
-              sync: one.connected ? ago(one.last_sync) : "—",
-              says: one.trouble ? <StatusWord tone="red">{one.trouble}</StatusWord> : "",
-            }))}
-            total={{
-              name: `${count(rows.length)} businesses`,
-              waiting: count(rows.reduce((n, one) => n + one.waiting, 0)),
-              applied: count(rows.reduce((n, one) => n + one.applied, 0)),
-            }}
-          />
-        ) : null}
-        {lookedFor && !rows.length && !trouble ? (
-          <Panel title="Nothing matched">
-            <PanelText>
-              No business has a name like &ldquo;{lookedFor}&rdquo;. Try part of the name instead of
-              all of it.
-            </PanelText>
-          </Panel>
-        ) : null}
-      </AppShell>
-    </>
+      </Page>
+    </Frame>
   );
 }
 
-/* ---------- the platform ---------- */
+/* ---------- the overview ---------- */
 
-export function AdminPlatform({
+function stat(one: Figure | undefined, fallback: string) {
+  if (!one) return { label: fallback, value: "0", unknown: true };
+  return {
+    label: one.label,
+    value: count(one.value),
+    note: moved(one.change) || one.window || undefined,
+    unknown: !one.known,
+  };
+}
+
+export function AdminOverview({
   who,
   view,
   trouble,
 }: {
   who: Whoami;
-  view: PlatformView | null;
+  view: Overview | null;
   trouble: string;
 }) {
   return (
-    <>
-      <StaffBar who={who} />
-      <AppShell {...shellFor(who)} active="platform">
-        <PageHead
-          title={
-            view
-              ? view.anything_can_be_written
-                ? "Writes are on."
-                : "Nothing is being written."
-              : "Platform"
-          }
-          lead={view ? view.words : "The settings that govern what PPCWay does."}
-        />
-        {trouble ? <Trouble trouble={trouble} /> : null}
-        <TabsRow tabs={TABS} active="Platform" />
+    <Frame who={who}>
+      <Page
+        title={
+          view
+            ? view.healthy
+              ? "Nothing needs a person"
+              : `${view.trouble.length} thing${view.trouble.length > 1 ? "s" : ""} need a person`
+            : "The platform"
+        }
+        lead={view ? view.writes.words : undefined}
+      >
+        <Trouble trouble={trouble} />
         {view ? (
           <>
-            {view.stops.length ? (
-              <Panel title="Stopped">
-                {view.stops.map((one) => (
-                  <PanelText key={`${one.scope}-${one.because}`}>
-                    {one.scope}: {one.because}
-                    {one.ours
-                      ? " (set by PPCWay, so the merchant cannot lift it)"
-                      : " (set by the merchant)"}
-                  </PanelText>
-                ))}
-              </Panel>
-            ) : null}
-            <DataTable
-              columns={[
-                { key: "name", label: "Setting", width: 240 },
-                { key: "on", label: "State" },
-                { key: "what", label: "What it does" },
-                { key: "change", label: "Can the panel change it" },
+            {view.trouble.length ? (
+              <Attention items={view.trouble} />
+            ) : (
+              <AllWell words={`Counted over the last ${view.window}. Nothing is failing.`} />
+            )}
+
+            <Stats
+              stats={[
+                stat(view.figures.merchants, "Businesses"),
+                stat(view.figures.connected, "Connected"),
+                stat(view.figures.waiting, "Waiting"),
+                stat(view.figures.proposed, "Proposed"),
+                stat(view.figures.applied, "Applied"),
               ]}
-              rows={view.flags.map((one) => ({
-                name: one.name,
-                on: one.on ? (
-                  <StatusWord>On</StatusWord>
-                ) : (
-                  <StatusWord tone="faint">Off</StatusWord>
-                ),
-                what: one.what_it_does,
-                /*
-                  Every row says no, and that is the point. A screen that shows
-                  a toggle for something only a deploy can change teaches
-                  people the panel is lying to them.
-                */
-                change: one.changeable ? <StatusWord>Yes</StatusWord> : one.why_not,
-              }))}
             />
-            {!view.may_stop_writes ? (
-              <Panel title="Stopping writes">
-                <PanelText>
-                  Only principal access can stop writes. Ask somebody who has it rather than going
-                  round the panel.
-                </PanelText>
-              </Panel>
-            ) : null}
+
+            <h2 className="text-pw-ink mt-8 mb-3 text-[15px] leading-[21px] font-semibold">
+              Everything counted
+            </h2>
+            <Rows
+              titleKey="what"
+              cols={[
+                { key: "what", label: "Figure", width: 260 },
+                { key: "value", label: "Count", num: true },
+                { key: "over", label: "Over" },
+                { key: "says", label: "In words", minor: true },
+              ]}
+              rows={Object.entries(view.figures).map(([key, one]) => ({
+                id: key,
+                what: one.label,
+                value: one.known ? count(one.value) : <State tone="faint">Unknown</State>,
+                over: one.window || "now",
+                says: one.words,
+              }))}
+              empty={<Nothing title="Nothing counted" words="There is no data to count yet." />}
+            />
           </>
         ) : null}
-      </AppShell>
-    </>
+      </Page>
+    </Frame>
   );
 }
 
@@ -333,64 +257,69 @@ export function AdminJobs({
   const stuck = runs.filter((one) => one.stuck);
   const failed = runs.filter((one) => one.status === "failed");
   return (
-    <>
-      <StaffBar who={who} />
-      <AppShell {...shellFor(who)} active="jobs">
-        <PageHead
-          title={
-            runs.length
-              ? stuck.length
-                ? `${count(stuck.length)} job${stuck.length > 1 ? "s" : ""} started and never finished.`
-                : failed.length
-                  ? `${count(failed.length)} of the last ${count(runs.length)} runs failed.`
-                  : `The last ${count(runs.length)} runs all finished.`
-              : "No jobs have run yet."
-          }
-          lead={
-            runs.length
-              ? "The scheduled jobs that read Google Ads, newest first."
-              : "A fresh deployment has run nothing. The syncs start on their own schedule."
-          }
-        />
-        {trouble ? <Trouble trouble={trouble} /> : null}
-        <TabsRow tabs={TABS} active="Jobs" />
-        {runs.length ? (
-          <DataTable
-            columns={[
-              { key: "kind", label: "Job", width: 140 },
-              { key: "account", label: "Account" },
-              { key: "state", label: "State" },
-              { key: "stage", label: "Reached" },
-              { key: "took", label: "Took", align: "right" },
-              { key: "when", label: "Started" },
-              { key: "says", label: "What happened" },
-            ]}
-            rows={runs.map((one) => ({
-              kind: one.kind,
-              account: one.customer_id || "—",
-              state: one.stuck ? (
-                <StatusWord tone="red">Stuck</StatusWord>
-              ) : one.status === "failed" ? (
-                <StatusWord tone="red">Failed</StatusWord>
-              ) : one.took_seconds === null ? (
-                <StatusWord tone="faint">Running</StatusWord>
-              ) : (
-                <StatusWord>Finished</StatusWord>
-              ),
-              stage: one.stage || "—",
-              /* An em dash rather than 0 s: still running is not instant. */
-              took: one.took_seconds === null ? "—" : `${count(one.took_seconds)} s`,
-              when: ago(one.started_at),
-              says: one.words,
-            }))}
+    <Frame who={who}>
+      <Page
+        title={
+          runs.length
+            ? stuck.length
+              ? `${count(stuck.length)} job${stuck.length > 1 ? "s" : ""} started and never finished`
+              : failed.length
+                ? `${count(failed.length)} of the last ${count(runs.length)} runs failed`
+                : `The last ${count(runs.length)} runs all finished`
+            : "No jobs have run yet"
+        }
+        lead="The scheduled reads of Google Ads, newest first."
+      >
+        <Trouble trouble={trouble} />
+        {stuck.length ? (
+          <Attention
+            items={stuck
+              .slice(0, 3)
+              .map((one) => `${one.kind} on ${one.customer_id || "an account"}: ${one.words}`)}
           />
         ) : null}
-      </AppShell>
-    </>
+
+        <Rows
+          titleKey="kind"
+          cols={[
+            { key: "kind", label: "Job", width: 130 },
+            { key: "state", label: "State" },
+            { key: "took", label: "Took", num: true },
+            { key: "when", label: "Started" },
+            { key: "account", label: "Account", minor: true },
+            { key: "says", label: "What happened", minor: true },
+          ]}
+          rows={runs.map((one) => ({
+            id: one.id,
+            kind: one.kind,
+            state: one.stuck ? (
+              <State tone="bad">Stuck</State>
+            ) : one.status === "failed" ? (
+              <State tone="bad">Failed</State>
+            ) : one.took_seconds === null ? (
+              <State tone="faint">Running</State>
+            ) : (
+              <State tone="good">Finished</State>
+            ),
+            /* An em dash, not 0 s: still running is not instant. */
+            took: one.took_seconds === null ? "—" : `${count(one.took_seconds)}s`,
+            when: ago(one.started_at),
+            account: one.customer_id || "—",
+            says: one.words,
+          }))}
+          empty={
+            <Nothing
+              title="Nothing has run yet"
+              words="A fresh deployment has run no jobs. The syncs start on their own schedule."
+            />
+          }
+        />
+      </Page>
+    </Frame>
   );
 }
 
-/* ---------- errors ---------- */
+/* ---------- failures ---------- */
 
 export function AdminErrors({
   who,
@@ -404,48 +333,42 @@ export function AdminErrors({
   window: string;
 }) {
   return (
-    <>
-      <StaffBar who={who} />
-      <AppShell {...shellFor(who)} active="errors">
-        <PageHead
-          title={
-            faults.length
-              ? `${count(faults.length)} thing${faults.length > 1 ? "s" : ""} failed in the last ${window}.`
-              : `Nothing failed in the last ${window}.`
-          }
-          lead={
-            faults.length
-              ? "Jobs and model calls together, newest first. They fail for unrelated reasons, but you only want to read one list."
-              : "Jobs and model calls are both counted here. An empty list is the healthy state."
-          }
-        />
-        {trouble ? <Trouble trouble={trouble} /> : null}
-        <TabsRow tabs={TABS} active="Jobs" />
+    <Frame who={who}>
+      <Page
+        title={
+          faults.length
+            ? `${count(faults.length)} thing${faults.length > 1 ? "s" : ""} failed in the last ${window}`
+            : `Nothing failed in the last ${window}`
+        }
+        lead="Jobs and model calls together. They fail for unrelated reasons, but you only want one list."
+      >
+        <Trouble trouble={trouble} />
         {faults.length ? (
-          <DataTable
-            columns={[
-              { key: "where", label: "Where", width: 180 },
-              { key: "account", label: "Account" },
-              { key: "when", label: "When" },
-              { key: "what", label: "What went wrong" },
-            ]}
-            rows={faults.map((one) => ({
-              where: one.where,
-              account: one.customer_id || "—",
-              when: ago(one.at),
-              what: <StatusWord tone="red">{one.what}</StatusWord>,
-            }))}
-          />
+          /*
+            A feed rather than a table. A failure is one thing that happened at
+            one moment, and the sentence describing it is the row -- putting it
+            in a cell four columns wide makes it harder to read, not easier.
+          */
+          <ul className="border-pw-border divide-pw-divider divide-y overflow-hidden rounded-[12px] border">
+            {faults.map((one, at) => (
+              <li key={`${one.at}-${at}`} className="px-4 py-3 sm:px-5">
+                <p className="text-pw-ink text-[14px] leading-[20px]">{one.what}</p>
+                <p className="text-pw-ink-400 pw-num mt-1 flex flex-wrap gap-x-4 text-[12px] leading-[16px]">
+                  <span>{one.where}</span>
+                  <span>{ago(one.at)}</span>
+                  {one.customer_id ? <span>{one.customer_id}</span> : null}
+                </p>
+              </li>
+            ))}
+          </ul>
         ) : (
-          <Panel title="Nothing to look at">
-            <PanelText>
-              No job and no model call has failed in this window. If something is wrong and it is
-              not here, it did not get as far as being recorded.
-            </PanelText>
-          </Panel>
+          <Nothing
+            title="Nothing to look at"
+            words="No job and no model call has failed in this window. If something is wrong and it is not here, it did not get as far as being recorded."
+          />
         )}
-      </AppShell>
-    </>
+      </Page>
+    </Frame>
   );
 }
 
@@ -462,57 +385,123 @@ export function AdminQuota({
 }) {
   const tight = accounts.filter((one) => one.tight);
   return (
-    <>
-      <StaffBar who={who} />
-      <AppShell {...shellFor(who)} active="quota">
-        <PageHead
-          title={
-            accounts.length
-              ? tight.length
-                ? `${count(tight.length)} account${tight.length > 1 ? "s" : ""} close to the daily limit.`
-                : `${count(accounts.length)} accounts, none close to the limit.`
-              : "No connected accounts yet."
-          }
-          lead={
-            accounts.length
-              ? "Google allows a fixed number of operations per account per day. Tightest first."
-              : "Quota is counted per Google Ads account, so there is nothing to show until one is connected."
+    <Frame who={who}>
+      <Page
+        title={
+          accounts.length
+            ? tight.length
+              ? `${count(tight.length)} account${tight.length > 1 ? "s" : ""} close to the daily limit`
+              : `${count(accounts.length)} accounts, none close to the limit`
+            : "No connected accounts yet"
+        }
+        lead="Google allows a fixed number of operations per account per day. Tightest first."
+      >
+        <Trouble trouble={trouble} />
+        <Rows
+          titleKey="account"
+          cols={[
+            { key: "account", label: "Account", width: 200 },
+            { key: "share", label: "Used", num: true },
+            { key: "used", label: "Operations", num: true },
+            { key: "left", label: "Left", num: true },
+          ]}
+          rows={accounts.map((one) => ({
+            id: one.customer_id,
+            account: one.customer_id,
+            share: (
+              <State tone={one.tight ? "bad" : "plain"}>{Math.round(one.share_used * 100)}%</State>
+            ),
+            used: count(one.used),
+            left: count(one.left),
+          }))}
+          empty={
+            <Nothing
+              title="No connected accounts"
+              words="Quota is counted per Google Ads account, so there is nothing to show until one is connected."
+            />
           }
         />
-        {trouble ? <Trouble trouble={trouble} /> : null}
-        <TabsRow tabs={TABS} active="Platform" />
-        {accounts.length ? (
-          <DataTable
-            columns={[
-              { key: "account", label: "Account", width: 200 },
-              { key: "used", label: "Used", align: "right" },
-              { key: "left", label: "Left", align: "right" },
-              { key: "share", label: "Share used", align: "right" },
-              { key: "says", label: "Today" },
-            ]}
-            rows={accounts.map((one) => ({
-              account: one.customer_id,
-              used: count(one.used),
-              left: count(one.left),
-              share: one.tight ? (
-                <StatusWord tone="red">{Math.round(one.share_used * 100)}%</StatusWord>
-              ) : (
-                `${Math.round(one.share_used * 100)}%`
-              ),
-              says: one.words,
-            }))}
-            total={{
-              account: `${count(accounts.length)} accounts`,
-              used: count(accounts.reduce((n, one) => n + one.used, 0)),
-            }}
-          />
-        ) : null}
-      </AppShell>
-    </>
+      </Page>
+    </Frame>
   );
 }
 
-/* ---------- who has access ---------- */
+/* ---------- settings ---------- */
+
+export function AdminPlatform({
+  who,
+  view,
+  trouble,
+}: {
+  who: Whoami;
+  view: PlatformView | null;
+  trouble: string;
+}) {
+  return (
+    <Frame who={who}>
+      <Page
+        title={
+          view
+            ? view.anything_can_be_written
+              ? "Writes are on"
+              : "Nothing is being written"
+            : "Settings"
+        }
+        lead={view?.words}
+      >
+        <Trouble trouble={trouble} />
+        {view ? (
+          <>
+            {view.stops.length ? (
+              <Attention
+                items={view.stops.map(
+                  (one) =>
+                    `${one.scope}: ${one.because}${
+                      one.ours
+                        ? " (set by PPCWay, so the merchant cannot lift it)"
+                        : " (set by the merchant)"
+                    }`,
+                )}
+              />
+            ) : null}
+
+            <Rows
+              titleKey="name"
+              cols={[
+                { key: "name", label: "Setting", width: 220 },
+                { key: "on", label: "State" },
+                { key: "what", label: "What it does" },
+                { key: "change", label: "Changeable here", minor: true },
+              ]}
+              rows={view.flags.map((one) => ({
+                id: one.name,
+                name: one.name,
+                on: one.on ? <State tone="good">On</State> : <State tone="faint">Off</State>,
+                what: one.what_it_does,
+                /*
+                  Every row says no, and that is the point rather than an
+                  omission: a toggle for something only a deploy can change
+                  teaches people the panel is lying to them.
+                */
+                change: one.changeable ? <State tone="good">Yes</State> : one.why_not,
+              }))}
+              empty={<Nothing title="No settings" words="Nothing is configured." />}
+            />
+
+            {!view.may_stop_writes ? (
+              <p className="text-pw-ink-500 mt-4 text-[13px] leading-[18px]">
+                Only principal access can stop writes. Ask somebody who has it rather than going
+                round the panel.
+              </p>
+            ) : null}
+          </>
+        ) : null}
+      </Page>
+    </Frame>
+  );
+}
+
+/* ---------- access ---------- */
 
 export function AdminStaff({
   who,
@@ -525,54 +514,43 @@ export function AdminStaff({
 }) {
   const live = grants.filter((one) => one.granted);
   return (
-    <>
-      <StaffBar who={who} />
-      <AppShell {...shellFor(who)} active="staff">
-        <PageHead
-          title={
-            grants.length
-              ? `${count(live.length)} grant${live.length === 1 ? "" : "s"} of access, and the whole history.`
-              : "Nobody has been given access yet."
-          }
-          lead={
-            /*
-              The history, not the current state alone. "Who could see this in
-              March" is the question these rows exist to answer, and a table
-              that only showed today could not answer it.
-            */
-            "Every grant and every withdrawal, newest first. Nothing here is ever deleted."
+    <Frame who={who}>
+      <Page
+        title={
+          grants.length
+            ? `${count(live.length)} grant${live.length === 1 ? "" : "s"} of access`
+            : "Nobody has been given access yet"
+        }
+        lead="Every grant and every withdrawal, newest first. Nothing here is ever deleted."
+      >
+        <Trouble trouble={trouble} />
+        <Rows
+          titleKey="level"
+          cols={[
+            { key: "level", label: "Level", width: 130 },
+            { key: "what", label: "Given or taken" },
+            { key: "when", label: "When" },
+            { key: "why", label: "Why", minor: true },
+          ]}
+          rows={grants.map((one, at) => ({
+            id: `${one.at}-${at}`,
+            level: one.level,
+            what: one.granted ? (
+              <State tone="good">Given</State>
+            ) : (
+              <State tone="faint">Taken away</State>
+            ),
+            when: ago(one.at),
+            why: one.because || "—",
+          }))}
+          empty={
+            <Nothing
+              title="Nobody has access yet"
+              words="Access is given by email, and the person has to have signed in once first. Every grant needs a reason, because this list exists to be read back."
+            />
           }
         />
-        {trouble ? <Trouble trouble={trouble} /> : null}
-        <TabsRow tabs={TABS} active="Platform" />
-        {grants.length ? (
-          <DataTable
-            columns={[
-              { key: "level", label: "Level", width: 140 },
-              { key: "what", label: "Given or taken" },
-              { key: "when", label: "When" },
-              { key: "why", label: "Why" },
-            ]}
-            rows={grants.map((one) => ({
-              level: one.level,
-              what: one.granted ? (
-                <StatusWord>Given</StatusWord>
-              ) : (
-                <StatusWord tone="faint">Taken away</StatusWord>
-              ),
-              when: ago(one.at),
-              why: one.because || "—",
-            }))}
-          />
-        ) : (
-          <Panel title="Giving somebody access">
-            <PanelText>
-              Access is given by email, and the person has to have signed in once first. Every grant
-              needs a reason, because this list exists to be read back.
-            </PanelText>
-          </Panel>
-        )}
-      </AppShell>
-    </>
+      </Page>
+    </Frame>
   );
 }
