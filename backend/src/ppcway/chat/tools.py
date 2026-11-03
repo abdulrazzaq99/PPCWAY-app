@@ -78,6 +78,15 @@ class Asked:
     currency: str
     args: dict[str, Any]
     today: date
+    #: What this turn's read tools have offered as proposable, by opaque
+    #: handle. None for a turn with no write tool, which is every turn before
+    #: phase 3.3 and every turn where the write path is shut.
+    handles: Any = None
+    #: The business's Google Ads connection, needed only by the write tool,
+    #: which judges a proposal against the account's standing before writing
+    #: it. Read tools neither need nor get it.
+    connection: Any = None
+    organization_id_for_write: Any = None
 
     def days(self, *, default: int = 30) -> int:
         """The window asked for, clamped to something the mirror can answer."""
@@ -234,6 +243,8 @@ def _search_terms(asked: Asked) -> Answer:
             func.sum(SearchTermDay.cost_micros).label("cost_micros"),
             func.sum(SearchTermDay.conversions).label("conversions"),
             func.max(SearchTermDay.status).label("status"),
+            SearchTermDay.term_hash.label("term_hash"),
+            func.max(SearchTermDay.ad_group_id).label("ad_group_id"),
         )
         .where(
             SearchTermDay.customer_id == asked.customer_id,
@@ -244,17 +255,30 @@ def _search_terms(asked: Asked) -> Answer:
         .order_by(func.sum(SearchTermDay.cost_micros).desc())
         .limit(MOST_ROWS)
     ).all()
+    # `term_hash` and `ad_group_id` are selected so a handle can point at the
+    # row without the model ever seeing either.
 
-    terms = [
-        {
+    terms: list[dict[str, Any]] = []
+    for row in rows:
+        one: dict[str, Any] = {
             "term": row.term,
             "clicks": int(row.clicks or 0),
             "spend": round((row.cost_micros or 0) / MICRO, 2),
             "leads": float(row.conversions or 0),
             "already_handled": row.status in {"ADDED", "EXCLUDED", "ADDED_EXCLUDED"},
         }
-        for row in rows
-    ]
+        # A handle, so the model can propose on this without naming it. Only
+        # for a term there is something to propose about: one already added or
+        # excluded has nothing to do, and offering a handle would invite a
+        # proposal the rule would then refuse.
+        if asked.handles is not None and not one["already_handled"]:
+            one["handle"] = asked.handles.offer(
+                "search_term",
+                label=str(row.term),
+                term_hash=row.term_hash,
+                ad_group_id=row.ad_group_id,
+            )
+        terms.append(one)
     figures = tuple(
         _money(
             float(str(term["spend"])),

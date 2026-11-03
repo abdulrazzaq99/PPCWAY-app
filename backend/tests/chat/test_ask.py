@@ -213,9 +213,10 @@ def test_the_model_is_told_it_cannot_change_anything(db: DbSession) -> None:
     assert "proposed in their inbox" in HOW_TO_ANSWER
 
 
-def test_no_write_tool_is_offered_at_all(db: DbSession) -> None:
-    """Not a disabled one, not one behind a flag. The brief puts
-    `create_proposal` in phase 3.3, after the write path is live."""
+def test_only_read_tools_are_offered_on_a_turn_that_cannot_write(
+    db: DbSession,
+) -> None:
+    """Absent, not disabled. A tool that is not in the list cannot be called."""
     an_account(db)
     models = Saying(_words("Nothing to report."))
     _run(db, models)
@@ -291,3 +292,90 @@ def test_the_status_lines_say_what_is_happening(db: DbSession) -> None:
         "working out where this month's spend is heading",
         "looking at what the account did",
     ]
+
+
+# --- the write tool, offered per turn (phase 3.3) ---
+
+
+#: Any non-None object will do: the turn loop only checks that there is one,
+#: and the write tool's own tests exercise what it does with a real connection.
+A_CONNECTION = object()
+
+
+def _run_with_connection(
+    db: DbSession, models: Any, role: Role = Role.OWNER, connection: Any = A_CONNECTION
+) -> list[Any]:
+    from ppcway.chat.ask import answer as asking
+
+    return list(
+        asking(
+            models,
+            db,
+            "exclude that search for me",
+            organization_id=uuid.uuid4(),
+            customer_id=CUSTOMER,
+            currency="CAD",
+            role=role,
+            connection=connection,
+            today=TODAY,
+        )
+    )
+
+
+def test_the_write_tool_is_absent_without_a_connection(db: DbSession) -> None:
+    """Nothing to judge a proposal against, so nothing to offer."""
+    an_account(db)
+    models = Saying(_words("Nothing to report."))
+    _run(db, models)
+    assert "create_proposal" not in {t["name"] for t in models.asked[0]["tools"]}
+
+
+def test_the_write_tool_is_offered_to_somebody_who_may_propose(db: DbSession) -> None:
+    an_account(db)
+    models = Saying(_words("Nothing to report."))
+    _run_with_connection(db, models, role=Role.OWNER)
+    assert "create_proposal" in {t["name"] for t in models.asked[0]["tools"]}
+
+
+def test_the_write_tool_is_absent_for_somebody_who_may_not_propose(
+    db: DbSession,
+) -> None:
+    """An agency's client reads their own account and asks for nothing."""
+    an_account(db)
+    models = Saying(_words("Nothing to report."))
+    _run_with_connection(db, models, role=Role.CLIENT_VIEWER)
+    assert "create_proposal" not in {t["name"] for t in models.asked[0]["tools"]}
+
+
+def test_a_member_may_propose_even_though_they_cannot_approve(db: DbSession) -> None:
+    """The brief: member chats and proposes, not approves. Proposing writes a
+    row somebody else decides on, so the two are different permissions."""
+    from ppcway.chat.ask import may_propose
+
+    assert may_propose(Role.MEMBER)
+    assert may_propose(Role.OWNER)
+    assert may_propose(Role.ADMIN)
+    assert may_propose(Role.EXPERT)
+    assert not may_propose(Role.CLIENT_VIEWER)
+    assert not may_propose(None)
+
+
+def test_calling_a_tool_it_was_never_given_is_refused(db: DbSession) -> None:
+    """A model that has been talked into wanting it finds nothing there."""
+    an_account(db)
+    models = Saying(
+        _wants("create_proposal", handle="h_whatever", change="add_negative_keyword"),
+        _words("I cannot do that here."),
+    )
+    out = _run(db, models)
+    sent_back = str(models.asked[1]["said"])
+    assert "cannot propose changes in this conversation" in sent_back
+    assert out[-1].kind == "answer"
+
+
+def test_the_prompt_tells_the_model_proposing_is_not_changing(db: DbSession) -> None:
+    from ppcway.chat.ask import HOW_TO_ANSWER
+
+    assert "cannot change anything in Google Ads" in HOW_TO_ANSWER
+    assert "not the same as making it" in HOW_TO_ANSWER
+    assert "Do not propose to be helpful" in HOW_TO_ANSWER

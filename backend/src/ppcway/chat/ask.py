@@ -1,17 +1,24 @@
 """One question to Otto, and the loop that answers it.
 
-Read-only. The brief puts `create_proposal` in phase 3.3 and only after the
-write path is live, so there is no write tool here at all -- not a disabled
-one, not one behind a flag. A tool that does not exist cannot be called by a
-model that has been talked into wanting to call it.
+Eight tools read, and one writes a proposal into the inbox. Nothing here can
+change a live Google Ads account: the gateway is the only thing that can, and
+it is not reachable from this package at all.
+
+`create_proposal` is not given out by default. `may_propose` decides per turn,
+and a turn that is not allowed it gets a tool list that does not mention
+writing -- not a disabled version. A tool that is absent cannot be called by a
+model that has been talked into wanting it. And it cannot be aimed: the model
+passes back a handle a read tool gave it, there is no field for a target or an
+amount, and the figures are recomputed server-side. See `ppcway.chat.propose`.
 
 **The four things that make this safe, in the order they matter:**
 
-1. **No tool can change anything.** Every one of the eight reads the mirror.
-   This is the only defence that does not depend on getting something right.
-2. **No tool learns which account it is reading.** The scope comes from the
-   session; no schema has a field for an account, a target or a figure. An
-   injected instruction has nothing to redirect.
+1. **Nothing here reaches Google.** The eight read the mirror, and the ninth
+   writes a row a person then has to approve. This is the only defence that
+   does not depend on getting something right.
+2. **No tool learns which account it is reading or writing about.** The scope
+   comes from the session; no schema has a field for an account, a target, an
+   amount or a figure. An injected instruction has nothing to redirect.
 3. **Every number in the answer is matched** against the figures the tools
    returned this turn. One rewrite, then a fixed line. Same rule as the inbox
    cards, same reason: a model that has invented a figure twice will not be
@@ -38,7 +45,9 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from ppcway.chat import propose
 from ppcway.chat import tools as toolbox
+from ppcway.chat.propose import Handles
 from ppcway.chat.untrusted import THE_RULE
 from ppcway.metric.figures import Figure, unmatched
 from ppcway.model.jobs import Job
@@ -87,8 +96,12 @@ the term first.
 - Short. Two or three sentences for most questions.
 - If a tool says a figure is within the normal range or that there is too \
 little data, say that rather than reading a trend into it.
-- You cannot change anything. If they ask you to, say that changes are \
-proposed in their inbox where they decide, and offer to explain what is there.
+- You cannot change anything in Google Ads. Where you have a \
+create_proposal tool you can put a change in their inbox for them to approve, \
+which is not the same as making it; say so plainly. Where you do not, say that \
+changes are proposed in their inbox where they decide.
+- Only propose when they have asked for a change or clearly agreed to one. \
+Do not propose to be helpful.
 - If you do not know, or no tool covers it, say so.
 
 {THE_RULE}"""
@@ -118,6 +131,9 @@ class Turn:
     #: Numbers the model used that no figure accounted for, where that
     #: happened. Kept for the prompt log rather than shown to anybody.
     invented: list[float] = field(default_factory=list)
+    #: The status of anything proposed during the turn, so the transcript can
+    #: say a conversation wrote something without reading the action log.
+    proposed: list[str] = field(default_factory=list)
     rounds: int = 0
 
 
@@ -131,6 +147,18 @@ def may_chat(role: Role | None) -> None:
         raise NotAllowed("Your role does not allow you to use Otto.")
 
 
+def may_propose(role: Role | None) -> bool:
+    """Whether this turn may offer the write tool.
+
+    The brief: owner, admin and expert chat and propose; a member chats and
+    proposes but cannot approve; an agency's client sees their own account
+    only. Proposing is not approving -- what the tool writes still waits for a
+    person -- so the bar is "may they ask for a change", which is the role
+    table's own `propose`.
+    """
+    return role is not None and "propose" in CAN.get(role, frozenset())
+
+
 def answer(
     models: Models,
     session: Session,
@@ -140,6 +168,7 @@ def answer(
     customer_id: str,
     currency: str,
     role: Role | None,
+    connection: Any = None,
     history: Sequence[dict[str, Any]] = (),
     today: date | None = None,
 ) -> Iterator[Said]:
@@ -153,6 +182,13 @@ def answer(
     at = today or datetime.now(UTC).date()
     turn = Turn()
 
+    # Offered only where the role allows it and there is a connection to judge
+    # a proposal against. A turn without both gets a tool list that does not
+    # mention writing at all.
+    writing = may_propose(role) and connection is not None
+    handles = Handles() if writing else None
+    offered = [*toolbox.schemas(), *([propose.SCHEMA] if writing else [])]
+
     messages: list[dict[str, Any]] = [*history, {"role": "user", "content": question}]
     figures: list[Figure] = []
 
@@ -165,7 +201,7 @@ def answer(
                 said=messages,
                 organization_id=organization_id,
                 customer_id=customer_id,
-                tools=toolbox.schemas(),
+                tools=offered,
             )
         except ModelUnavailable as exc:
             log.info("chat could not reach the model: %s", exc)
@@ -199,9 +235,32 @@ def answer(
                 currency=currency,
                 args=call.args,
                 today=at,
+                handles=handles,
+                connection=connection,
             )
-            found = toolbox.run(call.name, asked)
             turn.looked_up.append(call.name)
+            if call.name == propose.SCHEMA["name"]:
+                if not writing:
+                    # Not offered, so this is a model calling something it was
+                    # never given. Refused rather than honoured.
+                    results.append(
+                        {
+                            "id": call.id,
+                            "name": call.name,
+                            "result": {
+                                "proposed": False,
+                                "why": "You cannot propose changes in this conversation.",
+                            },
+                        }
+                    )
+                    continue
+                yield Said(kind="writing", words="putting that in their inbox")
+                said_back = propose.create_proposal(asked)
+                turn.proposed.append(str(said_back.get("status", "")))
+                results.append({"id": call.id, "name": call.name, "result": said_back})
+                continue
+
+            found = toolbox.run(call.name, asked)
             if found.doing:
                 yield Said(kind="looking", words=found.doing)
             figures.extend(found.figures)
