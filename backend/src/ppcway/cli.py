@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import UTC, datetime
 
 from ppcway.ads.gate import gate_report
 from ppcway.audit.places import PlacesError, find_businesses
@@ -97,6 +98,98 @@ def gate() -> int:
     return 0 if standing.passed else 1
 
 
+def staff_account(email: str, level: str, because: str, *, reset: bool = False) -> int:
+    """Make a PPCWay staff account that signs in with a password, and grant it.
+
+    Separate from Google sign-in on purpose. Internal access should not ride on
+    somebody's personal mailbox: a Gmail account is recovered by Google, shared
+    with a phone, and outlives the person's job. An address PPCWay controls can
+    be closed the day somebody leaves.
+
+    **A role address is a compromise and it is worth naming.** `staff_look`
+    records which *account* opened a merchant, so if several people share
+    `admin@ppcway.com` the record cannot say which of them it was. That is a
+    real loss, and the answer is that a role account is for bootstrapping and
+    for the break-glass case, while people who use the panel regularly should
+    each have their own. The command takes any address, so that costs nothing.
+
+    The password is generated rather than taken as an argument: a password
+    typed on a command line is a password in shell history, in the terminal
+    scrollback, and quite possibly in a screenshot. It is printed once.
+    """
+    import secrets
+
+    from sqlalchemy import func, select
+
+    from ppcway.auth.models import UserAccount
+    from ppcway.auth.passwords import hash_password
+    from ppcway.db.session import session_factory
+    from ppcway.staff.guard import grant, level_of
+    from ppcway.staff.models import Level
+
+    wanted = (level or "").strip().lower()
+    known = ", ".join(one.value for one in Level)
+    if wanted not in {one.value for one in Level}:
+        print(f"level must be one of: {known}")
+        return 2
+    if not (because or "").strip():
+        print('say why: --because "the reason this account exists"')
+        return 2
+
+    address = email.strip().lower()
+    if "@" not in address:
+        print(f"{email!r} is not an email address.")
+        return 2
+
+    with session_factory()() as session:
+        account = session.scalars(
+            select(UserAccount).where(func.lower(UserAccount.email) == address)
+        ).first()
+        password = ""
+        if account is None:
+            password = secrets.token_urlsafe(18)
+            account = UserAccount(
+                email=address,
+                name=address.split("@")[0],
+                password_hash=hash_password(password),
+                # Verified because this account was created deliberately by
+                # somebody holding the database. There is no mailbox round trip
+                # to make, and leaving it unverified would only mean a nag.
+                email_verified_at=datetime.now(UTC),
+            )
+            session.add(account)
+            session.flush()
+            print(f"made the account {address}")
+        elif reset:
+            password = secrets.token_urlsafe(18)
+            account.password_hash = hash_password(password)
+            print(f"{address} already existed; its password has been replaced")
+        else:
+            print(f"{address} already exists; keeping its password")
+
+        # Always a row, even where the level is unchanged. `staff_grant` is a
+        # history rather than a state, and "this was re-confirmed on Tuesday"
+        # is a fact worth having.
+        grant(
+            session,
+            account_id=account.id,
+            level=Level(wanted),
+            by_account_id=None,
+            because=because,
+        )
+        session.commit()
+        held = level_of(session, account)
+        print(f"{address} now has {held.value if held else 'no'} access.")
+        if password:
+            print()
+            print("  password (shown once, nowhere else, not recoverable):")
+            print(f"    {password}")
+            print()
+            print("  Put it in a password manager now. To replace it later, run this")
+            print("  again with --reset, which issues a new one.")
+    return 0
+
+
 def staff(email: str, level: str, because: str) -> int:
     """Give somebody internal access, or take it away.
 
@@ -159,6 +252,19 @@ def staff(email: str, level: str, because: str) -> int:
 def main(argv: list[str]) -> int:
     if argv and argv[0] == "gate":
         return gate()
+    if argv and argv[0] == "staff-account":
+        rest = [one for one in argv[1:] if one != "--reset"]
+        if len(rest) < 2:
+            print(
+                "usage: python -m ppcway.cli staff-account <email> <level>"
+                ' --because "why" [--reset]'
+            )
+            print("       level: support, engineer, principal")
+            return 2
+        reason = ""
+        if "--because" in rest:
+            reason = " ".join(rest[rest.index("--because") + 1 :])
+        return staff_account(rest[0], rest[1], reason, reset="--reset" in argv)
     if argv and argv[0] == "staff":
         rest = argv[1:]
         if not rest:
@@ -181,6 +287,8 @@ def main(argv: list[str]) -> int:
             "       python -m ppcway.cli post [--dry]\n"
             "       python -m ppcway.cli gate\n"
             '       python -m ppcway.cli staff <email> <level> --because "why"'
+            "\n"
+            '       python -m ppcway.cli staff-account <email> <level> --because "why"'
         )
         return 2
     report = run_audit(argv[1], load_settings())
