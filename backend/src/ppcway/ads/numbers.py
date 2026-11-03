@@ -189,6 +189,10 @@ class Held:
     leads_before: float = 0.0
     cost_before: float = 0.0
     cost_per_lead_before: float = 0.0
+    #: Clicks in that earlier window. Needed to say *why* leads moved: leads
+    #: are clicks times the share of them that got in touch, and without the
+    #: earlier click count those two causes cannot be told apart.
+    clicks_before: int = 0
     #: This calendar month, including today, which is what a budget is judged against.
     month_cost: float = 0.0
     month_day: int = 0
@@ -323,6 +327,7 @@ def account_numbers(
             if was_start <= row.day < start:
                 held.leads_before += row.calls + row.forms
                 held.cost_before += row.cost
+                held.clicks_before += row.clicks
             continue
         stamp = row.day.isoformat()
         day = whole.setdefault(stamp, Day(date=stamp))

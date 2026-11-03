@@ -42,7 +42,7 @@ import time
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Final, Protocol
 
 import anthropic
 
@@ -90,6 +90,15 @@ class Screener(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class ToolCall:
+    """One lookup the model wants done, with the arguments it chose."""
+
+    id: str
+    name: str
+    args: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
 class Answer:
     """What a model said, and everything needed to trace it back."""
 
@@ -102,6 +111,14 @@ class Answer:
     cached_tokens: int = 0
     took_ms: int = 0
     screening: Screening = field(default_factory=lambda: Screening(verdict="not_screened"))
+    #: Lookups the model wants done before it can answer. Empty when it is
+    #: answering rather than asking.
+    tool_calls: tuple[ToolCall, ...] = ()
+    #: The reply's content blocks as they came back, to be sent straight back
+    #: on the next turn. Passed through rather than rebuilt: a thinking block
+    #: the API can still read must go back unchanged, and reconstructing one
+    #: from its text is how it stops being readable.
+    raw_content: tuple[Any, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.model or not self.prompt_version:
@@ -169,6 +186,7 @@ class Models:
         said: Sequence[dict[str, Any]] | str,
         organization_id: uuid.UUID | None = None,
         customer_id: str = "",
+        tools: Sequence[dict[str, Any]] | None = None,
     ) -> Answer:
         """Put one question to the model for one job, and answer with provenance.
 
@@ -178,9 +196,15 @@ class Models:
         prompt is the usual way a cache hit rate quietly becomes zero.
 
         No `temperature`, `top_p` or `top_k`: every current model rejects them.
-        No assistant prefill, which these models also reject. No tools, in this
-        phase -- the typed read-only tools arrive with Ask Otto, and a model
-        that could fetch a URL is the thing the brief forbids.
+        No assistant prefill, which these models also reject.
+
+        `tools` carries PPCWay's own typed, read-only lookups and nothing else.
+        `_only_ours` refuses anything that is not one of those -- in
+        particular Anthropic's own server tools, because `web_fetch` is
+        precisely the capability the client's brief forbids this service. The
+        refusal is a check rather than a convention: Vertex does not offer
+        those tools to Claude anyway, so without it the property would hold by
+        accident of the platform rather than by design.
         """
         tier = tier_for(job)
         messages = [{"role": "user", "content": said}] if isinstance(said, str) else list(said)
@@ -194,11 +218,13 @@ class Models:
                 screening=screening,
             )
 
+        ours = _only_ours(tools)
         started = time.monotonic()
         try:
             said_back = self._client().messages.create(
                 model=tier.model,
                 max_tokens=tier.max_tokens,
+                **({"tools": ours} if ours else {}),
                 system=[
                     {
                         "type": "text",
@@ -238,6 +264,8 @@ class Models:
         stop = getattr(said, "stop_reason", "") or ""
         usage = getattr(said, "usage", None)
         answer = Answer(
+            tool_calls=() if stop == "refusal" else _calls_in(said),
+            raw_content=tuple(getattr(said, "content", None) or ()),
             text="" if stop == "refusal" else _text_of(said),
             model=getattr(said, "model", "") or tier.model,
             prompt_version=self.prompt_version,
@@ -251,6 +279,55 @@ class Models:
         if answer.refused:
             log.info("the model declined a %s request", tier.model)
         return answer
+
+
+#: Tool types this service will not send, whatever a caller passes. These are
+#: Anthropic's own server-side tools: `web_fetch` is the capability the client's
+#: brief forbids the model service outright, and the other two are the same
+#: argument. Checked rather than assumed, because Vertex does not offer them to
+#: Claude today and a property that holds by accident of the platform is a
+#: property that changes when the platform does.
+NEVER: Final = ("web_search", "web_fetch", "code_execution", "computer", "bash")
+
+
+def _only_ours(tools: Sequence[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """PPCWay's own typed lookups, and a refusal for anything else."""
+    if not tools:
+        return []
+    out: list[dict[str, Any]] = []
+    for tool in tools:
+        name = str(tool.get("name", ""))
+        kind = str(tool.get("type", ""))
+        if any(banned in kind or banned == name for banned in NEVER):
+            raise ValueError(
+                f"the model service will not send the tool {name or kind!r}. It holds"
+                f" PPCWay's own read-only lookups and nothing that fetches a URL or"
+                f" runs code, which is the client's brief for this service."
+            )
+        if "input_schema" not in tool:
+            raise ValueError(
+                f"the tool {name!r} has no input schema, so it is not one of ours."
+                f" Every PPCWay tool declares what it takes."
+            )
+        out.append(dict(tool))
+    return out
+
+
+def _calls_in(said: Any) -> tuple[ToolCall, ...]:
+    """The lookups the model asked for, in the order it asked."""
+    out: list[ToolCall] = []
+    for block in getattr(said, "content", None) or []:
+        if getattr(block, "type", "") != "tool_use":
+            continue
+        args = getattr(block, "input", None)
+        out.append(
+            ToolCall(
+                id=str(getattr(block, "id", "")),
+                name=str(getattr(block, "name", "")),
+                args=dict(args) if isinstance(args, dict) else {},
+            )
+        )
+    return tuple(out)
 
 
 def _text_of(said: Any) -> str:
