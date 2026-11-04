@@ -38,6 +38,23 @@ from ppcway.org.models import Membership, Organization
 #: over different ones.
 WINDOWS: Final[dict[str, int]] = {"today": 1, "7d": 7, "30d": 30, "90d": 90}
 
+#: How each window reads inside a sentence. "In the last 7d" is a code, not
+#: words, and "in the last today" was one substitution away from the screen.
+SPANS: Final[dict[str, str]] = {
+    "today": "in the last 24 hours",
+    "7d": "in the last 7 days",
+    "30d": "in the last 30 days",
+    "90d": "in the last 90 days",
+}
+
+
+def over(window: str) -> str:
+    """A window as words to end a sentence with, or nothing for no window."""
+    if not window:
+        return ""
+    return SPANS.get(window, f"in the last {window}")
+
+
 #: A sync that has not finished after this long is stuck rather than slow. The
 #: structure sync runs every 15 minutes, so an hour is four missed turns.
 STUCK_AFTER: Final = timedelta(hours=1)
@@ -71,8 +88,8 @@ class Count:
         label = self.label[:1].lower() + self.label[1:]
         if not self.known:
             return f"We cannot tell how many {label} right now."
-        over = f" in the last {self.window}" if self.window else ""
-        return f"{self.value:,} {label}{over}."
+        span = f" {over(self.window)}" if self.window else ""
+        return f"{self.value:,} {label}{span}."
 
     @property
     def change(self) -> int | None:
@@ -93,8 +110,80 @@ class Money:
 
     @property
     def words(self) -> str:
-        over = f" in the last {self.window}" if self.window else ""
-        return f"{self.amount:,.2f} {self.currency} {self.label.lower()}{over}."
+        span = f" {over(self.window)}" if self.window else ""
+        return f"{self.amount:,.2f} {self.currency} {self.label.lower()}{span}."
+
+
+@dataclass(frozen=True, slots=True)
+class Point:
+    """One period of the series: when it starts, and how many changes Otto
+    proposed in it, by the state each of them is in now.
+
+    By the state *now*, not the state on the day. A change proposed on Monday
+    and applied on Wednesday counts as applied under Monday, so the chart reads
+    as "what became of each day's proposals" -- which settles as the days age,
+    and is the question somebody watching Otto is asking.
+    """
+
+    start: datetime
+    counts: tuple[tuple[str, int], ...]
+
+    def count(self, status: str) -> int:
+        return dict(self.counts).get(status, 0)
+
+
+@dataclass(frozen=True, slots=True)
+class Series:
+    """Proposals over the window, one point per hour ("today") or per day.
+
+    Days are whole calendar days in UTC, the last of them today and so still
+    filling. The figures above are rolling windows, which is why a screen draws
+    this series' own totals beside it rather than borrowing theirs: the two are
+    measured over slightly different spans, and a chart whose legend disagreed
+    with its own columns would be caught.
+    """
+
+    step: str
+    points: tuple[Point, ...]
+
+
+def proposals_over(session: Session, *, window: str = "7d", now: datetime | None = None) -> Series:
+    """Count what Otto proposed in each period of the window.
+
+    Bucketed here rather than with a GROUP BY on a truncated date, because the
+    truncation functions differ between SQLite and Postgres and the tests run
+    on one while production runs on the other. One indexed range scan of two
+    columns is cheap at the volumes an internal panel looks at.
+    """
+    now = now or datetime.now(UTC)
+    window = window if window in WINDOWS else "7d"
+    if window == "today":
+        step, size, n = "hour", timedelta(hours=1), 24
+        first = now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=n - 1)
+    else:
+        step, size, n = "day", timedelta(days=1), WINDOWS[window]
+        first = datetime(now.year, now.month, now.day, tzinfo=UTC) - timedelta(days=n - 1)
+
+    tally: list[dict[str, int]] = [{} for _ in range(n)]
+    rows = session.execute(
+        select(OptimizationAction.created_at, OptimizationAction.status).where(
+            OptimizationAction.created_at >= first
+        )
+    )
+    for created_at, status in rows:
+        if created_at is None:
+            continue
+        at = int((_aware(created_at) - first) / size)
+        if 0 <= at < n:
+            tally[at][status] = tally[at].get(status, 0) + 1
+
+    return Series(
+        step=step,
+        points=tuple(
+            Point(start=first + size * i, counts=tuple(sorted(one.items())))
+            for i, one in enumerate(tally)
+        ),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,13 +393,13 @@ def _what_needs_attention(
         )
     if syncs_failed.value:
         said.append(
-            f"{syncs_failed.value} sync{'s' if syncs_failed.value > 1 else ''} failed in the"
-            f" last {syncs_failed.window}."
+            f"{syncs_failed.value} sync{'s' if syncs_failed.value > 1 else ''} failed"
+            f" {over(syncs_failed.window)}."
         )
     if model_trouble.value:
         said.append(
             f"{model_trouble.value} model call{'s' if model_trouble.value > 1 else ''} came"
-            f" back with nothing in the last {model_trouble.window}."
+            f" back with nothing {over(model_trouble.window)}."
         )
     if waiting.value >= 50:
         said.append(

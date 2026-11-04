@@ -2869,6 +2869,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         _account, _level = _staff(session, x_session_token, "read_platform")
         said = stats.platform(session, window=window)
+        # Measured at the same instant as the figures, so the two cannot be a
+        # request apart.
+        over = stats.proposals_over(session, window=said.window, now=said.at)
         where = standing(
             session,
             _account,
@@ -2917,6 +2920,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "syncs_stuck",
                 )
             },
+            "series": {
+                "step": over.step,
+                "points": [
+                    {"start": one.start.isoformat(), "counts": dict(one.counts)}
+                    for one in over.points
+                ],
+            },
+        }
+
+    def _emails(session: Session, ids: set[Any]) -> dict[str, str]:
+        """Account ids to the addresses people recognise, in one query.
+
+        The staff tables keep ids, which is right for a record; a screen of
+        UUIDs is not something a person can read back.
+        """
+        wanted = {one for one in ids if one is not None}
+        if not wanted:
+            return {}
+        return {
+            str(one_id): email or ""
+            for one_id, email in session.execute(
+                select(UserAccount.id, UserAccount.email).where(UserAccount.id.in_(wanted))
+            )
         }
 
     @app.get("/v1/admin/merchants")
@@ -3028,6 +3054,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from ppcway.staff.guard import who_looked
 
         _staff(session, x_session_token, "read_merchant")
+        looks = who_looked(session, organization_id=organization_id)
+        named = _emails(session, {one.account_id for one in looks})
         return {
             "looks": [
                 {
@@ -3035,8 +3063,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "looked_at": one.looked_at,
                     "level": one.level,
                     "account_id": str(one.account_id),
+                    "who": named.get(str(one.account_id), ""),
                 }
-                for one in who_looked(session, organization_id=organization_id)
+                for one in looks
             ]
         }
 
@@ -3249,15 +3278,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from ppcway.staff.models import StaffGrant
 
         _staff(session, x_session_token, "grant_staff")
-        rows = session.scalars(select(StaffGrant).order_by(StaffGrant.at.desc()).limit(200))
+        rows = list(session.scalars(select(StaffGrant).order_by(StaffGrant.at.desc()).limit(200)))
+        named = _emails(
+            session,
+            {one.account_id for one in rows} | {one.by_account_id for one in rows},
+        )
         return {
             "grants": [
                 {
                     "account_id": str(one.account_id),
+                    "who": named.get(str(one.account_id), ""),
                     "level": one.level,
                     "granted": one.granted,
                     "because": one.because,
                     "by_account_id": str(one.by_account_id) if one.by_account_id else None,
+                    # Empty where nobody granted it: the first principal is
+                    # made by the command line, not by a person in the panel.
+                    "by": named.get(str(one.by_account_id), "") if one.by_account_id else "",
                     "at": one.at.isoformat(),
                 }
                 for one in rows

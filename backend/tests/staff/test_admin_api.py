@@ -407,6 +407,43 @@ def test_a_merchant_can_be_told_who_looked_at_them(
         body = client.get(f"/v1/admin/merchants/{place_id}/who-looked", headers=head(token)).json()
     assert len(body["looks"]) == 1
     assert body["looks"][0]["level"] == "support"
+    # A person, not only an id: the list exists to be read back by somebody.
+    assert body["looks"][0]["who"] == "help@ppcway.com"
+
+
+def test_the_overview_carries_the_series_its_chart_is_drawn_from(
+    world: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    app, factory = world
+    token = signed_in(factory, "eng@ppcway.com", Level.ENGINEER)
+    with TestClient(app) as client:
+        body = client.get("/v1/admin/overview?window=30d", headers=head(token)).json()
+    assert body["series"]["step"] == "day"
+    assert len(body["series"]["points"]) == 30
+    # An empty platform is a run of empty days, not a missing chart.
+    assert body["series"]["points"][0]["counts"] == {}
+
+
+def test_the_access_history_names_people_rather_than_ids(
+    world: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    app, factory = world
+    boss = signed_in(factory, "boss@ppcway.com", Level.PRINCIPAL)
+    with factory() as session:
+        person(session, "newbie@ppcway.com")
+        session.commit()
+    with TestClient(app) as client:
+        made = client.post(
+            "/v1/admin/staff",
+            headers=head(boss),
+            json={"email": "newbie@ppcway.com", "level": "support", "because": "joins on Monday"},
+        )
+        assert made.status_code == 200, made.text
+        grants = client.get("/v1/admin/staff", headers=head(boss)).json()["grants"]
+    assert (grants[0]["who"], grants[0]["by"]) == ("newbie@ppcway.com", "boss@ppcway.com")
+    # The fixture's grant had nobody behind it, the way the command line makes
+    # the first principal, and says so with an empty name rather than a guess.
+    assert (grants[-1]["who"], grants[-1]["by"]) == ("boss@ppcway.com", "")
 
 
 # --- granting access ---------------------------------------------------------

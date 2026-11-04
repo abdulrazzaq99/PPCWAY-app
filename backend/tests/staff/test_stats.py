@@ -32,6 +32,7 @@ from ppcway.staff.stats import (
     Money,
     merchants,
     platform,
+    proposals_over,
 )
 
 NOW = datetime(2026, 11, 3, 12, 0, tzinfo=UTC)
@@ -98,7 +99,17 @@ def test_a_count_reads_as_a_sentence() -> None:
     """The owner's rule is a sentence before a number, and an internal screen
     has the same obligation: the reader is about to decide from it."""
     one = Count(label="Changes proposed", value=412, window="7d")
-    assert one.words == "412 changes proposed in the last 7d."
+    assert one.words == "412 changes proposed in the last 7 days."
+
+
+def test_every_window_reads_as_words_inside_a_sentence() -> None:
+    """ "In the last 7d" is a code, and "in the last today" is wrong."""
+    assert Count(label="Syncs that failed", value=3, window="today").words == (
+        "3 syncs that failed in the last 24 hours."
+    )
+    assert Count(label="Model calls", value=2, window="90d").words == (
+        "2 model calls in the last 90 days."
+    )
 
 
 def test_a_count_with_no_window_does_not_pretend_to_have_one() -> None:
@@ -221,6 +232,72 @@ def test_each_status_is_counted_into_its_own_figure(
         session.commit()
         said = platform(session, now=NOW)
         assert (said.applied.value, said.reverted.value, said.refused.value) == (1, 1, 1)
+
+
+# --- what became of each day's proposals --------------------------------------
+
+
+def test_the_series_has_one_whole_day_per_day_of_the_window(
+    factory: sessionmaker[DbSession],
+) -> None:
+    """Calendar days in UTC, the last of them today, so a column is a day
+    somebody can name rather than a rolling 24 hours."""
+    midnight = NOW.replace(hour=0, minute=0, second=0, microsecond=0)
+    with factory() as session:
+        over = proposals_over(session, window="7d", now=NOW)
+    assert over.step == "day"
+    assert len(over.points) == 7
+    assert over.points[-1].start == midnight
+    assert over.points[0].start == midnight - timedelta(days=6)
+
+
+def test_a_proposal_counts_under_its_day_in_the_state_it_is_in_now(
+    factory: sessionmaker[DbSession],
+) -> None:
+    """Monday's change applied on Wednesday is applied, under Monday: the chart
+    answers what became of each day's proposals."""
+    with factory() as session:
+        place = a_business(session, "a@one.ie", "Alpha")
+        an_action(session, place, Status.APPLIED, ago=0)
+        an_action(session, place, Status.AWAITING_APPROVAL, ago=0)
+        an_action(session, place, Status.REJECTED, ago=2)
+        an_action(session, place, Status.APPLIED, ago=9)
+        session.commit()
+        over = proposals_over(session, window="7d", now=NOW)
+    today, two_days_ago = over.points[-1], over.points[-3]
+    assert (today.count("applied"), today.count("awaiting_approval")) == (1, 1)
+    assert two_days_ago.count("rejected") == 1
+    # The one from nine days ago is outside the window and drawn nowhere.
+    assert sum(n for one in over.points for _, n in one.counts) == 3
+
+
+def test_today_is_drawn_by_the_hour(factory: sessionmaker[DbSession]) -> None:
+    with factory() as session:
+        place = a_business(session, "a@one.ie", "Alpha")
+        session.add(
+            OptimizationAction(
+                id=uuid.uuid4(),
+                organization_id=place,
+                customer_id=CUSTOMER,
+                kind="add_negative_keyword",
+                target_id="t",
+                status=Status.PROPOSED.value,
+                created_at=NOW - timedelta(minutes=30),
+            )
+        )
+        session.commit()
+        over = proposals_over(session, window="today", now=NOW)
+    assert over.step == "hour"
+    assert len(over.points) == 24
+    assert over.points[-1].start == NOW.replace(minute=0, second=0, microsecond=0)
+    assert over.points[-2].count("proposed") == 1
+
+
+def test_an_unknown_window_draws_the_default_rather_than_nothing(
+    factory: sessionmaker[DbSession],
+) -> None:
+    with factory() as session:
+        assert len(proposals_over(session, window="forever", now=NOW).points) == 7
 
 
 # --- what needs attention ----------------------------------------------------
@@ -584,5 +661,5 @@ def test_a_product_name_keeps_its_capitals_inside_a_sentence() -> None:
     one = Count(label="Connected to Google Ads", value=4)
     assert one.words == "4 connected to Google Ads."
     assert Count(label="Model calls", value=9, window="7d").words == (
-        "9 model calls in the last 7d."
+        "9 model calls in the last 7 days."
     )
