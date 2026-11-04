@@ -255,11 +255,17 @@ export function Page({
   side?: ReactNode;
   children: ReactNode;
 }) {
+  /*
+    The sheet's own scroll, so the sidebar stays put and the work does not
+    float in a page three hundred pixels taller than it. The title is 24px:
+    the study's median for a screen that has a heading at all, and nine of its
+    twenty-three have nothing over 16.
+  */
   return (
-    <main className="mx-auto w-full max-w-[1200px] px-4 py-6 sm:px-6 sm:py-8">
+    <main className="h-full overflow-y-auto px-4 py-5 sm:px-6 sm:py-6">
       <header className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-pw-ink text-[20px] leading-[26px] font-semibold sm:text-[24px] sm:leading-[30px]">
+          <h1 className="text-pw-ink text-[19px] leading-[25px] font-semibold sm:text-[22px] sm:leading-[28px]">
             {title}
           </h1>
           {lead ? (

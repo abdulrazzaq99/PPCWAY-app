@@ -16,8 +16,7 @@ import {
 } from "@/lib/admin";
 import { GrantAccess, StopWrites } from "./actions";
 import { AllWell, Attention, Nothing, Page, Rows, State, Stats } from "./data";
-import { Nav } from "./nav";
-import { StaffBar } from "./staff-bar";
+import { Shell } from "./shell";
 
 /*
   The internal screens.
@@ -38,20 +37,18 @@ import { StaffBar } from "./staff-bar";
 function Frame({
   who,
   looking_at,
+  counts,
   children,
 }: {
   who: Whoami;
   looking_at?: string;
+  counts?: { failures?: number; waiting?: number };
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-pw-ground min-h-[100dvh]">
-      <StaffBar who={who} looking_at={looking_at} />
-      <div className="mx-auto w-full max-w-[1200px] px-4 sm:px-6">
-        <Nav may={who.may} />
-      </div>
+    <Shell who={who} looking_at={looking_at} counts={counts}>
       {children}
-    </div>
+    </Shell>
   );
 }
 
@@ -74,8 +71,23 @@ export function AdminMerchants({
   lookedFor: string;
 }) {
   const needing = rows.filter((one) => one.trouble);
+  /*
+    Four rows of the same sentence is not four findings. The panel groups
+    identical trouble and says how many share it, which is the fact somebody
+    can act on: "4 businesses have no Google Ads account connected."
+  */
+  const grouped = Object.entries(
+    needing.reduce<Record<string, string[]>>((all, one) => {
+      (all[one.trouble] ||= []).push(one.name);
+      return all;
+    }, {}),
+  ).map(([what, names]) =>
+    names.length === 1
+      ? `${names[0]}: ${what.charAt(0).toLowerCase()}${what.slice(1)}`
+      : `${count(names.length)} businesses: ${what.charAt(0).toLowerCase()}${what.slice(1)}`,
+  );
   return (
-    <Frame who={who}>
+    <Frame who={who} counts={{ waiting: rows.reduce((n, one) => n + one.waiting, 0) }}>
       <Page
         title={
           rows.length
@@ -111,9 +123,7 @@ export function AdminMerchants({
         }
       >
         <Trouble trouble={trouble} />
-        {needing.length ? (
-          <Attention items={needing.slice(0, 4).map((one) => `${one.name}: ${one.trouble}`)} />
-        ) : null}
+        {grouped.length ? <Attention items={grouped} /> : null}
 
         <Rows
           titleKey="name"
@@ -135,12 +145,19 @@ export function AdminMerchants({
                 {one.name}
               </Link>
             ),
-            state: one.connected ? (
-              <State tone={one.account_status === "ENABLED" ? "good" : "bad"}>
-                {one.account_status || "Connected"}
-              </State>
-            ) : (
+            /*
+              A connected account with no status read yet is connected, not
+              broken. The first version coloured anything that was not the
+              literal string ENABLED as bad, so a healthy account whose status
+              had not been synced printed "Connected" in red. That was on
+              screen.
+            */
+            state: !one.connected ? (
               <State tone="faint">Not connected</State>
+            ) : !one.account_status || one.account_status === "ENABLED" ? (
+              <State tone="good">Connected</State>
+            ) : (
+              <State tone="bad">{one.account_status.toLowerCase()}</State>
             ),
             waiting: one.waiting ? count(one.waiting) : "0",
             applied: count(one.applied),
@@ -343,7 +360,7 @@ export function AdminErrors({
   window: string;
 }) {
   return (
-    <Frame who={who}>
+    <Frame who={who} counts={{ failures: faults.length }}>
       <Page
         title={
           faults.length
