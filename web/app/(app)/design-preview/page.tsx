@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
-import { AdminMerchants } from "@/components/admin/live";
-import type { MerchantRow, Whoami } from "@/lib/admin";
+import { AdminMerchants, AdminOverview } from "@/components/admin/live";
+import type { Figure, MerchantRow, Overview, Whoami } from "@/lib/admin";
 
 /*
   The merchant list with fixture rows, for measuring the design.
@@ -13,8 +13,6 @@ import type { MerchantRow, Whoami } from "@/lib/admin";
   Dev only. `notFound()` in any other environment, so it cannot be reached in
   production even by somebody who guesses the path.
 */
-export const dynamic = "force-static";
-
 const WHO: Whoami = {
   staff: true,
   level: "principal",
@@ -108,7 +106,57 @@ const ROWS: MerchantRow[] = [
   },
 ];
 
-export default function Preview() {
+function fig(label: string, value: number, window = "7d", change: number | null = null): Figure {
+  return {
+    label,
+    value,
+    window,
+    known: true,
+    change,
+    words: `${value} ${label.toLowerCase()} in the last ${window}`,
+  };
+}
+
+const OVERVIEW: Overview = {
+  at: new Date().toISOString(),
+  window: "7d",
+  healthy: false,
+  trouble: [
+    "2 syncs started over an hour ago and never finished. Those accounts are working from old figures.",
+    "4 model calls came back with nothing in the last 7d.",
+  ],
+  writes: {
+    anything_can_be_written: false,
+    words:
+      "PPCWay is not writing to any Google Ads account. That is this deployment's setting, not a switch, and it takes a deploy to change.",
+    stops: [],
+  },
+  figures: {
+    merchants: fig("Businesses", 6, ""),
+    connected: fig("Connected to Google Ads", 4, ""),
+    people: fig("People", 14, ""),
+    proposed: fig("Changes proposed", 148, "7d", 31),
+    waiting: fig("Waiting for a merchant", 17, ""),
+    applied: fig("Changes applied", 103, "7d"),
+    reverted: fig("Changes put back", 6, "7d"),
+    refused: fig("Refused by a guardrail", 22, "7d"),
+    model_calls: fig("Model calls", 412, "7d", 88),
+    model_tokens: fig("Tokens used", 1_284_900, "7d"),
+    model_trouble: fig("Model calls that failed", 4, "7d", 4),
+    syncs_failed: fig("Syncs that failed", 3, "7d", -2),
+    syncs_stuck: fig("Syncs still running", 2, ""),
+  },
+};
+
+export default async function Preview({
+  searchParams,
+}: {
+  searchParams: Promise<{ screen?: string }>;
+}) {
   if (process.env.NODE_ENV === "production") notFound();
+  const { screen } = await searchParams;
+  if (screen === "overview") {
+    return <AdminOverview who={WHO} view={OVERVIEW} trouble="" />;
+  }
   return <AdminMerchants who={WHO} rows={ROWS} trouble="" lookedFor="" />;
 }

@@ -576,3 +576,13 @@ def test_a_naive_timestamp_from_the_driver_does_not_crash_the_screen(
         assert one.words(NOW)
         assert one.stuck(NOW) is False
         assert one.took_seconds is None
+
+
+def test_a_product_name_keeps_its_capitals_inside_a_sentence() -> None:
+    """ "4 connected to google ads." was on screen. Only the first letter is
+    lowered to join the label onto the figure; the rest is left as written."""
+    one = Count(label="Connected to Google Ads", value=4)
+    assert one.words == "4 connected to Google Ads."
+    assert Count(label="Model calls", value=9, window="7d").words == (
+        "9 model calls in the last 7d."
+    )

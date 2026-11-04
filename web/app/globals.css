@@ -463,6 +463,11 @@ body {
   --color-pw-good: var(--pw-good);
   --color-pw-good-bg: var(--pw-good-bg);
   --color-pw-good-ink: var(--pw-good-ink);
+  /* The solid tones existed as variables and were never mapped here, so
+     `bg-pw-good-solid` and `bg-pw-bad-solid` generated nothing at all. A
+     destructive button was white text on no background, and a chart's
+     segments were invisible. */
+  --color-pw-good-solid: var(--pw-good-solid);
   --color-pw-warn: var(--pw-warn);
   --color-pw-warn-bg: var(--pw-warn-bg);
   --color-pw-warn-ink: var(--pw-warn-ink);
@@ -470,6 +475,7 @@ body {
   --color-pw-bad: var(--pw-bad);
   --color-pw-bad-bg: var(--pw-bad-bg);
   --color-pw-bad-ink: var(--pw-bad-ink);
+  --color-pw-bad-solid: var(--pw-bad-solid);
   --radius-pw: var(--pw-r-card);
   --radius-pw-hero: var(--pw-r-hero);
   --radius-pw-button: var(--pw-r-button);

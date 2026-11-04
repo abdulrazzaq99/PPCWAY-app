@@ -16,6 +16,7 @@ import {
 } from "@/lib/admin";
 import { GrantAccess, StopWrites } from "./actions";
 import { AllWell, Attention, Nothing, Page, Rows, State, Stats } from "./data";
+import { Funnel } from "./pipeline";
 import { Shell } from "./shell";
 
 /*
@@ -274,15 +275,33 @@ export function AdminOverview({
               answered are the only number here that somebody has to do
               something about.
             */}
-            <Stats
-              stats={[
-                stat("waiting", view.figures.waiting, "Waiting", true),
-                stat("merchants", view.figures.merchants, "Businesses"),
-                stat("connected", view.figures.connected, "Connected"),
-                stat("proposed", view.figures.proposed, "Proposed"),
-                stat("applied", view.figures.applied, "Applied"),
-              ]}
+            {/*
+              The product's own shape leads, above the counts. A strip of
+              figures is what every admin panel opens with; what happened to
+              the changes Otto proposed is what only this one can show.
+            */}
+            <Funnel
+              window={view.window}
+              data={{
+                proposed: view.figures.proposed?.value ?? 0,
+                refused: view.figures.refused?.value ?? 0,
+                waiting: view.figures.waiting?.value ?? 0,
+                applied: view.figures.applied?.value ?? 0,
+                reverted: view.figures.reverted?.value ?? 0,
+              }}
             />
+
+            <div className="mt-5">
+              <Stats
+                stats={[
+                  stat("merchants", view.figures.merchants, "Businesses", true),
+                  stat("connected", view.figures.connected, "Connected"),
+                  stat("model_calls", view.figures.model_calls, "Model calls"),
+                  stat("syncs_failed", view.figures.syncs_failed, "Syncs failed"),
+                  stat("model_trouble", view.figures.model_trouble, "Model failures"),
+                ]}
+              />
+            </div>
 
             <h2 className="text-pw-ink mt-8 mb-3 text-[15px] leading-[21px] font-semibold">
               Everything counted

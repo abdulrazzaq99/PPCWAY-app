@@ -61,11 +61,18 @@ class Count:
 
     @property
     def words(self) -> str:
-        """The figure as a sentence, which is how it is shown."""
+        """The figure as a sentence, which is how it is shown.
+
+        Only the first letter is lowered, not the whole label. Lowering all of
+        it turned "Connected to Google Ads" into "connected to google ads",
+        which was on screen: a product name is a product name wherever it sits
+        in a sentence.
+        """
+        label = self.label[:1].lower() + self.label[1:]
         if not self.known:
-            return f"We cannot tell how many {self.label.lower()} right now."
+            return f"We cannot tell how many {label} right now."
         over = f" in the last {self.window}" if self.window else ""
-        return f"{self.value:,} {self.label.lower()}{over}."
+        return f"{self.value:,} {label}{over}."
 
     @property
     def change(self) -> int | None:
