@@ -3187,17 +3187,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session: Annotated[Session, Depends(get_session)],
         kind: str = "",
         failed_only: bool = False,
+        limit: int = 100,
+        offset: int = 0,
         x_session_token: Annotated[str | None, Header()] = None,
     ) -> dict[str, Any]:
-        """The scheduled jobs' most recent runs, newest first."""
+        """The scheduled jobs' runs, newest first, a page at a time.
+
+        `total` is every run the filters match, so the screen can say "26-50
+        of 1,284". The page is capped at 200: the panel asks for 25, and a URL
+        somebody edits should not be able to ask the database for everything.
+        """
         from datetime import datetime as _dt
 
         from ppcway.staff import stats
 
         _staff(session, x_session_token, "run_job")
         now = _dt.now(UTC)
-        runs = stats.jobs(session, kind=kind, failed_only=failed_only, now=now)
+        limit = max(1, min(limit, 200))
+        offset = max(0, offset)
+        runs = stats.jobs(
+            session, kind=kind, failed_only=failed_only, most=limit, skip=offset, now=now
+        )
+        total = stats.count_jobs(session, kind=kind, failed_only=failed_only)
         return {
+            "total": total,
+            "offset": offset,
+            "limit": limit,
             "runs": [
                 {
                     "id": str(one.id),
@@ -3211,7 +3226,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "words": one.words(now),
                 }
                 for one in runs
-            ]
+            ],
         }
 
     @app.get("/v1/admin/errors")

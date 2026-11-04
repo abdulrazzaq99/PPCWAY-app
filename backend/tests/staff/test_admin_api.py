@@ -424,6 +424,41 @@ def test_the_overview_carries_the_series_its_chart_is_drawn_from(
     assert body["series"]["points"][0]["counts"] == {}
 
 
+def test_the_jobs_list_comes_in_pages_and_says_how_many_there_are(
+    world: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from ppcway.ads.mirror import SyncRun
+
+    app, factory = world
+    token = signed_in(factory, "eng@ppcway.com", Level.ENGINEER)
+    now = datetime.now(UTC)
+    with factory() as session:
+        for minutes in range(30):
+            session.add(
+                SyncRun(
+                    id=uuid.uuid4(),
+                    customer_id="2580586343",
+                    kind="structure",
+                    status="done",
+                    started_at=now - timedelta(minutes=15 * minutes),
+                    finished_at=now - timedelta(minutes=15 * minutes) + timedelta(seconds=2),
+                )
+            )
+        session.commit()
+    with TestClient(app) as client:
+        second = client.get("/v1/admin/jobs?limit=25&offset=25", headers=head(token)).json()
+        assert (second["total"], second["offset"], second["limit"]) == (30, 25, 25)
+        assert len(second["runs"]) == 5
+        # A URL somebody edits cannot ask for everything, or for a page before the first.
+        wide = client.get("/v1/admin/jobs?limit=100000&offset=-5", headers=head(token)).json()
+        assert (wide["limit"], wide["offset"], len(wide["runs"])) == (200, 0, 30)
+        # Asked as before, it answers as before: the latest hundred.
+        plain = client.get("/v1/admin/jobs", headers=head(token)).json()
+        assert (plain["limit"], len(plain["runs"])) == (100, 30)
+
+
 def test_the_access_history_names_people_rather_than_ids(
     world: tuple[FastAPI, sessionmaker[Session]],
 ) -> None:
@@ -624,5 +659,6 @@ def test_the_jobs_route_answers_with_an_empty_list_not_an_error(
     app, factory = world
     token = signed_in(factory, "eng@ppcway.com", Level.ENGINEER)
     with TestClient(app) as client:
-        assert client.get("/v1/admin/jobs", headers=head(token)).json() == {"runs": []}
+        jobs = client.get("/v1/admin/jobs", headers=head(token)).json()
+        assert (jobs["runs"], jobs["total"]) == ([], 0)
         assert client.get("/v1/admin/errors", headers=head(token)).json()["faults"] == []

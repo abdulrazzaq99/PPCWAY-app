@@ -543,27 +543,45 @@ class JobRun:
         return f"Finished in {self.took_seconds} s."
 
 
+def _runs(*, kind: str = "", failed_only: bool = False) -> list[Any]:
+    """The filters the jobs list and its count share, so they cannot disagree."""
+    where: list[Any] = []
+    if kind.strip():
+        where.append(SyncRun.kind == kind.strip())
+    if failed_only:
+        where.append(SyncRun.status == "failed")
+    return where
+
+
 def jobs(
     session: Session,
     *,
     kind: str = "",
     failed_only: bool = False,
     most: int = 100,
+    skip: int = 0,
     now: datetime | None = None,
 ) -> list[JobRun]:
-    """The most recent runs, newest first.
+    """The most recent runs, newest first, one page at a time.
 
     Newest first rather than oldest, because the question somebody brings to
     this screen is almost always "what just happened", not "what happened
     first". The stuck ones surface anyway: they have no finish time, so they
     read as trouble whatever their age.
+
+    Ordered by the id after the start time. Two runs can start in the same
+    second (every account's structure sync and today's figures fire on the
+    quarter hour), and without a second key the database may return them in
+    either order, so a row could appear on two pages or on neither.
     """
     now = now or datetime.now(UTC)
-    wanted = select(SyncRun).order_by(SyncRun.started_at.desc()).limit(most)
-    if kind.strip():
-        wanted = wanted.where(SyncRun.kind == kind.strip())
-    if failed_only:
-        wanted = wanted.where(SyncRun.status == "failed")
+    wanted = (
+        select(SyncRun)
+        .where(*_runs(kind=kind, failed_only=failed_only))
+        .order_by(SyncRun.started_at.desc(), SyncRun.id.desc())
+        .offset(max(0, skip))
+        .limit(most)
+    )
     return [
         JobRun(
             id=row.id,
@@ -577,6 +595,14 @@ def jobs(
         )
         for row in session.scalars(wanted)
     ]
+
+
+def count_jobs(session: Session, *, kind: str = "", failed_only: bool = False) -> int:
+    """How many runs there are in all, for "26-50 of 1,284"."""
+    return _count(
+        session,
+        select(func.count()).select_from(SyncRun).where(*_runs(kind=kind, failed_only=failed_only)),
+    )
 
 
 @dataclass(frozen=True, slots=True)

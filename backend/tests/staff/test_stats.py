@@ -582,6 +582,58 @@ def test_runs_can_be_narrowed_to_the_failures(factory: sessionmaker[DbSession]) 
         assert only[0].words(NOW) == "Google refused the request"
 
 
+def test_runs_come_a_page_at_a_time_with_nothing_twice_and_nothing_lost(
+    factory: sessionmaker[DbSession],
+) -> None:
+    from ppcway.staff.stats import count_jobs, jobs
+
+    with factory() as session:
+        for minutes in range(7):
+            a_run(session, ago_min=10 + minutes * 15)
+        session.commit()
+        pages = [jobs(session, most=3, skip=at, now=NOW) for at in (0, 3, 6)]
+        assert [len(page) for page in pages] == [3, 3, 1]
+        seen = [one.id for page in pages for one in page]
+        assert len(seen) == len(set(seen)) == 7
+        # Newest first across the pages, not only within each one.
+        starts = [one.started_at for page in pages for one in page]
+        assert starts == sorted(starts, reverse=True)
+        assert count_jobs(session) == 7
+        assert jobs(session, most=3, skip=7, now=NOW) == []
+
+
+def test_runs_that_start_in_the_same_second_keep_one_order(
+    factory: sessionmaker[DbSession],
+) -> None:
+    """Every account's syncs fire on the quarter hour. Without a second key the
+    database may return them in either order, and a row lands on two pages or
+    on neither."""
+    from ppcway.staff.stats import jobs
+
+    with factory() as session:
+        for _ in range(4):
+            a_run(session, ago_min=15)
+        session.commit()
+        one_by_one = [jobs(session, most=1, skip=at, now=NOW)[0].id for at in range(4)]
+        assert len(set(one_by_one)) == 4
+        assert one_by_one == [one.id for one in jobs(session, most=4, now=NOW)]
+
+
+def test_the_count_follows_the_same_filter_as_the_list(
+    factory: sessionmaker[DbSession],
+) -> None:
+    from ppcway.staff.stats import count_jobs
+
+    with factory() as session:
+        a_run(session, status="ok")
+        a_run(session, status="failed", trouble="Google refused the request", ago_min=10)
+        a_run(session, status="failed", kind="today", ago_min=40)
+        session.commit()
+        assert count_jobs(session) == 3
+        assert count_jobs(session, failed_only=True) == 2
+        assert count_jobs(session, kind="today") == 1
+
+
 def test_a_failure_with_nothing_to_say_still_says_something(
     factory: sessionmaker[DbSession],
 ) -> None:
