@@ -7,6 +7,13 @@ already exists.
 
     python scripts/stray_staff_org.py                 # show what it would touch
     python scripts/stray_staff_org.py --remove        # actually remove it
+    python scripts/stray_staff_org.py --audit         # every account with more than one
+
+`--audit` exists because the stray staff business turned out to be two, and
+two was a race in `home_for` rather than anything to do with staff: a first
+page load fires several calls at once and each made a business. That is fixed,
+but any account that signed up before the fix may be carrying duplicates.
+`--audit` only reads.
 
 Shows first and removes only when asked, because the query joins on an email
 and a wrong email would name somebody's real business. Read the list before
@@ -38,11 +45,49 @@ FIND = sa.text("""
 """)
 
 
+DUPLICATES = sa.text("""
+    select a.email,
+           count(distinct o.id) as businesses,
+           sum(case when (select count(*) from ads_connection c
+                           where c.organization_id = o.id) = 0
+                     and (select count(*) from opt_action x
+                           where x.organization_id = o.id) = 0
+                    then 1 else 0 end) as empty_ones
+      from account a
+      join membership m on m.account_id = a.id
+      join organization o on o.id = m.organization_id
+     group by a.email
+    having count(distinct o.id) > 1
+     order by count(distinct o.id) desc
+""")
+
+
+def audit(url: str) -> int:
+    """Every account holding more than one business. Reads only."""
+    engine = sa.create_engine(url)
+    with engine.connect() as c:
+        rows = c.execute(DUPLICATES).all()
+    if not rows:
+        print("no account holds more than one business. Nothing to clean up.")
+        return 0
+    print(f"{len(rows)} account(s) hold more than one business:\n")
+    for row in rows:
+        print(f"  {row.email}  businesses={row.businesses}  of which empty={row.empty_ones}")
+    print(
+        "\nAn account with two businesses where one is empty is almost certainly the"
+        "\nrace. One with two that both have data is a person who really runs two,"
+        "\nand must be left alone."
+    )
+    return 0
+
+
 def main() -> int:
     url = os.environ.get("DATABASE_URL")
     if not url:
         print("set DATABASE_URL first")
         return 2
+    if "--audit" in sys.argv:
+        return audit(url)
     email = os.environ.get("STAFF_EMAIL", STAFF_EMAIL)
     remove = "--remove" in sys.argv
 
