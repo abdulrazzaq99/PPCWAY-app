@@ -8,6 +8,8 @@ already exists.
     python scripts/stray_staff_org.py                 # show what it would touch
     python scripts/stray_staff_org.py --remove        # actually remove it
     python scripts/stray_staff_org.py --audit         # every account with more than one
+    python scripts/stray_staff_org.py --dedupe        # show the extras the race left
+    python scripts/stray_staff_org.py --dedupe --remove
 
 `--audit` exists because the stray staff business turned out to be two, and
 two was a race in `home_for` rather than anything to do with staff: a first
@@ -81,6 +83,65 @@ def audit(url: str) -> int:
     return 0
 
 
+MINE = sa.text("""
+    select o.id, o.name, m.created_at,
+           (select count(*) from ads_connection c where c.organization_id = o.id) as connections,
+           (select count(*) from opt_action x where x.organization_id = o.id) as changes,
+           (select count(*) from membership m2 where m2.organization_id = o.id) as people
+      from organization o
+      join membership m on m.organization_id = o.id
+      join account a on a.id = m.account_id
+     where lower(a.email) = lower(:email)
+     order by m.created_at asc
+""")
+
+
+def dedupe(url: str, *, remove: bool) -> int:
+    """Drop the extra empty businesses the race left, keeping the one in use.
+
+    The oldest membership is kept, because that is the one `home_for` returns
+    and therefore the one the person has been using. Everything newer is
+    removed only if it is genuinely empty: no connection, no changes, nobody
+    else in it. A duplicate that acquired data is not a duplicate any more.
+    """
+    engine = sa.create_engine(url)
+    with engine.begin() as c:
+        emails = [row.email for row in c.execute(DUPLICATES).all()]
+        if not emails:
+            print("no account holds more than one business. Nothing to do.")
+            return 0
+
+        going: list[tuple[str, str, str]] = []
+        for email in emails:
+            rows = c.execute(MINE, {"email": email}).all()
+            keeping, rest = rows[0], rows[1:]
+            print(f"{email}")
+            print(f"  keep    {keeping.name!r}  (oldest, the one the app uses)")
+            for row in rest:
+                empty = row.connections == 0 and row.changes == 0 and row.people <= 1
+                print(
+                    f"  {'remove ' if empty else 'KEEP   '} {row.name!r}"
+                    f"  connections={row.connections} changes={row.changes}"
+                    f" people={row.people}"
+                    f"{'' if empty else '  <- has something in it, left alone'}"
+                )
+                if empty:
+                    going.append((email, str(row.id), row.name))
+            print()
+
+        if not going:
+            print("nothing is empty enough to remove.")
+            return 0
+        if not remove:
+            print(f"{len(going)} would be removed. Re-run with --remove to do it.")
+            return 0
+        for _email, one, _name in going:
+            c.execute(sa.text("delete from membership where organization_id = :id"), {"id": one})
+            c.execute(sa.text("delete from organization where id = :id"), {"id": one})
+        print(f"removed {len(going)}.")
+    return 0
+
+
 def main() -> int:
     url = os.environ.get("DATABASE_URL")
     if not url:
@@ -88,6 +149,8 @@ def main() -> int:
         return 2
     if "--audit" in sys.argv:
         return audit(url)
+    if "--dedupe" in sys.argv:
+        return dedupe(url, remove="--remove" in sys.argv)
     email = os.environ.get("STAFF_EMAIL", STAFF_EMAIL)
     remove = "--remove" in sys.argv
 
