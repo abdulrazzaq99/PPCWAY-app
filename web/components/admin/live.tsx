@@ -82,12 +82,15 @@ export function AdminMerchants({
       return all;
     }, {}),
   ).map(([what, names]) =>
-    names.length === 1
-      ? `${names[0]}: ${what.charAt(0).toLowerCase()}${what.slice(1)}`
-      : `${count(names.length)} businesses: ${what.charAt(0).toLowerCase()}${what.slice(1)}`,
+    /*
+      The sentence is kept as it was written. Lower-casing its first letter to
+      join it onto a name turned "Google says this account is suspended" into
+      "google says", which was on screen.
+    */
+    names.length === 1 ? `${names[0]}: ${what}` : `${count(names.length)} businesses: ${what}`,
   );
   return (
-    <Frame who={who} counts={{ waiting: rows.reduce((n, one) => n + one.waiting, 0) }}>
+    <Frame who={who}>
       <Page
         title={
           rows.length
@@ -123,8 +126,44 @@ export function AdminMerchants({
         }
       >
         <Trouble trouble={trouble} />
-        {grouped.length ? <Attention items={grouped} /> : null}
+        {/*
+          Figures before the list, and the one somebody has to act on leads.
+          Without them the screen was a headline, a warning and a table, which
+          left a third of it empty: the inspector measured a 1200x360 void.
+          These are the same counts the list carries, read as a whole.
+        */}
+        <Stats
+          stats={[
+            {
+              label: "Waiting on a merchant",
+              value: count(rows.reduce((n, one) => n + one.waiting, 0)),
+              lead: true,
+              note: "proposals nobody has answered",
+            },
+            { label: "Businesses", value: count(rows.length) },
+            {
+              label: "Connected to Google Ads",
+              value: count(rows.filter((one) => one.connected).length),
+            },
+            {
+              label: "Need a person",
+              value: count(needing.length),
+              tone: needing.length ? "bad" : "plain",
+            },
+            {
+              label: "Changes applied",
+              value: count(rows.reduce((n, one) => n + one.applied, 0)),
+            },
+          ]}
+        />
 
+        {grouped.length ? (
+          <div className="mt-5">
+            <Attention items={grouped} />
+          </div>
+        ) : null}
+
+        <div className="mt-5" />
         <Rows
           titleKey="name"
           cols={[
@@ -157,7 +196,9 @@ export function AdminMerchants({
             ) : !one.account_status || one.account_status === "ENABLED" ? (
               <State tone="good">Connected</State>
             ) : (
-              <State tone="bad">{one.account_status.toLowerCase()}</State>
+              <State tone="bad">
+                {one.account_status.charAt(0) + one.account_status.slice(1).toLowerCase()}
+              </State>
             ),
             waiting: one.waiting ? count(one.waiting) : "0",
             applied: count(one.applied),
@@ -380,7 +421,7 @@ export function AdminErrors({
             {faults.map((one, at) => (
               <li key={`${one.at}-${at}`} className="px-4 py-3 sm:px-5">
                 <p className="text-pw-ink text-[14px] leading-[20px]">{one.what}</p>
-                <p className="text-pw-ink-400 pw-num mt-1 flex flex-wrap gap-x-4 text-[12px] leading-[16px]">
+                <p className="text-pw-ink-500 pw-num mt-1 flex flex-wrap gap-x-4 text-[12px] leading-[16px]">
                   <span>{one.where}</span>
                   <span>{ago(one.at)}</span>
                   {one.customer_id ? <span>{one.customer_id}</span> : null}

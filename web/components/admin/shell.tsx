@@ -60,7 +60,7 @@ function Group({
   return (
     <div className="mt-6 first:mt-0">
       {/* Sentence case, never uppercase: 9 of the 16 studied sidebars. */}
-      <p className="text-pw-ink-400 px-3 pb-2 text-[12px] leading-[16px]">{title}</p>
+      <p className="text-pw-ink-500 px-3 pb-2 text-[12px] leading-[16px]">{title}</p>
       <ul>
         {shown.map((one) => {
           const current = here === one.href;
@@ -100,7 +100,7 @@ export function Shell({
 }: {
   who: Whoami;
   looking_at?: string;
-  counts?: { failures?: number; waiting?: number };
+  counts?: { failures?: number };
   children: React.ReactNode;
 }) {
   const here = usePathname();
@@ -108,7 +108,12 @@ export function Shell({
 
   const work: Item[] = [
     { href: "/admin", label: "Merchants", needs: "read_merchant" },
-    { href: "/admin/metrics", label: "Overview", needs: "read_platform", count: counts?.waiting },
+    /*
+      No count on Overview. The chapter is explicit that a count's noun has to
+      be clear from the label, and "Overview 17" leaves a reader asking
+      seventeen of what. "Failures 3" does not.
+    */
+    { href: "/admin/metrics", label: "Overview", needs: "read_platform" },
   ];
   const health: Item[] = [
     { href: "/admin/jobs", label: "Jobs", needs: "run_job" },
@@ -132,7 +137,7 @@ export function Shell({
         <span className="text-pw-ink min-w-0 truncate text-[14px] leading-[20px] font-semibold">
           PPCWay
         </span>
-        <span className="text-pw-ink-400 shrink-0 text-[12px] leading-[16px]">internal</span>
+        <span className="text-pw-ink-500 shrink-0 text-[12px] leading-[16px]">internal</span>
       </div>
       <nav aria-label="Internal panel" className="flex-1">
         <Group
@@ -162,7 +167,7 @@ export function Shell({
         <p className="text-pw-ink truncate text-[13px] leading-[18px] font-medium">
           {who.who ?? "Signed in"}
         </p>
-        <p className="text-pw-ink-400 text-[12px] leading-[16px]">{who.level} access</p>
+        <p className="text-pw-ink-500 text-[12px] leading-[16px]">{who.level} access</p>
         <p className="mt-2 flex items-center gap-3 text-[13px] leading-[18px]">
           <Link
             href="/home"
@@ -224,7 +229,7 @@ export function Shell({
               You are in {looking_at}&rsquo;s account, not your own
             </p>
           ) : (
-            <p className="text-pw-ink-400 ml-auto hidden truncate text-[12px] leading-[16px] lg:block">
+            <p className="text-pw-ink-500 ml-auto hidden truncate text-[12px] leading-[16px] lg:block">
               Every account you open is recorded
             </p>
           )}

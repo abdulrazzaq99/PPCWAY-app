@@ -38,7 +38,7 @@ export function Attention({ items }: { items: string[] }) {
   */
   if (!items.length) return null;
   return (
-    <ul className="border-pw-bad/30 bg-pw-bad-bg mb-6 space-y-2 rounded-[12px] border px-4 py-3 sm:px-5 sm:py-4">
+    <ul className="border-pw-bad/30 bg-pw-bad-bg space-y-2 rounded-[12px] border px-4 py-3 sm:px-5 sm:py-4">
       {items.map((one) => (
         <li key={one} className="text-pw-bad-ink text-[14px] leading-[20px]">
           {one}
@@ -76,6 +76,7 @@ export type Stat = {
 };
 
 export function Stats({ stats }: { stats: Stat[] }) {
+  const odd = stats.length % 2 === 1;
   /*
     A strip rather than a row of cards. Hairlines between on desktop, stacked
     pairs on a phone. Two columns on a handset rather than one: these are short
@@ -83,8 +84,20 @@ export function Stats({ stats }: { stats: Stat[] }) {
   */
   return (
     <dl className="border-pw-border divide-pw-border grid grid-cols-2 gap-px overflow-hidden rounded-[12px] border bg-[var(--pw-border)] sm:grid-cols-3 lg:grid-cols-5">
-      {stats.map((one) => (
-        <div key={one.label} className="bg-pw-card px-4 py-3 sm:px-5 sm:py-4">
+      {stats.map((one, at) => (
+        <div
+          key={one.label}
+          className={[
+            "bg-pw-card px-4 py-3 sm:px-5 sm:py-4",
+            /*
+              An odd number of figures in a two-column grid leaves a hole at
+              the end, which reads as a missing tile rather than a choice. The
+              last one spans the row instead. Only at the two-column
+              breakpoint: three and five columns divide these counts fine.
+            */
+            odd && at === stats.length - 1 ? "col-span-2 sm:col-span-1" : "",
+          ].join(" ")}
+        >
           <dt className="text-pw-ink-500 text-[13px] leading-[18px]">{one.label}</dt>
           <dd
             className={[
@@ -110,7 +123,7 @@ export function Stats({ stats }: { stats: Stat[] }) {
                   ? "text-pw-bad"
                   : one.noteTone === "good"
                     ? "text-pw-good"
-                    : "text-pw-ink-400"
+                    : "text-pw-ink-500"
               }`}
             >
               {one.note}
@@ -207,7 +220,7 @@ export function Rows({
             <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5">
               {onPhone.map((c) => (
                 <div key={c.key} className="flex items-baseline justify-between gap-2">
-                  <dt className="text-pw-ink-400 text-[12px] leading-[16px]">{c.label}</dt>
+                  <dt className="text-pw-ink-500 text-[12px] leading-[16px]">{c.label}</dt>
                   <dd
                     className={`text-pw-ink-700 text-[13px] leading-[18px] ${
                       c.num ? "pw-num" : ""
@@ -292,7 +305,7 @@ export function State({
     good: "text-pw-good",
     warn: "text-pw-warn",
     bad: "text-pw-bad",
-    faint: "text-pw-ink-400",
+    faint: "text-pw-ink-500",
   }[tone];
   return <span className={`text-[13px] leading-[18px] ${look}`}>{children}</span>;
 }

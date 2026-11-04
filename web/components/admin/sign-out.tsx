@@ -40,7 +40,7 @@ export function SignOut() {
       type="button"
       onClick={out}
       disabled={going}
-      className="text-pw-night-text underline underline-offset-2 hover:no-underline disabled:opacity-60"
+      className="text-pw-ink-600 hover:text-pw-ink underline underline-offset-2 disabled:opacity-60"
     >
       {going ? "Signing out…" : "Sign out"}
     </button>
