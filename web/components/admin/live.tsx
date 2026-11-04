@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   ago,
   count,
+  direction,
   moved,
   type Fault,
   type Figure,
@@ -13,6 +14,7 @@ import {
   type Room,
   type Whoami,
 } from "@/lib/admin";
+import { GrantAccess, StopWrites } from "./actions";
 import { AllWell, Attention, Nothing, Page, Rows, State, Stats } from "./data";
 import { Nav } from "./nav";
 import { StaffBar } from "./staff-bar";
@@ -166,13 +168,15 @@ export function AdminMerchants({
 
 /* ---------- the overview ---------- */
 
-function stat(one: Figure | undefined, fallback: string) {
+function stat(key: string, one: Figure | undefined, fallback: string, lead = false) {
   if (!one) return { label: fallback, value: "0", unknown: true };
   return {
     label: one.label,
     value: count(one.value),
-    note: moved(one.change) || one.window || undefined,
+    note: moved(one.change, one.window) || one.window || undefined,
+    noteTone: direction(key, one.change),
     unknown: !one.known,
+    lead,
   };
 }
 
@@ -206,13 +210,19 @@ export function AdminOverview({
               <AllWell words={`Counted over the last ${view.window}. Nothing is failing.`} />
             )}
 
+            {/*
+              Waiting leads, at a size its siblings do not share. It is the
+              figure the screen's question turns on: proposals nobody has
+              answered are the only number here that somebody has to do
+              something about.
+            */}
             <Stats
               stats={[
-                stat(view.figures.merchants, "Businesses"),
-                stat(view.figures.connected, "Connected"),
-                stat(view.figures.waiting, "Waiting"),
-                stat(view.figures.proposed, "Proposed"),
-                stat(view.figures.applied, "Applied"),
+                stat("waiting", view.figures.waiting, "Waiting", true),
+                stat("merchants", view.figures.merchants, "Businesses"),
+                stat("connected", view.figures.connected, "Connected"),
+                stat("proposed", view.figures.proposed, "Proposed"),
+                stat("applied", view.figures.applied, "Applied"),
               ]}
             />
 
@@ -448,6 +458,16 @@ export function AdminPlatform({
             : "Settings"
         }
         lead={view?.words}
+        side={
+          /*
+            The job this screen exists for, one click from the answer it sits
+            under. Shown only to somebody who may do it: a button that returns
+            403 teaches staff the panel is broken when it is simply not theirs.
+          */
+          view?.may_stop_writes ? (
+            <StopWrites stopped={Boolean(view.stops.find((one) => !one.customer_id))} />
+          ) : undefined
+        }
       >
         <Trouble trouble={trouble} />
         {view ? (
@@ -522,6 +542,7 @@ export function AdminStaff({
             : "Nobody has been given access yet"
         }
         lead="Every grant and every withdrawal, newest first. Nothing here is ever deleted."
+        side={<GrantAccess />}
       >
         <Trouble trouble={trouble} />
         <Rows

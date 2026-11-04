@@ -34,7 +34,19 @@ export function StaffBar({ who, looking_at }: { who: Whoami; looking_at?: string
       aria-label="Internal access"
     >
       <div className="mx-auto flex max-w-[1200px] flex-col gap-1 px-4 py-2 sm:flex-row sm:items-center sm:gap-4 sm:px-6">
-        <p className="flex min-w-0 items-baseline gap-2 text-[13px] leading-[18px]">
+        <p className="flex min-w-0 items-center gap-2 text-[13px] leading-[18px]">
+          {/*
+            The product's mark. A screen with no name on it could belong to
+            anybody, and an internal panel is exactly where somebody needs to
+            know which product they are about to change. Drawn from the brand
+            blue on the night ground rather than a black square with a letter.
+          */}
+          <span
+            aria-hidden
+            className="bg-pw-blue flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] text-[11px] leading-none font-bold text-white"
+          >
+            P
+          </span>
           <span className="font-semibold whitespace-nowrap">PPCWay internal</span>
           <span className="text-pw-night-muted truncate">
             {who.level} access. {WHAT[who.level] ?? ""}

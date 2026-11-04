@@ -63,8 +63,16 @@ export type Stat = {
   value: string;
   /* A short qualifier: the window, or which way it moved. */
   note?: string;
+  /* Colour on the note says good or bad for this figure, never up or down. */
+  noteTone?: "plain" | "good" | "bad";
   tone?: "plain" | "warn" | "bad";
   unknown?: boolean;
+  /*
+    The one figure that answers the screen's question. It is set larger than
+    its siblings, because a strip of five equal numbers leaves the screen
+    without a lead and the reader has to pick one themselves.
+  */
+  lead?: boolean;
 };
 
 export function Stats({ stats }: { stats: Stat[] }) {
@@ -77,10 +85,13 @@ export function Stats({ stats }: { stats: Stat[] }) {
     <dl className="border-pw-border divide-pw-border grid grid-cols-2 gap-px overflow-hidden rounded-[12px] border bg-[var(--pw-border)] sm:grid-cols-3 lg:grid-cols-5">
       {stats.map((one) => (
         <div key={one.label} className="bg-pw-card px-4 py-3 sm:px-5 sm:py-4">
-          <dt className="text-pw-ink-500 text-[12px] leading-[16px]">{one.label}</dt>
+          <dt className="text-pw-ink-500 text-[13px] leading-[18px]">{one.label}</dt>
           <dd
             className={[
-              "pw-num mt-1 text-[20px] leading-[26px] font-semibold sm:text-[24px] sm:leading-[30px]",
+              "pw-num mt-1 font-normal",
+              one.lead
+                ? "text-[28px] leading-[34px] font-medium sm:text-[32px] sm:leading-[38px]"
+                : "text-[20px] leading-[26px] sm:text-[22px] sm:leading-[28px]",
               one.unknown
                 ? "text-pw-ink-300"
                 : one.tone === "bad"
@@ -93,7 +104,17 @@ export function Stats({ stats }: { stats: Stat[] }) {
             {one.unknown ? "Unknown" : one.value}
           </dd>
           {one.note ? (
-            <p className="text-pw-ink-400 mt-0.5 text-[12px] leading-[16px]">{one.note}</p>
+            <p
+              className={`mt-0.5 text-[12px] leading-[16px] ${
+                one.noteTone === "bad"
+                  ? "text-pw-bad"
+                  : one.noteTone === "good"
+                    ? "text-pw-good"
+                    : "text-pw-ink-400"
+              }`}
+            >
+              {one.note}
+            </p>
           ) : null}
         </div>
       ))}

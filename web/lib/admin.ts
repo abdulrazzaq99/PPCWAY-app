@@ -128,11 +128,43 @@ export function ago(when: string | null): string {
   Which way a figure moved, as a word rather than an arrow. An arrow has to be
   learnt; "up 14" does not. Null where there is nothing to compare, which is
   not the same as flat.
+
+  The window is named in the words, because "up 14" on its own is not a fact.
 */
-export function moved(change: number | null): string {
+export function moved(change: number | null, window = ""): string {
   if (change === null) return "";
-  if (change === 0) return "No change";
-  return change > 0 ? `Up ${count(change)}` : `Down ${count(Math.abs(change))}`;
+  const over = window ? ` vs the ${window} before` : "";
+  if (change === 0) return `No change${over}`;
+  return change > 0 ? `Up ${count(change)}${over}` : `Down ${count(Math.abs(change))}${over}`;
+}
+
+/*
+  Every figure has a direction that is good for it. Failures falling is good;
+  proposals falling is not. Colour on a change says good or bad, never up or
+  down -- a rise in errors set in the same grey as a rise in businesses hides
+  the only bad news on the screen.
+
+  Figures with no good direction (how many businesses exist) return "plain":
+  colouring them would make the colour mean nothing.
+*/
+const BETTER_DOWN = new Set([
+  "waiting",
+  "refused",
+  "reverted",
+  "model_trouble",
+  "syncs_failed",
+  "syncs_stuck",
+]);
+const BETTER_UP = new Set(["merchants", "connected", "applied", "proposed", "people"]);
+
+export function direction(key: string, change: number | null): "plain" | "good" | "bad" {
+  // Nothing to compare, or nothing moved, is never a signal. The commonest
+  // failure in this kind of screen is a zero change shown as one.
+  if (change === null || change === 0) return "plain";
+  const rose = change > 0;
+  if (BETTER_DOWN.has(key)) return rose ? "bad" : "good";
+  if (BETTER_UP.has(key)) return rose ? "good" : "plain";
+  return "plain";
 }
 
 export type JobRun = {
