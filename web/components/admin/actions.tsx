@@ -2,53 +2,28 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { BUTTON, FIELD } from "./ui";
 
 /*
-  The controls. The panel had none, and a screen with no control for the job it
-  exists for reads as a report rather than a tool.
+  The console's two controls that change something.
 
-  Each one is a disclosure rather than a button that fires: stopping writes
-  across the platform is not something anybody should be one stray click away
-  from, and the reason is required by the API anyway, so the form is where the
-  reason gets typed. The button that does the thing is the second click, not
-  the first.
+  Each is a disclosure rather than a button that fires. Stopping writes is not
+  something anybody should be one stray click away from, and the API wants a
+  reason anyway, so the form is where the reason is typed and the button that
+  does the thing is the second click, not the first. It names what it stops,
+  so nobody confirms "stop" without reading which door they are closing.
 
-  The outcome is reported in the panel, not in a toast. A toast for "writes are
-  stopped" is a message about the most consequential state in the product
-  disappearing after four seconds.
+  The outcome is said in place, not in a toast. "Writes are stopped" is a
+  message about the most consequential state in the product, and it should
+  not disappear after four seconds.
 */
-
-const FIELD =
-  "border-pw-border-input text-pw-ink placeholder:text-pw-ink-400 focus:border-pw-blue focus:ring-pw-blue/20 w-full rounded-[10px] border bg-white px-3 py-2 text-[14px] leading-[20px] outline-none focus:ring-2";
-
-function Danger({ children, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      {...rest}
-      className="bg-pw-bad-solid h-9 rounded-[10px] px-3 text-[14px] font-medium text-white transition-transform hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
-    >
-      {children}
-    </button>
-  );
-}
-
-function Quiet({ children, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      {...rest}
-      className="border-pw-border text-pw-ink-700 hover:bg-pw-row-hover h-9 rounded-[10px] border px-3 text-[14px] font-medium transition-transform active:scale-[0.98] disabled:opacity-60"
-    >
-      {children}
-    </button>
-  );
-}
 
 function Said({ trouble, good }: { trouble: string; good: string }) {
   if (!trouble && !good) return null;
   return (
     <p
-      className={`mt-2 text-[13px] leading-[18px] ${trouble ? "text-pw-bad" : "text-pw-good"}`}
       role="status"
+      className={`mt-2 text-[12px] leading-[18px] ${trouble ? "text-ad-negative" : "text-ad-positive"}`}
     >
       {trouble || good}
     </p>
@@ -57,13 +32,23 @@ function Said({ trouble, good }: { trouble: string; good: string }) {
 
 /* ---------- stop and release writes ---------- */
 
-export function StopWrites({ stopped }: { stopped: boolean }) {
+export function StopWrites({
+  stopped,
+  customerId = "",
+  label,
+}: {
+  stopped: boolean;
+  /* Empty stops every account; an id stops that one alone. */
+  customerId?: string;
+  label: string;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [because, setBecause] = useState("");
   const [working, setWorking] = useState(false);
   const [trouble, setTrouble] = useState("");
   const [good, setGood] = useState("");
+  const scope = customerId ? "this account" : "every account";
 
   async function go(doing: "stop" | "release") {
     setWorking(true);
@@ -73,7 +58,7 @@ export function StopWrites({ stopped }: { stopped: boolean }) {
       const res = await fetch("/api/admin/platform", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ doing, because }),
+        body: JSON.stringify({ doing, because, customer_id: customerId }),
       });
       const said = (await res.json().catch(() => ({}))) as { error?: string; words?: string };
       if (!res.ok) {
@@ -94,48 +79,70 @@ export function StopWrites({ stopped }: { stopped: boolean }) {
   if (stopped) {
     return (
       <div>
-        <Quiet onClick={() => go("release")} disabled={working}>
-          {working ? "Letting writes resume…" : "Let writes resume"}
-        </Quiet>
+        <button
+          type="button"
+          onClick={() => go("release")}
+          disabled={working}
+          className={BUTTON.quiet}
+        >
+          {working ? "Letting writes resume…" : `Let writes resume on ${scope}`}
+        </button>
         <Said trouble={trouble} good={good} />
       </div>
     );
   }
 
+  if (!open) {
+    return (
+      <div>
+        <button type="button" onClick={() => setOpen(true)} className={BUTTON.danger}>
+          {label}
+        </button>
+        <Said trouble={trouble} good={good} />
+      </div>
+    );
+  }
+
+  const ready = because.trim().length >= 12;
   return (
-    <div>
-      {open ? (
-        <div className="border-pw-border w-full max-w-[420px] rounded-[12px] border bg-white p-4">
-          <label
-            htmlFor="because"
-            className="text-pw-ink block text-[13px] leading-[18px] font-medium"
-          >
-            Why are you stopping writes?
-          </label>
-          <p className="text-pw-ink-500 mt-0.5 text-[12px] leading-[16px]">
-            Whoever picks this up reads this line. Twelve characters at least.
-          </p>
-          <input
-            id="because"
-            value={because}
-            onChange={(e) => setBecause(e.target.value)}
-            placeholder="A rule proposed nonsense overnight"
-            className={`${FIELD} mt-2`}
-          />
-          <div className="mt-3 flex gap-2">
-            <Danger onClick={() => go("stop")} disabled={working || because.trim().length < 12}>
-              {working ? "Stopping…" : "Stop writes everywhere"}
-            </Danger>
-            <Quiet onClick={() => setOpen(false)} disabled={working}>
-              Cancel
-            </Quiet>
-          </div>
-          <Said trouble={trouble} good={good} />
-        </div>
-      ) : (
-        <Quiet onClick={() => setOpen(true)}>Stop writes</Quiet>
-      )}
-      {!open ? <Said trouble={trouble} good={good} /> : null}
+    <div className="border-ad-border bg-ad-surface w-full max-w-[440px] rounded-[6px] border p-4">
+      <label htmlFor={`because-${customerId || "all"}`} className="block text-[13px] font-medium">
+        Why are you stopping writes on {scope}?
+      </label>
+      <p
+        id={`because-help-${customerId || "all"}`}
+        className="text-ad-faint mt-0.5 text-[12px] leading-[18px]"
+      >
+        Whoever picks this up reads this line. Twelve characters at least.
+      </p>
+      <input
+        id={`because-${customerId || "all"}`}
+        aria-describedby={`because-help-${customerId || "all"}`}
+        value={because}
+        onChange={(e) => setBecause(e.target.value)}
+        placeholder="A rule proposed nonsense overnight"
+        className={`${FIELD} mt-2`}
+        autoFocus
+      />
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => go("stop")}
+          disabled={working || !ready}
+          className={BUTTON.danger}
+        >
+          {working ? "Stopping…" : `Stop writes on ${scope}`}
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          disabled={working}
+          className={BUTTON.quiet}
+        >
+          Cancel
+        </button>
+      </div>
+      <Said trouble={trouble} good={good} />
     </div>
   );
 }
@@ -182,58 +189,56 @@ export function GrantAccess() {
   if (!open) {
     return (
       <div>
-        <Quiet onClick={() => setOpen(true)}>Give somebody access</Quiet>
+        <button type="button" onClick={() => setOpen(true)} className={BUTTON.primary}>
+          Give somebody access
+        </button>
         <Said trouble={trouble} good={good} />
       </div>
     );
   }
 
   return (
-    <div className="border-pw-border w-full max-w-[460px] rounded-[12px] border bg-white p-4">
-      <div className="grid gap-3">
+    <div className="border-ad-border bg-ad-surface w-full max-w-[460px] rounded-[6px] border p-4">
+      <div className="grid gap-4">
         <div>
-          <label
-            htmlFor="email"
-            className="text-pw-ink block text-[13px] leading-[18px] font-medium"
-          >
+          <label htmlFor="grant-email" className="block text-[13px] font-medium">
             Their email
           </label>
-          <p className="text-pw-ink-500 mt-0.5 text-[12px] leading-[16px]">
+          <p id="grant-email-help" className="text-ad-faint mt-0.5 text-[12px] leading-[18px]">
             They have to have signed in once first.
           </p>
           <input
-            id="email"
+            id="grant-email"
             type="email"
+            aria-describedby="grant-email-help"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="dana@ppcway.com"
             className={`${FIELD} mt-2`}
+            autoFocus
           />
         </div>
         <div>
-          <label
-            htmlFor="level"
-            className="text-pw-ink block text-[13px] leading-[18px] font-medium"
-          >
+          <label htmlFor="grant-level" className="block text-[13px] font-medium">
             What they may do
           </label>
           <select
-            id="level"
+            id="grant-level"
             value={level}
             onChange={(e) => setLevel(e.target.value)}
             className={`${FIELD} mt-2`}
           >
-            <option value="support">Support, reads a merchant and changes nothing</option>
-            <option value="engineer">Engineer, reads the platform and re-runs jobs</option>
-            <option value="principal">Principal, stops writes and grants access</option>
+            <option value="support">Support: reads a merchant, changes nothing</option>
+            <option value="engineer">Engineer: reads the platform, re-runs jobs</option>
+            <option value="principal">Principal: stops writes, grants access</option>
           </select>
         </div>
         <div>
-          <label htmlFor="why" className="text-pw-ink block text-[13px] leading-[18px] font-medium">
+          <label htmlFor="grant-why" className="block text-[13px] font-medium">
             Why
           </label>
           <input
-            id="why"
+            id="grant-why"
             value={because}
             onChange={(e) => setBecause(e.target.value)}
             placeholder="Joining support on Monday"
@@ -241,17 +246,23 @@ export function GrantAccess() {
           />
         </div>
       </div>
-      <div className="mt-3 flex gap-2">
+      <div className="mt-4 flex flex-wrap gap-2">
         <button
+          type="button"
           onClick={go}
           disabled={working || !email.trim() || !because.trim()}
-          className="bg-pw-blue hover:bg-pw-blue-hover h-9 rounded-[10px] px-3 text-[14px] font-medium text-white transition-transform active:scale-[0.98] disabled:opacity-60"
+          className={BUTTON.primary}
         >
           {working ? "Giving access…" : "Give access"}
         </button>
-        <Quiet onClick={() => setOpen(false)} disabled={working}>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          disabled={working}
+          className={BUTTON.quiet}
+        >
           Cancel
-        </Quiet>
+        </button>
       </div>
       <Said trouble={trouble} good={good} />
     </div>

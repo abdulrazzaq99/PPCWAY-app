@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { AdminStaff } from "@/components/admin/live";
 import { NotForYou } from "@/components/admin/staff-bar";
-import { readGrants, readWhoami } from "@/lib/admin-server";
+import { readChrome, readGrants, readWhoami } from "@/lib/admin-server";
 
-export const metadata: Metadata = { title: "Access · PPCWay admin" };
+export const metadata: Metadata = { title: "Access · PPCWay internal" };
 
 /*
   Who has internal access, and every grant and withdrawal there has ever been.
@@ -13,6 +13,6 @@ export const metadata: Metadata = { title: "Access · PPCWay admin" };
 export default async function AdminStaffPage() {
   const { data: who, trouble: whoTrouble } = await readWhoami();
   if (!who?.staff) return <NotForYou trouble={whoTrouble} />;
-  const { data, trouble } = await readGrants();
-  return <AdminStaff who={who} grants={data?.grants ?? []} trouble={trouble} />;
+  const [{ data, trouble }, chrome] = await Promise.all([readGrants(), readChrome(who)]);
+  return <AdminStaff who={who} chrome={chrome} grants={data?.grants ?? []} trouble={trouble} />;
 }

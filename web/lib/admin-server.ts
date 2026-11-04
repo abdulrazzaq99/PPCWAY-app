@@ -1,12 +1,15 @@
 import { cookies } from "next/headers";
+import { doorOf, type Chrome, type Door } from "@/lib/admin";
 import type {
   Fault,
   Grant,
   JobRun,
+  Look,
   Merchant,
   MerchantRow,
   Overview,
   PlatformView,
+  Quota,
   Room,
   Whoami,
 } from "@/lib/admin";
@@ -90,4 +93,41 @@ export async function readQuotaAll(): Promise<Read<{ accounts: Room[] }>> {
 
 export async function readGrants(): Promise<Read<{ grants: Grant[] }>> {
   return get<{ grants: Grant[] }>("/v1/admin/staff");
+}
+
+export async function readWhoLooked(id: string): Promise<Read<{ looks: Look[] }>> {
+  return get<{ looks: Look[] }>(`/v1/admin/merchants/${encodeURIComponent(id)}/who-looked`);
+}
+
+export async function readQuota(customerId: string): Promise<Read<Quota>> {
+  return get<Quota>(`/v1/admin/quota?customer_id=${encodeURIComponent(customerId)}`);
+}
+
+/*
+  The door's state for the shell, read beside each screen's own data. Only for
+  staff who may read the platform: support does not get a chip that would
+  answer 403 on every page.
+*/
+export async function readDoor(who: Whoami): Promise<Door | undefined> {
+  if (!who.may.includes("read_platform")) return undefined;
+  const { data } = await readPlatform();
+  return doorOf(data);
+}
+
+/*
+  What the shell shows on every screen, read beside the screen's own data: the
+  door, and the count on Failures. The count is always the last 7 days, the
+  failures screen's default, so the number in the sidebar means the same thing
+  whichever screen it is read on.
+*/
+export async function readChrome(
+  who: Whoami,
+  { door: withDoor = true }: { door?: boolean } = {},
+): Promise<Chrome> {
+  const [door, errors] = await Promise.all([
+    /* A screen that reads the platform itself passes the door in instead. */
+    withDoor ? readDoor(who) : Promise.resolve(undefined),
+    who.may.includes("read_errors") ? readErrors("7d") : Promise.resolve(null),
+  ]);
+  return { door, failures: errors?.data?.faults.length };
 }

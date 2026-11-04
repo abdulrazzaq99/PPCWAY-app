@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { AdminJobs } from "@/components/admin/live";
 import { NotForYou } from "@/components/admin/staff-bar";
-import { readJobs, readWhoami } from "@/lib/admin-server";
+import { readChrome, readJobs, readWhoami } from "@/lib/admin-server";
 
-export const metadata: Metadata = { title: "Jobs · PPCWay admin" };
+export const metadata: Metadata = { title: "Jobs · PPCWay internal" };
 
 /* The scheduled reads of Google Ads, and which of them did not come back. */
 export default async function AdminJobsPage({
@@ -14,6 +14,14 @@ export default async function AdminJobsPage({
   const failed = (await searchParams).failed === "1";
   const { data: who, trouble: whoTrouble } = await readWhoami();
   if (!who?.staff) return <NotForYou trouble={whoTrouble} />;
-  const { data, trouble } = await readJobs(failed);
-  return <AdminJobs who={who} runs={data?.runs ?? []} trouble={trouble} />;
+  const [{ data, trouble }, chrome] = await Promise.all([readJobs(failed), readChrome(who)]);
+  return (
+    <AdminJobs
+      who={who}
+      chrome={chrome}
+      runs={data?.runs ?? []}
+      trouble={trouble}
+      failedOnly={failed}
+    />
+  );
 }

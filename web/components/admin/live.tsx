@@ -1,408 +1,1065 @@
-import Link from "next/link";
 import {
+  ArrowUpRightIcon,
+  CaretRightIcon,
+  LockSimpleIcon,
+  LockSimpleOpenIcon,
+} from "@phosphor-icons/react/dist/ssr";
+import Link from "next/link";
+import type { ReactNode } from "react";
+import {
+  LEVEL_WORDS,
+  STATE_WORDS,
+  adsId,
   ago,
+  clock,
   count,
+  dateOf,
+  dayHeading,
   direction,
-  moved,
+  fateOf,
+  signed,
+  staleness,
+  stamp,
+  words,
+  type Chrome,
   type Fault,
+  type Fate,
   type Figure,
   type Grant,
   type JobRun,
+  type Look,
+  type Merchant,
   type MerchantRow,
   type Overview,
   type PlatformView,
+  type Quota,
   type Room,
   type Whoami,
 } from "@/lib/admin";
 import { GrantAccess, StopWrites } from "./actions";
-import { AllWell, Attention, Nothing, Page, Rows, State, Stats } from "./data";
-import { Funnel } from "./pipeline";
+import { FateLegend, ProposalColumns, RunStrip, totalsOf } from "./charts";
 import { Shell } from "./shell";
+import {
+  Empty,
+  Figures,
+  Head,
+  Mark,
+  Meter,
+  More,
+  Panel,
+  Pill,
+  Problem,
+  Table,
+  Tabs,
+  type FigureCell,
+  type Tone,
+} from "./ui";
 
 /*
-  The internal screens.
+  The internal console's screens.
 
-  They used to be seven copies of one layout: a page head, a tab row and a
-  table, every time. That is why they read as generated. The job each screen
-  does is different, so the shape each one takes is now different too.
+  Each answers one question first, and its biggest block is the answer:
 
-  Merchants is a list you search. The overview is a verdict with figures under
-  it. Failures is a feed. Settings is prose with a table of record. Access is a
-  history. None of them is a dashboard of equal tiles, because none of them is
-  answering the question a dashboard answers.
+  - Overview: is the platform working, and can we write to Google?
+  - Merchants: who needs a person?
+  - One merchant: is this account healthy, and what has Otto done to it?
+  - Jobs: did the scheduled reads run?
+  - Failures: what failed, and is it one cause or many?
+  - Quota: is any account close to Google's daily limit?
+  - Settings: is the door open, and who closed it?
+  - Access: who can open this console, and who let them in?
 
-  Same tokens as the merchant app, same palette, same radii. Tighter, because
-  somebody here is scanning four hundred businesses and not reading about one.
+  Every figure comes from the backend's own rows and is drawn at its real
+  size. Times are UTC and say so.
 */
 
-function Frame({
+const WINDOWS = [
+  { key: "today", label: "Today", words: "the last 24 hours", before: "the day before" },
+  { key: "7d", label: "7 days", words: "the last 7 days", before: "the 7 days before" },
+  { key: "30d", label: "30 days", words: "the last 30 days", before: "the 30 days before" },
+  { key: "90d", label: "90 days", words: "the last 90 days", before: "the 90 days before" },
+];
+
+function windowOf(key: string) {
+  return WINDOWS.find((one) => one.key === key) ?? WINDOWS[1];
+}
+
+/* "−2 on the 7 days before", in good-or-bad colour for this figure. */
+function against(key: string, one: Figure | undefined, window: string) {
+  if (!one || one.change === null || !one.known) return {};
+  const before = windowOf(window).before;
+  const tone = direction(key, one.change);
+  return {
+    note: one.change === 0 ? `Same as ${before}` : `${signed(one.change)} on ${before}`,
+    noteTone: tone,
+  } as const;
+}
+
+function figure(key: string, one: Figure | undefined, label: string, window: string): FigureCell {
+  if (!one) return { label, value: "0", unknown: true };
+  return {
+    label,
+    value: count(one.value),
+    unknown: !one.known,
+    ...against(key, one, window),
+  };
+}
+
+const FATE_TONE: Record<Fate, Tone> = {
+  applied: "good",
+  open: "info",
+  refused: "plain",
+  expired: "plain",
+  undone: "bad",
+};
+
+function source(where: string): { what: string; detail: string } {
+  const [head, ...rest] = where.split(" ");
+  return {
+    what: words(head || "Unknown"),
+    detail: rest.join(" ").replace(/[()]/g, ""),
+  };
+}
+
+/* ---------- overview ---------- */
+
+export function AdminOverview({
   who,
-  looking_at,
-  counts,
-  children,
+  chrome,
+  view,
+  platform,
+  faults,
+  trouble,
+  window,
 }: {
   who: Whoami;
-  looking_at?: string;
-  counts?: { failures?: number; waiting?: number };
-  children: React.ReactNode;
+  chrome: Chrome;
+  view: Overview | null;
+  platform: PlatformView | null;
+  faults: Fault[] | null;
+  trouble: string;
+  window: string;
 }) {
+  const span = windowOf(view?.window ?? window);
+  const f = view?.figures ?? {};
+  const flag = (name: string) => platform?.flags.find((one) => one.name === name);
+  const writing = flag("Writing to Google Ads");
+  const asking = flag("Applying without asking");
+  const connected = f.connected?.value ?? 0;
+  const businesses = f.merchants?.value ?? 0;
+  const latest = (faults ?? []).slice(0, 6);
+  const door = chrome.door;
+  const DoorGlyph = door?.state === "on" ? LockSimpleOpenIcon : LockSimpleIcon;
+
   return (
-    <Shell who={who} looking_at={looking_at} counts={counts}>
-      {children}
+    <Shell who={who} here="/admin/metrics" door={chrome.door} failures={chrome.failures}>
+      <Head
+        title="Overview"
+        pill={
+          view ? (
+            view.healthy ? (
+              <Pill tone="good">All clear</Pill>
+            ) : (
+              <Pill tone="warn">
+                {view.trouble.length} need{view.trouble.length === 1 ? "s" : ""} a person
+              </Pill>
+            )
+          ) : null
+        }
+        lead={
+          view
+            ? `Counted over ${span.words}. Updated ${clock(view.at)} UTC.`
+            : "The platform's figures could not be read."
+        }
+      />
+      <div className="mt-5">
+        <Tabs
+          label="Window"
+          tabs={WINDOWS.map((one) => ({
+            label: one.label,
+            href: `/admin/metrics?window=${one.key}`,
+            here: one.key === span.key,
+          }))}
+        />
+      </div>
+
+      <div className="mt-6 grid gap-6">
+        <Problem words={trouble} />
+
+        {view ? (
+          <>
+            {/*
+              The screen's question first: does anything need a person? Full
+              width, so its length is the number of problems and never a
+              neighbour's height.
+            */}
+            {view.healthy ? (
+              <section className="border-ad-border bg-ad-surface flex flex-wrap items-center gap-x-6 gap-y-2 rounded-[6px] border px-5 py-4">
+                <h2 className="text-[15px] leading-[22px] font-semibold">Nothing needs a person</h2>
+                <p className="text-ad-muted text-[13px] leading-[20px]">
+                  In {span.words} no sync got stuck or failed, no model call failed, and fewer than
+                  50 proposals are waiting on a merchant.
+                </p>
+              </section>
+            ) : (
+              <Panel title="Needs a person" meta="Worst first" flush>
+                <ul>
+                  {view.trouble.map((one) => {
+                    const where = /sync/i.test(one)
+                      ? { href: "/admin/jobs", label: "Open jobs" }
+                      : /model/i.test(one)
+                        ? { href: `/admin/errors?window=${span.key}`, label: "Open failures" }
+                        : /connected/i.test(one)
+                          ? { href: "/admin?show=unconnected", label: "Open merchants" }
+                          : { href: "/admin", label: "Open merchants" };
+                    return (
+                      <li
+                        key={one}
+                        className="border-ad-rule flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-t px-5 py-3"
+                      >
+                        <p className="flex min-w-0 items-start gap-3 text-[13px] leading-[20px]">
+                          <span
+                            aria-hidden
+                            className="bg-ad-negative mt-[7px] h-1.5 w-1.5 flex-none rounded-full"
+                          />
+                          <span>{one}</span>
+                        </p>
+                        <Link
+                          href={where.href}
+                          className="text-ad-accent hover:text-ad-text inline-flex flex-none items-center gap-1 pl-[18px] text-[13px] font-medium transition-colors sm:pl-0"
+                        >
+                          {where.label}
+                          <ArrowUpRightIcon size={13} aria-hidden />
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Panel>
+            )}
+
+            <Figures
+              cells={[
+                {
+                  ...figure("waiting", f.waiting, "Waiting on a merchant", span.key),
+                  note: "proposed, not answered yet",
+                  noteTone: "plain",
+                  lead: true,
+                  href: "/admin",
+                },
+                {
+                  ...figure("syncs_failed", f.syncs_failed, "Syncs that failed", span.key),
+                  alarm: Boolean(f.syncs_failed?.value),
+                  href: "/admin/jobs?failed=1",
+                },
+                {
+                  ...figure("model_trouble", f.model_trouble, "Model calls that failed", span.key),
+                  alarm: Boolean(f.model_trouble?.value),
+                  href: `/admin/errors?window=${span.key}`,
+                },
+                (() => {
+                  /*
+                    Tokens ride in the note rather than beside the figure,
+                    where "412 1,284,906" read as one number.
+                  */
+                  const calls = figure("model_calls", f.model_calls, "Model calls", span.key);
+                  const tokens = f.model_tokens?.known
+                    ? `${count(f.model_tokens.value)} tokens`
+                    : "";
+                  return {
+                    ...calls,
+                    note: [calls.note, tokens].filter(Boolean).join(", ") || undefined,
+                  };
+                })(),
+              ]}
+            />
+
+            {/*
+              Otto's output beside the door it has to go through. Both have a
+              fixed amount to say, so the pair balances whatever the data is,
+              and the chart's plot takes whatever height the row has.
+            */}
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+              {view.series ? (
+                <Panel
+                  title="What became of Otto’s proposals"
+                  meta={`Proposed per ${view.series.step === "hour" ? "hour" : "day"} over ${span.words}, by where each one stands now. UTC.`}
+                  grow
+                >
+                  <div className="mb-5">
+                    <FateLegend totals={totalsOf(view.series)} />
+                  </div>
+                  <ProposalColumns series={view.series} fill />
+                </Panel>
+              ) : null}
+
+              <section
+                className={`border-ad-border bg-ad-surface rounded-[6px] border p-5 ${
+                  view.series ? "" : "xl:col-span-3"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <DoorGlyph
+                    size={20}
+                    aria-hidden
+                    className={`mt-px flex-none ${
+                      door?.state === "on"
+                        ? "text-ad-positive"
+                        : door?.state === "stopped"
+                          ? "text-ad-negative"
+                          : "text-ad-warning"
+                    }`}
+                  />
+                  <h2 className="text-[15px] leading-[22px] font-semibold">
+                    {view.writes.anything_can_be_written
+                      ? "PPCWay can write to Google Ads"
+                      : door?.state === "stopped"
+                        ? "Writes to Google Ads are stopped"
+                        : "Writes to Google Ads are off"}
+                  </h2>
+                </div>
+                <p className="text-ad-muted mt-2 text-[13px] leading-[20px]">{view.writes.words}</p>
+                <dl className="mt-5 grid">
+                  {[
+                    {
+                      label: "Writing to Google Ads",
+                      value: writing ? (
+                        <Pill tone={writing.on ? "good" : "warn"}>{writing.on ? "On" : "Off"}</Pill>
+                      ) : (
+                        <span className="text-ad-faint">Unknown</span>
+                      ),
+                    },
+                    {
+                      label: "Applying without asking",
+                      value: asking ? (
+                        <Pill tone={asking.on ? "info" : "plain"}>{asking.on ? "On" : "Off"}</Pill>
+                      ) : (
+                        <span className="text-ad-faint">Unknown</span>
+                      ),
+                    },
+                    {
+                      label: "Stops in force",
+                      value: <span className="ad-num">{count(view.writes.stops.length)}</span>,
+                    },
+                    {
+                      label: "Connected to Google Ads",
+                      value: (
+                        <span className="ad-num">
+                          {count(connected)}
+                          <span className="text-ad-faint"> of {count(businesses)}</span>
+                        </span>
+                      ),
+                    },
+                  ].map((one) => (
+                    <div
+                      key={one.label}
+                      className="border-ad-rule flex min-h-11 items-center justify-between gap-4 border-t"
+                    >
+                      <dt className="text-ad-muted text-[13px]">{one.label}</dt>
+                      <dd>{one.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <Link
+                  href="/admin/platform"
+                  className="text-ad-accent hover:text-ad-text mt-3 inline-flex items-center gap-1 text-[13px] font-medium transition-colors"
+                >
+                  Open settings
+                  <ArrowUpRightIcon size={13} aria-hidden />
+                </Link>
+              </section>
+            </div>
+
+            <Panel
+              title="Latest failures"
+              meta={faults ? `${count(faults.length)} in ${span.words}` : undefined}
+              action={
+                faults && faults.length > latest.length ? (
+                  <More href={`/admin/errors?window=${span.key}`}>
+                    View all {count(faults.length)}
+                  </More>
+                ) : null
+              }
+              flush
+            >
+              {faults === null ? (
+                <div className="px-5 pb-5">
+                  <Problem words="The failures could not be read." />
+                </div>
+              ) : latest.length ? (
+                <Table
+                  caption="The latest failures"
+                  title="what"
+                  lead="when"
+                  cols={[
+                    { key: "what", label: "What happened", width: "54%" },
+                    { key: "where", label: "Where" },
+                    { key: "account", label: "Account", num: true },
+                    { key: "when", label: "When", num: true },
+                  ]}
+                  lines={latest.map((one, at) => {
+                    const from = source(one.where);
+                    return {
+                      id: `${one.at}-${at}`,
+                      cells: {
+                        what: <span className="line-clamp-2">{one.what}</span>,
+                        where: (
+                          <span>
+                            {from.what}
+                            {from.detail ? (
+                              <span className="text-ad-faint"> {from.detail}</span>
+                            ) : null}
+                          </span>
+                        ),
+                        account: one.customer_id ? (
+                          adsId(one.customer_id)
+                        ) : (
+                          <span className="text-ad-faint">-</span>
+                        ),
+                        when: <span className="text-ad-muted">{stamp(one.at)}</span>,
+                      },
+                    };
+                  })}
+                />
+              ) : (
+                <div className="px-5 pb-5">
+                  <Empty
+                    title={`Nothing failed in ${span.words}`}
+                    words="No sync and no model call came back with an error."
+                  />
+                </div>
+              )}
+            </Panel>
+          </>
+        ) : null}
+      </div>
     </Shell>
   );
 }
 
-function Trouble({ trouble }: { trouble: string }) {
-  if (!trouble) return null;
-  return <Attention items={[trouble]} />;
+/* ---------- merchants ---------- */
+
+function adsState(one: { connected: boolean; account_status: string }): {
+  tone: Tone;
+  words: string;
+} {
+  /*
+    A connected account whose status has not been read yet is connected, not
+    broken. An earlier version printed a healthy "Connected" in red because it
+    treated anything other than the literal ENABLED as bad.
+  */
+  if (!one.connected) return { tone: "plain", words: "Not connected" };
+  if (!one.account_status || one.account_status === "ENABLED")
+    return { tone: "good", words: "Connected" };
+  return { tone: "bad", words: words(one.account_status.toLowerCase()) };
 }
 
-/* ---------- merchants ---------- */
+function Synced({ when, connected }: { when: string | null; connected: boolean }) {
+  if (!connected) return <span className="text-ad-faint">-</span>;
+  const how = staleness(when);
+  return (
+    <span
+      className={
+        how === "stale" ? "text-ad-warning" : how === "never" ? "text-ad-faint" : "text-ad-muted"
+      }
+    >
+      {ago(when)}
+    </span>
+  );
+}
 
 export function AdminMerchants({
   who,
+  chrome,
   rows,
   trouble,
   lookedFor,
+  show,
 }: {
   who: Whoami;
+  chrome: Chrome;
   rows: MerchantRow[];
   trouble: string;
   lookedFor: string;
+  show: string;
 }) {
   const needing = rows.filter((one) => one.trouble);
-  /*
-    Four rows of the same sentence is not four findings. The panel groups
-    identical trouble and says how many share it, which is the fact somebody
-    can act on: "4 businesses have no Google Ads account connected."
-  */
-  const grouped = Object.entries(
-    needing.reduce<Record<string, string[]>>((all, one) => {
-      (all[one.trouble] ||= []).push(one.name);
-      return all;
-    }, {}),
-  ).map(([what, names]) =>
-    /*
-      The sentence is kept as it was written. Lower-casing its first letter to
-      join it onto a name turned "Google says this account is suspended" into
-      "google says", which was on screen.
-    */
-    names.length === 1 ? `${names[0]}: ${what}` : `${count(names.length)} businesses: ${what}`,
-  );
+  const unconnected = rows.filter((one) => !one.connected);
+  const shown = show === "attention" ? needing : show === "unconnected" ? unconnected : rows;
+  const q = lookedFor ? `q=${encodeURIComponent(lookedFor)}` : "";
+  const link = (s: string) => {
+    const parts = [s ? `show=${s}` : "", q].filter(Boolean).join("&");
+    return parts ? `/admin?${parts}` : "/admin";
+  };
+
   return (
-    <Frame who={who}>
-      <Page
-        title={
-          rows.length
-            ? needing.length
-              ? `${count(needing.length)} of ${count(rows.length)} businesses need a person`
-              : `${count(rows.length)} businesses, all healthy`
-            : "No businesses yet"
+    <Shell
+      who={who}
+      here="/admin"
+      door={chrome.door}
+      failures={chrome.failures}
+      lookedFor={lookedFor}
+    >
+      <Head
+        title="Merchants"
+        pill={
+          rows.length ? (
+            needing.length ? (
+              <Pill tone="warn">{count(needing.length)} need a person</Pill>
+            ) : (
+              <Pill tone="good">All healthy</Pill>
+            )
+          ) : null
         }
         lead={
-          rows.length
-            ? "Opening one is recorded against your name."
-            : "When somebody signs up they appear here."
+          lookedFor ? (
+            <>
+              Businesses with a name like &ldquo;{lookedFor}&rdquo;.{" "}
+              <Link href="/admin" className="text-ad-accent hover:text-ad-text font-medium">
+                Show every business
+              </Link>
+            </>
+          ) : (
+            "Every business on PPCWay, newest first. Opening one is recorded against your name."
+          )
         }
-        side={
-          <form action="/admin" className="flex gap-2">
-            <label htmlFor="q" className="sr-only">
-              Search by name
-            </label>
-            <input
-              id="q"
-              name="q"
-              defaultValue={lookedFor}
-              placeholder="Search by name"
-              className="border-pw-border-input text-pw-ink placeholder:text-pw-ink-400 focus:border-pw-blue focus:ring-pw-blue/20 h-9 w-[180px] rounded-[10px] border bg-white px-3 text-[14px] outline-none focus:ring-2"
-            />
-            <button
-              type="submit"
-              className="bg-pw-blue hover:bg-pw-blue-hover h-9 rounded-[10px] px-3 text-[14px] font-medium text-white active:scale-[0.98]"
-            >
-              Search
-            </button>
-          </form>
-        }
-      >
-        <Trouble trouble={trouble} />
-        {/*
-          Figures before the list, and the one somebody has to act on leads.
-          Without them the screen was a headline, a warning and a table, which
-          left a third of it empty: the inspector measured a 1200x360 void.
-          These are the same counts the list carries, read as a whole.
-        */}
-        <Stats
-          stats={[
-            {
-              label: "Waiting on a merchant",
-              value: count(rows.reduce((n, one) => n + one.waiting, 0)),
-              lead: true,
-              note: "proposals nobody has answered",
-            },
-            { label: "Businesses", value: count(rows.length) },
-            {
-              label: "Connected to Google Ads",
-              value: count(rows.filter((one) => one.connected).length),
-            },
+      />
+      <div className="mt-5">
+        <Tabs
+          label="Which businesses"
+          tabs={[
+            { label: "All", href: link(""), count: rows.length, here: !show },
             {
               label: "Need a person",
-              value: count(needing.length),
-              tone: needing.length ? "bad" : "plain",
+              href: link("attention"),
+              count: needing.length,
+              here: show === "attention",
             },
             {
-              label: "Changes applied",
-              value: count(rows.reduce((n, one) => n + one.applied, 0)),
+              label: "Not connected",
+              href: link("unconnected"),
+              count: unconnected.length,
+              here: show === "unconnected",
             },
           ]}
         />
+      </div>
 
-        {grouped.length ? (
-          <div className="mt-5">
-            <Attention items={grouped} />
-          </div>
-        ) : null}
-
-        <div className="mt-5" />
-        <Rows
-          titleKey="name"
-          cols={[
-            { key: "name", label: "Business", width: 240 },
-            { key: "state", label: "Google Ads" },
-            { key: "waiting", label: "Waiting", num: true },
-            { key: "applied", label: "Applied", num: true },
-            { key: "people", label: "People", num: true, minor: true },
-            { key: "sync", label: "Last sync" },
-          ]}
-          rows={rows.map((one) => ({
-            id: one.organization_id,
-            name: (
-              <Link
-                href={`/admin?view=merchant&id=${one.organization_id}`}
-                className="text-pw-blue font-medium underline underline-offset-2"
-              >
-                {one.name}
-              </Link>
-            ),
-            /*
-              A connected account with no status read yet is connected, not
-              broken. The first version coloured anything that was not the
-              literal string ENABLED as bad, so a healthy account whose status
-              had not been synced printed "Connected" in red. That was on
-              screen.
-            */
-            state: !one.connected ? (
-              <State tone="faint">Not connected</State>
-            ) : !one.account_status || one.account_status === "ENABLED" ? (
-              <State tone="good">Connected</State>
-            ) : (
-              <State tone="bad">
-                {one.account_status.charAt(0) + one.account_status.slice(1).toLowerCase()}
-              </State>
-            ),
-            waiting: one.waiting ? count(one.waiting) : "0",
-            applied: count(one.applied),
-            people: count(one.people),
-            sync: one.connected ? ago(one.last_sync) : "—",
-          }))}
-          empty={
-            lookedFor ? (
-              <Nothing
-                title="Nothing matched"
-                words={`No business has a name like "${lookedFor}". Try part of the name rather than all of it.`}
-              />
-            ) : (
-              <Nothing
-                title="No businesses yet"
-                words="When somebody signs up and connects their Google Ads account, they appear here."
-              />
-            )
-          }
-        />
-      </Page>
-    </Frame>
+      <div className="mt-6 grid gap-6">
+        <Problem words={trouble} />
+        {shown.length ? (
+          <section className="border-ad-border bg-ad-surface overflow-hidden rounded-[6px] border">
+            <Table
+              caption="Businesses"
+              title="name"
+              lead="ads"
+              cols={[
+                { key: "name", label: "Business", width: "34%" },
+                { key: "ads", label: "Google Ads" },
+                { key: "waiting", label: "Waiting", num: true },
+                { key: "applied", label: "Applied", num: true },
+                { key: "people", label: "People", num: true, minor: true },
+                { key: "sync", label: "Last sync", num: true },
+                { key: "go", label: "", minor: true },
+              ]}
+              lines={shown.map((one) => {
+                const state = adsState(one);
+                const href = `/admin?view=merchant&id=${one.organization_id}`;
+                return {
+                  id: one.organization_id,
+                  cells: {
+                    name: (
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Mark seed={one.organization_id} name={one.name} />
+                        <div className="min-w-0">
+                          <Link
+                            href={href}
+                            className="hover:text-ad-accent block truncate font-medium transition-colors"
+                          >
+                            {one.name}
+                          </Link>
+                          {one.trouble ? (
+                            <p
+                              className={`truncate text-[13px] leading-[18px] ${
+                                state.tone === "bad" ? "text-ad-negative" : "text-ad-warning"
+                              }`}
+                            >
+                              {one.trouble}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    ),
+                    ads: (
+                      <div className="flex flex-col items-start gap-1">
+                        <Pill tone={state.tone}>{state.words}</Pill>
+                        {one.customer_id ? (
+                          <span className="ad-num text-ad-faint text-[13px] leading-[18px] max-md:hidden">
+                            {adsId(one.customer_id)}
+                          </span>
+                        ) : null}
+                      </div>
+                    ),
+                    waiting: (
+                      <span className={one.waiting ? "text-ad-text" : "text-ad-faint"}>
+                        {count(one.waiting)}
+                      </span>
+                    ),
+                    applied: count(one.applied),
+                    people: count(one.people),
+                    sync: <Synced when={one.last_sync} connected={one.connected} />,
+                    go: (
+                      <Link
+                        href={href}
+                        aria-label={`Open ${one.name}`}
+                        className="text-ad-faint hover:text-ad-text flex justify-end transition-colors"
+                      >
+                        <CaretRightIcon size={14} aria-hidden />
+                      </Link>
+                    ),
+                  },
+                };
+              })}
+            />
+          </section>
+        ) : (
+          <Empty
+            title={
+              lookedFor
+                ? "Nothing matched"
+                : show === "attention"
+                  ? "Nobody needs a person"
+                  : show === "unconnected"
+                    ? "Every business is connected"
+                    : "No businesses yet"
+            }
+            words={
+              lookedFor
+                ? `No business has a name like "${lookedFor}". Try part of the name rather than all of it.`
+                : show
+                  ? undefined
+                  : "When somebody signs up and connects their Google Ads account, they appear here."
+            }
+          />
+        )}
+      </div>
+    </Shell>
   );
 }
 
-/* ---------- the overview ---------- */
+/* ---------- one merchant ---------- */
 
-function stat(key: string, one: Figure | undefined, fallback: string, lead = false) {
-  if (!one) return { label: fallback, value: "0", unknown: true };
-  return {
-    label: one.label,
-    value: count(one.value),
-    note: moved(one.change, one.window) || one.window || undefined,
-    noteTone: direction(key, one.change),
-    unknown: !one.known,
-    lead,
-  };
-}
-
-export function AdminOverview({
+export function AdminMerchant({
   who,
-  view,
+  chrome,
+  merchant,
+  row,
+  looks,
+  quota,
+  stopped,
+  all,
   trouble,
 }: {
   who: Whoami;
-  view: Overview | null;
+  chrome: Chrome;
+  merchant: Merchant | null;
+  /* The list's row for this business: people, last sync. Absent if unread. */
+  row?: MerchantRow;
+  looks: Look[];
+  quota: Quota | null;
+  /* Whether writes are stopped for this account alone. */
+  stopped: boolean;
+  all: boolean;
   trouble: string;
 }) {
-  return (
-    <Frame who={who}>
-      <Page
-        title={
-          view
-            ? view.healthy
-              ? "Nothing needs a person"
-              : `${view.trouble.length} thing${view.trouble.length > 1 ? "s" : ""} need a person`
-            : "The platform"
-        }
-        lead={view ? view.writes.words : undefined}
+  if (!merchant) {
+    return (
+      <Shell
+        who={who}
+        here="/admin"
+        door={chrome.door}
+        failures={chrome.failures}
+        crumbs={[{ label: "Merchants", href: "/admin" }]}
       >
-        <Trouble trouble={trouble} />
-        {view ? (
-          <>
-            {view.trouble.length ? (
-              <Attention items={view.trouble} />
-            ) : (
-              <AllWell words={`Counted over the last ${view.window}. Nothing is failing.`} />
-            )}
+        <Head title="This business could not be opened" />
+        <div className="mt-6">
+          <Problem words={trouble || "We have no record of that business."} />
+        </div>
+      </Shell>
+    );
+  }
 
-            {/*
-              Waiting leads, at a size its siblings do not share. It is the
-              figure the screen's question turns on: proposals nobody has
-              answered are the only number here that somebody has to do
-              something about.
-            */}
-            {/*
-              The product's own shape leads, above the counts. A strip of
-              figures is what every admin panel opens with; what happened to
-              the changes Otto proposed is what only this one can show.
-            */}
-            <Funnel
-              window={view.window}
-              data={{
-                proposed: view.figures.proposed?.value ?? 0,
-                refused: view.figures.refused?.value ?? 0,
-                waiting: view.figures.waiting?.value ?? 0,
-                applied: view.figures.applied?.value ?? 0,
-                reverted: view.figures.reverted?.value ?? 0,
-              }}
-            />
+  const ads = merchant.connection;
+  const state = adsState({
+    connected: Boolean(ads?.customer_id),
+    account_status: ads?.account_status ?? "",
+  });
+  const fates = merchant.changes.reduce<Record<Fate, number>>(
+    (n, one) => {
+      n[fateOf(one.status)] += 1;
+      return n;
+    },
+    { applied: 0, open: 0, refused: 0, expired: 0, undone: 0 },
+  );
+  const capped = merchant.changes.length >= 100;
+  const changes = all ? merchant.changes : merchant.changes.slice(0, 10);
+  const mayStop = who.may.includes("stop_writes") && Boolean(ads?.customer_id);
 
-            <div className="mt-5">
-              <Stats
-                stats={[
-                  stat("merchants", view.figures.merchants, "Businesses", true),
-                  stat("connected", view.figures.connected, "Connected"),
-                  stat("model_calls", view.figures.model_calls, "Model calls"),
-                  stat("syncs_failed", view.figures.syncs_failed, "Syncs failed"),
-                  stat("model_trouble", view.figures.model_trouble, "Model failures"),
+  return (
+    <Shell
+      who={who}
+      here="/admin"
+      door={chrome.door}
+      failures={chrome.failures}
+      crumbs={[{ label: "Merchants", href: "/admin" }, { label: merchant.name }]}
+      lookingAt={merchant.name}
+    >
+      <div className="flex flex-wrap items-start gap-4">
+        <Mark seed={merchant.organization_id} name={merchant.name} size={44} />
+        <div className="min-w-0 flex-1">
+          <Head
+            title={merchant.name}
+            pill={<Pill tone={state.tone}>{state.words}</Pill>}
+            lead={
+              ads?.customer_id
+                ? `On PPCWay since ${dateOf(merchant.created_at)}. Opening this screen is recorded against your name.`
+                : `On PPCWay since ${dateOf(merchant.created_at)}. No Google Ads account is connected, so Otto can read and propose nothing.`
+            }
+            side={
+              mayStop ? (
+                <StopWrites
+                  stopped={stopped}
+                  customerId={ads!.customer_id}
+                  label="Stop writes to this account"
+                />
+              ) : undefined
+            }
+          />
+        </div>
+      </div>
+
+      <div className="mt-6 grid gap-6">
+        <Problem words={trouble} />
+        <Figures
+          cells={[
+            {
+              label: capped ? "Proposed, latest 100" : "Changes proposed",
+              value: count(merchant.changes.length),
+            },
+            {
+              label: "Still open",
+              value: count(fates.open),
+              note: "with a guardrail or the merchant",
+              lead: true,
+            },
+            { label: "Applied", value: count(fates.applied) },
+            {
+              label: "Put back or failed",
+              value: count(fates.undone),
+              alarm: fates.undone > 0,
+            },
+          ]}
+        />
+
+        <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <Panel
+            title="Changes Otto proposed"
+            meta="Newest first. Times in UTC."
+            action={
+              merchant.changes.length > 10 ? (
+                <More
+                  href={`/admin?view=merchant&id=${merchant.organization_id}${all ? "" : "&all=1"}`}
+                >
+                  {all ? "Show the latest 10" : `Show all ${count(merchant.changes.length)}`}
+                </More>
+              ) : null
+            }
+            flush
+          >
+            {changes.length ? (
+              <Table
+                caption="Changes Otto proposed for this business"
+                title="change"
+                lead="state"
+                cols={[
+                  { key: "change", label: "Change", width: "52%" },
+                  { key: "risk", label: "Risk" },
+                  { key: "state", label: "Where it stands" },
+                  { key: "when", label: "Proposed", num: true },
                 ]}
+                lines={changes.map((one) => ({
+                  id: one.id,
+                  cells: {
+                    change: (
+                      <div className="min-w-0">
+                        <p className="font-medium">{words(one.kind)}</p>
+                        {one.reason ? (
+                          <p className="text-ad-muted line-clamp-1 text-[13px] leading-[18px]">
+                            {one.reason}
+                          </p>
+                        ) : null}
+                      </div>
+                    ),
+                    risk: one.risk ? words(one.risk) : <span className="text-ad-faint">-</span>,
+                    state: (
+                      <Pill tone={FATE_TONE[fateOf(one.status)]}>
+                        {STATE_WORDS[one.status] ?? words(one.status)}
+                      </Pill>
+                    ),
+                    when: <span className="text-ad-muted">{stamp(one.created_at)}</span>,
+                  },
+                }))}
               />
-            </div>
+            ) : (
+              <div className="px-5 pb-5">
+                <Empty
+                  title="Otto has proposed nothing here yet"
+                  words={
+                    ads
+                      ? "Proposals appear after the nightly pass has read this account."
+                      : "Nothing can be proposed until a Google Ads account is connected."
+                  }
+                />
+              </div>
+            )}
+          </Panel>
 
-            <h2 className="text-pw-ink mt-8 mb-3 text-[15px] leading-[21px] font-semibold">
-              Everything counted
-            </h2>
-            <Rows
-              titleKey="what"
-              cols={[
-                { key: "what", label: "Figure", width: 260 },
-                { key: "value", label: "Count", num: true },
-                { key: "over", label: "Over" },
-                { key: "says", label: "In words", minor: true },
-              ]}
-              rows={Object.entries(view.figures).map(([key, one]) => ({
-                id: key,
-                what: one.label,
-                value: one.known ? count(one.value) : <State tone="faint">Unknown</State>,
-                over: one.window || "now",
-                says: one.words,
-              }))}
-              empty={<Nothing title="Nothing counted" words="There is no data to count yet." />}
-            />
-          </>
-        ) : null}
-      </Page>
-    </Frame>
+          <div className="grid gap-6">
+            <Panel title="Google Ads account">
+              {ads?.customer_id ? (
+                <dl className="-mt-1 grid">
+                  {[
+                    { label: "Name at Google", value: ads.customer_name || merchant.name },
+                    {
+                      label: "Customer id",
+                      value: <span className="ad-num">{adsId(ads.customer_id)}</span>,
+                    },
+                    {
+                      label: "Billed in",
+                      value: <span className="ad-num">{ads.currency || "-"}</span>,
+                    },
+                    { label: "Status", value: <Pill tone={state.tone}>{state.words}</Pill> },
+                  ].map((one) => (
+                    <div
+                      key={one.label}
+                      className="border-ad-rule flex min-h-11 items-center justify-between gap-4 border-t first:border-t-0"
+                    >
+                      <dt className="text-ad-muted text-[13px]">{one.label}</dt>
+                      <dd className="min-w-0 truncate text-right">{one.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : (
+                <p className="text-ad-muted text-[13px] leading-[20px]">
+                  Not connected yet. Only the merchant can connect it, from their own dashboard.
+                </p>
+              )}
+            </Panel>
+
+            <Panel title="Google’s allowance today" meta={quota ? undefined : "Not read"}>
+              {quota ? (
+                <div>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="ad-num text-[20px] leading-[28px]">
+                      {Math.round(quota.share_used * 100)}%
+                    </span>
+                    <span className="ad-num text-ad-faint text-[12px]">
+                      {count(quota.used)} of {count(quota.allowance)}
+                    </span>
+                  </div>
+                  <div className="mt-2.5">
+                    <Meter share={quota.share_used} tone={quota.tight ? "warn" : "plain"} />
+                  </div>
+                  <p className="text-ad-muted mt-3 text-[13px] leading-[20px]">
+                    <span className="ad-num">{count(quota.left)}</span> operations left today.
+                    {quota.tight ? " Close to the limit: syncs may start to fail." : ""}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-ad-muted text-[13px]">
+                  {ads
+                    ? "The allowance could not be read."
+                    : "Counted only for a connected account."}
+                </p>
+              )}
+            </Panel>
+
+            <Panel
+              title="Who opened this account"
+              meta={looks.length ? `${count(looks.length)} times, newest first` : undefined}
+            >
+              {looks.length ? (
+                <ul className="grid gap-3">
+                  {looks.slice(0, 6).map((one, at) => (
+                    <li key={`${one.at}-${at}`} className="flex items-center gap-3">
+                      <Mark seed={one.who || one.account_id} name={one.who || "?"} size={24} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[13px] leading-[18px]">
+                          {one.who || `Account ${one.account_id.slice(0, 8)}`}
+                        </p>
+                        <p className="text-ad-faint text-[12px] leading-[16px]">
+                          {LEVEL_WORDS[one.level] ?? one.level}
+                        </p>
+                      </div>
+                      <span className="ad-num text-ad-faint text-[12px]">{ago(one.at)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-ad-muted text-[13px]">Nobody, until now.</p>
+              )}
+              {row ? (
+                <p className="border-ad-rule text-ad-faint mt-4 border-t pt-3 text-[12px] leading-[18px]">
+                  {count(row.people)} {row.people === 1 ? "person works" : "people work"} in this
+                  account. Last synced {ago(row.last_sync).toLowerCase()}.
+                </p>
+              ) : null}
+            </Panel>
+          </div>
+        </div>
+      </div>
+    </Shell>
   );
 }
 
 /* ---------- jobs ---------- */
 
+function runState(one: JobRun): { tone: Tone; words: string } {
+  if (one.stuck) return { tone: "bad", words: "Never finished" };
+  if (one.status === "failed") return { tone: "bad", words: "Failed" };
+  if (one.took_seconds === null) return { tone: "info", words: "Running" };
+  return { tone: "plain", words: "Finished" };
+}
+
 export function AdminJobs({
   who,
+  chrome,
   runs,
   trouble,
+  failedOnly,
 }: {
   who: Whoami;
+  chrome: Chrome;
   runs: JobRun[];
   trouble: string;
+  failedOnly: boolean;
 }) {
   const stuck = runs.filter((one) => one.stuck);
   const failed = runs.filter((one) => one.status === "failed");
   return (
-    <Frame who={who}>
-      <Page
-        title={
-          runs.length
-            ? stuck.length
-              ? `${count(stuck.length)} job${stuck.length > 1 ? "s" : ""} started and never finished`
-              : failed.length
-                ? `${count(failed.length)} of the last ${count(runs.length)} runs failed`
-                : `The last ${count(runs.length)} runs all finished`
-            : "No jobs have run yet"
-        }
-        lead="The scheduled reads of Google Ads, newest first."
-      >
-        <Trouble trouble={trouble} />
-        {stuck.length ? (
-          <Attention
-            items={stuck
-              .slice(0, 3)
-              .map((one) => `${one.kind} on ${one.customer_id || "an account"}: ${one.words}`)}
-          />
-        ) : null}
-
-        <Rows
-          titleKey="kind"
-          cols={[
-            { key: "kind", label: "Job", width: 130 },
-            { key: "state", label: "State" },
-            { key: "took", label: "Took", num: true },
-            { key: "when", label: "Started" },
-            { key: "account", label: "Account", minor: true },
-            { key: "says", label: "What happened", minor: true },
-          ]}
-          rows={runs.map((one) => ({
-            id: one.id,
-            kind: one.kind,
-            state: one.stuck ? (
-              <State tone="bad">Stuck</State>
-            ) : one.status === "failed" ? (
-              <State tone="bad">Failed</State>
-            ) : one.took_seconds === null ? (
-              <State tone="faint">Running</State>
+    <Shell who={who} here="/admin/jobs" door={chrome.door} failures={chrome.failures}>
+      <Head
+        title="Jobs"
+        pill={
+          runs.length ? (
+            stuck.length ? (
+              <Pill tone="bad">{count(stuck.length)} never finished</Pill>
+            ) : failed.length ? (
+              <Pill tone="warn">{count(failed.length)} failed</Pill>
             ) : (
-              <State tone="good">Finished</State>
-            ),
-            /* An em dash, not 0 s: still running is not instant. */
-            took: one.took_seconds === null ? "—" : `${count(one.took_seconds)}s`,
-            when: ago(one.started_at),
-            account: one.customer_id || "—",
-            says: one.words,
-          }))}
-          empty={
-            <Nothing
-              title="Nothing has run yet"
-              words="A fresh deployment has run no jobs. The syncs start on their own schedule."
-            />
-          }
+              <Pill tone="good">All finished</Pill>
+            )
+          ) : null
+        }
+        lead={
+          failedOnly
+            ? "The scheduled reads of Google Ads that failed, newest first. Times in UTC."
+            : `The scheduled reads of Google Ads. The last ${count(runs.length)} runs, newest first. Times in UTC.`
+        }
+      />
+      <div className="mt-5">
+        <Tabs
+          label="Which runs"
+          tabs={[
+            { label: "Every run", href: "/admin/jobs", here: !failedOnly },
+            { label: "Failed only", href: "/admin/jobs?failed=1", here: failedOnly },
+          ]}
         />
-      </Page>
-    </Frame>
+      </div>
+
+      <div className="mt-6 grid gap-6">
+        <Problem words={trouble} />
+        {runs.length ? (
+          <>
+            {!failedOnly ? (
+              <Panel
+                title="Run by run"
+                meta="Each mark is one run. A gap or a red run reads at a glance."
+              >
+                <RunStrip runs={runs} />
+              </Panel>
+            ) : null}
+            <section className="border-ad-border bg-ad-surface overflow-hidden rounded-[6px] border">
+              <Table
+                caption="Job runs"
+                title="job"
+                lead="state"
+                cols={[
+                  { key: "job", label: "Job", width: "22%" },
+                  { key: "state", label: "State" },
+                  { key: "said", label: "What happened", width: "38%" },
+                  { key: "took", label: "Took", num: true },
+                  { key: "when", label: "Started", num: true },
+                ]}
+                lines={runs.map((one) => {
+                  const state = runState(one);
+                  return {
+                    id: one.id,
+                    cells: {
+                      job: (
+                        <div className="min-w-0">
+                          <p className="font-medium">{words(one.kind)}</p>
+                          <p className="ad-num text-ad-faint text-[13px] leading-[18px]">
+                            {one.customer_id ? adsId(one.customer_id) : "Every account"}
+                          </p>
+                        </div>
+                      ),
+                      state: <Pill tone={state.tone}>{state.words}</Pill>,
+                      /*
+                        A clean run's sentence only repeats the Took column, so
+                        it is left out and the rows that say something stand
+                        out by having something to say.
+                      */
+                      said:
+                        state.words === "Finished" ? (
+                          <span className="text-ad-faint">-</span>
+                        ) : (
+                          <span className={state.tone === "bad" ? "text-ad-text" : ""}>
+                            {one.words}
+                          </span>
+                        ),
+                      took:
+                        one.took_seconds === null ? (
+                          <span className="text-ad-faint">-</span>
+                        ) : (
+                          `${count(one.took_seconds)} s`
+                        ),
+                      when: (
+                        <div>
+                          <p>{clock(one.started_at)}</p>
+                          <p className="text-ad-faint text-[13px] leading-[18px]">
+                            {ago(one.started_at)}
+                          </p>
+                        </div>
+                      ),
+                    },
+                  };
+                })}
+              />
+            </section>
+          </>
+        ) : (
+          <Empty
+            title={failedOnly ? "No run has failed" : "Nothing has run yet"}
+            words={
+              failedOnly
+                ? "Every recent run finished."
+                : "A fresh deployment has run no jobs. The syncs start on their own schedule."
+            }
+          />
+        )}
+      </div>
+    </Shell>
   );
 }
 
@@ -410,52 +1067,189 @@ export function AdminJobs({
 
 export function AdminErrors({
   who,
+  chrome,
   faults,
   trouble,
   window,
+  ran,
 }: {
   who: Whoami;
+  chrome: Chrome;
   faults: Fault[];
   trouble: string;
   window: string;
+  /*
+    What ran in the same window, from the overview's counts. "Nothing failed"
+    only reassures when something ran; without it the empty screen cannot
+    tell a quiet platform from a stopped one.
+  */
+  ran?: { modelCalls?: Figure; syncsStuck?: Figure };
 }) {
+  const span = windowOf(window);
+  /*
+    Grouped by day, because "is this one incident or a slow leak" is the first
+    question and a day heading answers it before a single row is read.
+  */
+  const days = faults.reduce<{ day: string; items: Fault[] }[]>((all, one) => {
+    const day = dayHeading(one.at);
+    const last = all[all.length - 1];
+    if (last && last.day === day) last.items.push(one);
+    else all.push({ day, items: [one] });
+    return all;
+  }, []);
+  const bySource = Object.entries(
+    faults.reduce<Record<string, number>>((all, one) => {
+      const from = source(one.where);
+      const key = from.detail ? `${from.what}, ${from.detail}` : from.what;
+      all[key] = (all[key] ?? 0) + 1;
+      return all;
+    }, {}),
+  ).sort((a, b) => b[1] - a[1]);
+  const byAccount = Object.entries(
+    faults.reduce<Record<string, number>>((all, one) => {
+      if (one.customer_id) all[one.customer_id] = (all[one.customer_id] ?? 0) + 1;
+      return all;
+    }, {}),
+  )
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4);
+  const top = bySource[0]?.[1] ?? 1;
+
   return (
-    <Frame who={who} counts={{ failures: faults.length }}>
-      <Page
-        title={
-          faults.length
-            ? `${count(faults.length)} thing${faults.length > 1 ? "s" : ""} failed in the last ${window}`
-            : `Nothing failed in the last ${window}`
+    <Shell who={who} here="/admin/errors" door={chrome.door} failures={chrome.failures}>
+      <Head
+        title="Failures"
+        pill={
+          faults.length ? (
+            <Pill tone="bad">
+              {count(faults.length)} in {span.words}
+            </Pill>
+          ) : (
+            <Pill tone="good">Nothing failed</Pill>
+          )
         }
-        lead="Jobs and model calls together. They fail for unrelated reasons, but you only want one list."
-      >
-        <Trouble trouble={trouble} />
+        lead="Jobs and model calls together, newest first. They fail for unrelated reasons, but you only want one list. Times in UTC."
+      />
+      <div className="mt-5">
+        <Tabs
+          label="Window"
+          tabs={WINDOWS.map((one) => ({
+            label: one.label,
+            href: `/admin/errors?window=${one.key}`,
+            here: one.key === span.key,
+          }))}
+        />
+      </div>
+
+      <div className="mt-6 grid gap-6">
+        <Problem words={trouble} />
         {faults.length ? (
-          /*
-            A feed rather than a table. A failure is one thing that happened at
-            one moment, and the sentence describing it is the row -- putting it
-            in a cell four columns wide makes it harder to read, not easier.
-          */
-          <ul className="border-pw-border divide-pw-divider divide-y overflow-hidden rounded-[12px] border">
-            {faults.map((one, at) => (
-              <li key={`${one.at}-${at}`} className="px-4 py-3 sm:px-5">
-                <p className="text-pw-ink text-[14px] leading-[20px]">{one.what}</p>
-                <p className="text-pw-ink-500 pw-num mt-1 flex flex-wrap gap-x-4 text-[12px] leading-[16px]">
-                  <span>{one.where}</span>
-                  <span>{ago(one.at)}</span>
-                  {one.customer_id ? <span>{one.customer_id}</span> : null}
-                </p>
-              </li>
-            ))}
-          </ul>
+          <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+            <div className="grid gap-6">
+              {days.map((group) => (
+                <Panel
+                  key={group.day}
+                  title={group.day}
+                  meta={`${count(group.items.length)} failure${group.items.length === 1 ? "" : "s"}`}
+                  flush
+                >
+                  <ul>
+                    {group.items.map((one, at) => {
+                      const from = source(one.where);
+                      return (
+                        <li
+                          key={`${one.at}-${at}`}
+                          className="border-ad-rule grid grid-cols-[52px_minmax(0,1fr)] gap-x-4 border-t px-5 py-3"
+                        >
+                          <span className="ad-num text-ad-faint pt-px text-[12px] leading-[20px]">
+                            {clock(one.at)}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-[13px] leading-[20px]">{one.what}</p>
+                            <p className="text-ad-faint mt-1 flex flex-wrap gap-x-3 text-[12px] leading-[18px]">
+                              <span className="text-ad-muted">{from.what}</span>
+                              {from.detail ? <span>{from.detail}</span> : null}
+                              {one.customer_id ? (
+                                <span className="ad-num">{adsId(one.customer_id)}</span>
+                              ) : null}
+                            </p>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </Panel>
+              ))}
+            </div>
+
+            <div className="grid gap-6">
+              <Panel title="Where it failed" meta={`Over ${span.words}`}>
+                <ul className="grid gap-3.5">
+                  {bySource.map(([what, n]) => (
+                    <li key={what}>
+                      <div className="flex items-baseline justify-between gap-3 text-[13px]">
+                        <span className={n === top ? "text-ad-text" : "text-ad-muted"}>{what}</span>
+                        <span className="ad-num">{count(n)}</span>
+                      </div>
+                      {/*
+                        A bar at its true share of the largest. The largest in
+                        ink, ties included, so equal counts look equal.
+                      */}
+                      <span
+                        aria-hidden
+                        className={`mt-2 block h-1 rounded-full ${n === top ? "bg-ad-text" : "bg-ad-control"}`}
+                        style={{ width: `${(n / top) * 100}%` }}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </Panel>
+              {byAccount.length ? (
+                <Panel title="Accounts most affected">
+                  <ul className="grid gap-2.5">
+                    {byAccount.map(([id, n]) => (
+                      <li key={id} className="flex items-baseline justify-between gap-3">
+                        <span className="ad-num text-ad-muted">{adsId(id)}</span>
+                        <span className="ad-num">{count(n)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </Panel>
+              ) : null}
+            </div>
+          </div>
         ) : (
-          <Nothing
-            title="Nothing to look at"
-            words="No job and no model call has failed in this window. If something is wrong and it is not here, it did not get as far as being recorded."
+          <Empty
+            title={`Nothing failed in ${span.words}`}
+            words={
+              ran?.modelCalls?.known ? (
+                <>
+                  <span className="ad-num text-ad-text">{count(ran.modelCalls.value)}</span> model
+                  call{ran.modelCalls.value === 1 ? " was" : "s were"} made in {span.words} and none
+                  failed.{" "}
+                  {ran.syncsStuck?.value
+                    ? `${count(ran.syncsStuck.value)} sync${ran.syncsStuck.value === 1 ? " is" : "s are"} still running long after it should have finished, which this list does not count: see Jobs.`
+                    : "No sync failed, and none is stuck."}
+                </>
+              ) : (
+                "No job and no model call has failed in this window. If something is wrong and it is not here, it did not get as far as being recorded."
+              )
+            }
+            action={WINDOWS.filter(
+              (one) => one.key !== span.key && WINDOWS.indexOf(one) > WINDOWS.indexOf(span),
+            ).map((one) => (
+              <Link
+                key={one.key}
+                href={`/admin/errors?window=${one.key}`}
+                className="text-ad-accent hover:text-ad-text text-[13px] font-medium transition-colors"
+              >
+                Look over {one.words.replace("the last ", "")}
+              </Link>
+            ))}
           />
         )}
-      </Page>
-    </Frame>
+      </div>
+    </Shell>
   );
 }
 
@@ -463,138 +1257,280 @@ export function AdminErrors({
 
 export function AdminQuota({
   who,
+  chrome,
   accounts,
+  names,
   trouble,
 }: {
   who: Whoami;
+  chrome: Chrome;
   accounts: Room[];
+  /* Google Ads customer id to the business it belongs to. */
+  names: Record<string, { name: string; id: string }>;
   trouble: string;
 }) {
   const tight = accounts.filter((one) => one.tight);
+  const used = accounts.reduce((n, one) => n + one.used, 0);
   return (
-    <Frame who={who}>
-      <Page
-        title={
-          accounts.length
-            ? tight.length
-              ? `${count(tight.length)} account${tight.length > 1 ? "s" : ""} close to the daily limit`
-              : `${count(accounts.length)} accounts, none close to the limit`
-            : "No connected accounts yet"
+    <Shell who={who} here="/admin/quota" door={chrome.door} failures={chrome.failures}>
+      <Head
+        title="Quota"
+        pill={
+          accounts.length ? (
+            tight.length ? (
+              <Pill tone="warn">{count(tight.length)} close to the limit</Pill>
+            ) : (
+              <Pill tone="good">Plenty left</Pill>
+            )
+          ) : null
         }
-        lead="Google allows a fixed number of operations per account per day. Tightest first."
-      >
-        <Trouble trouble={trouble} />
-        <Rows
-          titleKey="account"
-          cols={[
-            { key: "account", label: "Account", width: 200 },
-            { key: "share", label: "Used", num: true },
-            { key: "used", label: "Operations", num: true },
-            { key: "left", label: "Left", num: true },
-          ]}
-          rows={accounts.map((one) => ({
-            id: one.customer_id,
-            account: one.customer_id,
-            share: (
-              <State tone={one.tight ? "bad" : "plain"}>{Math.round(one.share_used * 100)}%</State>
-            ),
-            used: count(one.used),
-            left: count(one.left),
-          }))}
-          empty={
-            <Nothing
-              title="No connected accounts"
-              words="Quota is counted per Google Ads account, so there is nothing to show until one is connected."
+        lead="Google allows each account a fixed number of operations a day. Counted today, tightest first."
+      />
+
+      <div className="mt-6 grid gap-6">
+        <Problem words={trouble} />
+        {accounts.length ? (
+          <>
+            <Figures
+              cells={[
+                { label: "Connected accounts", value: count(accounts.length) },
+                {
+                  label: "Close to the limit",
+                  value: count(tight.length),
+                  warn: tight.length > 0,
+                  lead: true,
+                  note: "80% or more of the day's allowance used",
+                },
+                { label: "Operations used today", value: count(used) },
+              ]}
             />
-          }
-        />
-      </Page>
-    </Frame>
+            <section className="border-ad-border bg-ad-surface overflow-hidden rounded-[6px] border">
+              <Table
+                caption="Google Ads quota by account"
+                title="account"
+                lead="share"
+                cols={[
+                  { key: "account", label: "Account", width: "32%" },
+                  { key: "meter", label: "Used of the allowance", width: "34%" },
+                  { key: "share", label: "Used", num: true },
+                  { key: "left", label: "Left", num: true },
+                ]}
+                lines={accounts.map((one) => {
+                  const who = names[one.customer_id];
+                  return {
+                    id: one.customer_id,
+                    cells: {
+                      account: (
+                        <div className="flex min-w-0 items-center gap-3">
+                          <Mark seed={who?.id ?? one.customer_id} name={who?.name ?? "?"} />
+                          <div className="min-w-0">
+                            {who ? (
+                              <Link
+                                href={`/admin?view=merchant&id=${who.id}`}
+                                className="hover:text-ad-accent block truncate font-medium transition-colors"
+                              >
+                                {who.name}
+                              </Link>
+                            ) : (
+                              <p className="text-ad-muted">No business on record</p>
+                            )}
+                            <p className="ad-num text-ad-faint text-[13px] leading-[18px]">
+                              {adsId(one.customer_id)}
+                            </p>
+                          </div>
+                        </div>
+                      ),
+                      meter: (
+                        <div className="max-w-[320px]">
+                          <Meter share={one.share_used} tone={one.tight ? "warn" : "plain"} />
+                          <p className="ad-num text-ad-faint mt-1.5 text-[12px] leading-[16px]">
+                            {count(one.used)} of {count(one.allowance)}
+                          </p>
+                        </div>
+                      ),
+                      share: (
+                        <span className={one.tight ? "text-ad-warning" : "text-ad-text"}>
+                          {(one.share_used * 100).toFixed(1)}%
+                        </span>
+                      ),
+                      left: count(one.left),
+                    },
+                  };
+                })}
+              />
+            </section>
+          </>
+        ) : (
+          <Empty
+            title="No connected accounts"
+            words="Quota is counted per Google Ads account, so there is nothing to show until one is connected."
+          />
+        )}
+      </div>
+    </Shell>
   );
 }
 
 /* ---------- settings ---------- */
 
+function Setting({
+  title,
+  words: about,
+  children,
+}: {
+  title: string;
+  words: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="border-ad-border grid gap-4 border-t py-8 first:border-t-0 first:pt-0 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)] lg:gap-10">
+      <div>
+        <h2 className="text-[15px] leading-[22px] font-semibold">{title}</h2>
+        <p className="text-ad-muted mt-1 text-[13px] leading-[20px]">{about}</p>
+      </div>
+      <div className="min-w-0">{children}</div>
+    </section>
+  );
+}
+
 export function AdminPlatform({
   who,
+  chrome,
   view,
   trouble,
 }: {
   who: Whoami;
+  chrome: Chrome;
   view: PlatformView | null;
   trouble: string;
 }) {
+  const door = chrome.door;
+  const platformStop = view?.stops.find((one) => !one.customer_id);
+  const accountStops = view?.stops.filter((one) => one.customer_id) ?? [];
   return (
-    <Frame who={who}>
-      <Page
-        title={
-          view
-            ? view.anything_can_be_written
-              ? "Writes are on"
-              : "Nothing is being written"
-            : "Settings"
+    <Shell who={who} here="/admin/platform" door={chrome.door} failures={chrome.failures}>
+      <Head
+        title="Settings"
+        pill={
+          door ? (
+            <Pill tone={door.state === "on" ? "good" : door.state === "stopped" ? "bad" : "warn"}>
+              {door.state === "on"
+                ? "Writes on"
+                : door.state === "stopped"
+                  ? "Writes stopped"
+                  : "Writes off"}
+            </Pill>
+          ) : null
         }
-        lead={view?.words}
-        side={
-          /*
-            The job this screen exists for, one click from the answer it sits
-            under. Shown only to somebody who may do it: a button that returns
-            403 teaches staff the panel is broken when it is simply not theirs.
-          */
-          view?.may_stop_writes ? (
-            <StopWrites stopped={Boolean(view.stops.find((one) => !one.customer_id))} />
-          ) : undefined
-        }
-      >
-        <Trouble trouble={trouble} />
+        lead="What governs the platform, read from the deployment itself. Nothing here is a toggle that could quietly turn on live writing."
+      />
+
+      <div className="mt-8 grid gap-6">
+        <Problem words={trouble} />
         {view ? (
-          <>
-            {view.stops.length ? (
-              <Attention
-                items={view.stops.map(
-                  (one) =>
-                    `${one.scope}: ${one.because}${
-                      one.ours
-                        ? " (set by PPCWay, so the merchant cannot lift it)"
-                        : " (set by the merchant)"
-                    }`,
-                )}
-              />
-            ) : null}
+          <div>
+            <Setting
+              title="Writes to Google Ads"
+              words="The one door. Every change Otto sends to a merchant's account goes through it, and stopping it is recorded with your reason."
+            >
+              <div className="border-ad-border bg-ad-surface rounded-[6px] border p-5">
+                <p className="text-[15px] leading-[22px] font-semibold">
+                  {view.anything_can_be_written
+                    ? "PPCWay can write to Google Ads"
+                    : platformStop && door?.state === "stopped"
+                      ? "Stopped across the whole platform"
+                      : "Off, by this deployment’s setting"}
+                </p>
+                <p className="text-ad-muted mt-1 text-[13px] leading-[20px]">{view.words}</p>
+                <div className="mt-4">
+                  {view.may_stop_writes ? (
+                    <StopWrites stopped={Boolean(platformStop)} label="Stop writes everywhere" />
+                  ) : (
+                    <p className="text-ad-faint text-[12px] leading-[18px]">
+                      Only principal access can stop writes. Ask somebody who has it rather than
+                      going round the panel.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </Setting>
 
-            <Rows
-              titleKey="name"
-              cols={[
-                { key: "name", label: "Setting", width: 220 },
-                { key: "on", label: "State" },
-                { key: "what", label: "What it does" },
-                { key: "change", label: "Changeable here", minor: true },
-              ]}
-              rows={view.flags.map((one) => ({
-                id: one.name,
-                name: one.name,
-                on: one.on ? <State tone="good">On</State> : <State tone="faint">Off</State>,
-                what: one.what_it_does,
-                /*
-                  Every row says no, and that is the point rather than an
-                  omission: a toggle for something only a deploy can change
-                  teaches people the panel is lying to them.
-                */
-                change: one.changeable ? <State tone="good">Yes</State> : one.why_not,
-              }))}
-              empty={<Nothing title="No settings" words="Nothing is configured." />}
-            />
+            <Setting
+              title="Stops in force"
+              words="Writes stopped for one account or for everybody, and who did it. A stop PPCWay set cannot be lifted by the merchant."
+            >
+              {view.stops.length ? (
+                <ul className="border-ad-border bg-ad-surface rounded-[6px] border">
+                  {[...(platformStop ? [platformStop] : []), ...accountStops].map((one, at) => (
+                    <li
+                      key={`${one.scope}-${at}`}
+                      className="border-ad-rule flex flex-wrap items-start justify-between gap-3 border-t px-5 py-4 first:border-t-0"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium">
+                          {one.customer_id ? (
+                            <span className="ad-num">{adsId(one.customer_id)}</span>
+                          ) : (
+                            "The whole platform"
+                          )}
+                        </p>
+                        <p className="text-ad-muted mt-0.5 text-[13px] leading-[20px]">
+                          {one.because}
+                        </p>
+                      </div>
+                      <div className="flex flex-none items-center gap-3">
+                        <Pill tone={one.ours ? "warn" : "plain"}>
+                          {one.ours ? "Set by PPCWay" : "Set by the merchant"}
+                        </Pill>
+                        {one.pulled_at ? (
+                          <span className="ad-num text-ad-faint text-[12px]">
+                            {stamp(one.pulled_at)}
+                          </span>
+                        ) : null}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <Empty
+                  title="Nothing is stopped"
+                  words="No account and no person has pulled a switch."
+                />
+              )}
+            </Setting>
 
-            {!view.may_stop_writes ? (
-              <p className="text-pw-ink-500 mt-4 text-[13px] leading-[18px]">
-                Only principal access can stop writes. Ask somebody who has it rather than going
-                round the panel.
-              </p>
-            ) : null}
-          </>
+            <Setting
+              title="How this deployment is set"
+              words="Read from the environment. Each one takes a deploy to change, which is deliberate: a button that could switch on live writing would be the most dangerous control in the product."
+            >
+              <ul className="border-ad-border bg-ad-surface rounded-[6px] border">
+                {view.flags.map((one) => (
+                  <li
+                    key={one.name}
+                    className="border-ad-rule grid gap-x-6 gap-y-1 border-t px-5 py-4 first:border-t-0 sm:grid-cols-[minmax(0,1fr)_auto]"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium">{one.name}</p>
+                      <p className="text-ad-muted mt-0.5 text-[13px] leading-[20px]">
+                        {one.what_it_does}
+                      </p>
+                      {!one.changeable ? (
+                        <p className="text-ad-faint mt-1 text-[12px] leading-[18px]">
+                          {one.why_not}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="sm:pt-0.5">
+                      <Pill tone={one.on ? "good" : "plain"}>{one.on ? "On" : "Off"}</Pill>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Setting>
+          </div>
         ) : null}
-      </Page>
-    </Frame>
+      </div>
+    </Shell>
   );
 }
 
@@ -602,53 +1538,130 @@ export function AdminPlatform({
 
 export function AdminStaff({
   who,
+  chrome,
   grants,
   trouble,
 }: {
   who: Whoami;
+  chrome: Chrome;
   grants: Grant[];
   trouble: string;
 }) {
-  const live = grants.filter((one) => one.granted);
+  /*
+    Who holds access now, read from the history rather than stored apart from
+    it: the newest row for each person decides, and a withdrawal removes them.
+  */
+  const seen = new Set<string>();
+  const holding: Grant[] = [];
+  for (const one of grants) {
+    if (seen.has(one.account_id)) continue;
+    seen.add(one.account_id);
+    if (one.granted) holding.push(one);
+  }
+  const person = (one: Grant) => one.who || `Account ${one.account_id.slice(0, 8)}`;
+
   return (
-    <Frame who={who}>
-      <Page
-        title={
-          grants.length
-            ? `${count(live.length)} grant${live.length === 1 ? "" : "s"} of access`
-            : "Nobody has been given access yet"
-        }
-        lead="Every grant and every withdrawal, newest first. Nothing here is ever deleted."
+    <Shell who={who} here="/admin/staff" door={chrome.door} failures={chrome.failures}>
+      <Head
+        title="Access"
+        pill={<Pill tone="plain">{count(holding.length)} with access</Pill>}
+        lead="Who can open this console, and every grant and withdrawal there has been. Nothing here is ever deleted."
         side={<GrantAccess />}
-      >
-        <Trouble trouble={trouble} />
-        <Rows
-          titleKey="level"
-          cols={[
-            { key: "level", label: "Level", width: 130 },
-            { key: "what", label: "Given or taken" },
-            { key: "when", label: "When" },
-            { key: "why", label: "Why", minor: true },
-          ]}
-          rows={grants.map((one, at) => ({
-            id: `${one.at}-${at}`,
-            level: one.level,
-            what: one.granted ? (
-              <State tone="good">Given</State>
+      />
+
+      <div className="mt-6 grid gap-6">
+        <Problem words={trouble} />
+        <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <Panel title="Every change of access" meta="Newest first. Times in UTC." flush>
+            {grants.length ? (
+              <Table
+                caption="Grants and withdrawals of internal access"
+                title="person"
+                lead="what"
+                cols={[
+                  { key: "person", label: "Person", width: "46%" },
+                  { key: "what", label: "Change" },
+                  { key: "when", label: "When", num: true },
+                ]}
+                lines={grants.map((one, at) => ({
+                  id: `${one.at}-${at}`,
+                  cells: {
+                    person: (
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Mark seed={one.who || one.account_id} name={person(one)} />
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">{person(one)}</p>
+                          {one.because ? (
+                            <p className="text-ad-muted truncate text-[13px] leading-[18px]">
+                              {one.because}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    ),
+                    /* Who did it sits under what they did: one fact, read together. */
+                    what: (
+                      <div className="flex min-w-0 flex-col items-start gap-1">
+                        {one.granted ? (
+                          <Pill tone="info">Given {LEVEL_WORDS[one.level] ?? one.level}</Pill>
+                        ) : (
+                          <Pill tone="plain">Taken away</Pill>
+                        )}
+                        <span className="text-ad-faint max-w-full truncate text-[12px] leading-[16px]">
+                          by{" "}
+                          {one.by || (one.by_account_id ? "another principal" : "the command line")}
+                        </span>
+                      </div>
+                    ),
+                    when: <span className="text-ad-muted">{stamp(one.at)}</span>,
+                  },
+                }))}
+              />
             ) : (
-              <State tone="faint">Taken away</State>
-            ),
-            when: ago(one.at),
-            why: one.because || "—",
-          }))}
-          empty={
-            <Nothing
-              title="Nobody has access yet"
-              words="Access is given by email, and the person has to have signed in once first. Every grant needs a reason, because this list exists to be read back."
-            />
-          }
-        />
-      </Page>
-    </Frame>
+              <div className="px-5 pb-5">
+                <Empty
+                  title="Nobody has been given access yet"
+                  words="Access is given by email, and the person has to have signed in once first. Every grant needs a reason, because this list exists to be read back."
+                />
+              </div>
+            )}
+          </Panel>
+
+          <div className="grid gap-6">
+            <Panel title="Holding access now" meta={`${count(holding.length)} people`}>
+              {holding.length ? (
+                <ul className="grid gap-3">
+                  {holding.map((one) => (
+                    <li key={one.account_id} className="flex items-center gap-3">
+                      <Mark seed={one.who || one.account_id} name={person(one)} size={24} />
+                      <span className="min-w-0 flex-1 truncate">{person(one)}</span>
+                      <Pill tone={one.level === "principal" ? "info" : "plain"}>
+                        {LEVEL_WORDS[one.level] ?? one.level}
+                      </Pill>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-ad-muted">Nobody.</p>
+              )}
+            </Panel>
+            {who.levels.length ? (
+              <Panel title="What each level may do">
+                <dl className="grid gap-3">
+                  {who.levels.map((one) => (
+                    <div key={one.level}>
+                      <dt className="font-medium">{LEVEL_WORDS[one.level] ?? words(one.level)}</dt>
+                      <dd className="text-ad-muted mt-0.5 text-[13px] leading-[20px]">
+                        {one.what}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </Panel>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </Shell>
   );
 }

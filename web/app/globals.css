@@ -480,3 +480,105 @@ body {
   --radius-pw-hero: var(--pw-r-hero);
   --radius-pw-button: var(--pw-r-button);
 }
+
+/*
+  The internal console: PPCWay's own staff, looking at every merchant.
+
+  Its own world on purpose, and the only dark one in the product. Every other
+  screen belongs to the person reading it; these do not, and a member of staff
+  who forgets that is the worst failure this panel can have. A merchant's
+  dashboard is light. This is not, so nobody can mistake one for the other
+  from across the room.
+
+  The values are the tasteskill "data terminal" style (true neutral darks, no
+  navy, colour on data only, every selection one 1px line in the accent),
+  measured from real monitoring screens. The accent is the brand's own blue for
+  dark grounds, #8faeff, the blue of the "PP" in the white wordmark.
+
+  Two greys that read apart: --ad-muted for secondary text, --ad-faint for
+  meta. Both clear 4.5:1 on the surface, which is the lightest thing either
+  sits on. Shape is decided once: panels 6px, every control and pill fully
+  round, chart columns square.
+*/
+.adm {
+  --ad-ground: #171719;
+  --ad-surface: #131217;
+  --ad-raised: #1e1d21;
+  --ad-border: #252428;
+  --ad-rule: #1f1e23;
+  --ad-control: #3a3a3e;
+
+  --ad-text: #f4f4f5;
+  --ad-muted: #b1b2b8;
+  --ad-faint: #8a8c92;
+
+  --ad-accent: #8faeff;
+  --ad-accent-tint: #1a2237;
+
+  --ad-positive: #44a282;
+  --ad-positive-ink: #5fc39c;
+  --ad-positive-tint: #1b2828;
+  --ad-negative: #e5566f;
+  --ad-negative-tint: #2c1a20;
+  --ad-warning: #d9a441;
+  --ad-warning-tint: #2a2416;
+  --ad-neutral-ink: #bdbdc0;
+  --ad-neutral-tint: #232226;
+
+  /* Chart marks. The accent is the main data; the rest are neutrals a step
+     apart, and an outline for what simply went stale. */
+  --ad-grid: #2a292d;
+  --ad-mark-open: #c9cad0;
+  --ad-mark-refused: #7d7f86;
+
+  color-scheme: dark;
+  background: var(--ad-ground);
+  color: var(--ad-text);
+  font-family: var(--font-ad-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* Every figure in the console is set in the mono, digits that stack. Text is
+   not: labels, sentences and names stay in the text face. */
+.adm .ad-num {
+  font-family: var(--font-ad-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.adm ::selection {
+  background: var(--ad-accent-tint);
+  color: var(--ad-text);
+}
+
+.adm :focus-visible {
+  outline: 2px solid var(--ad-accent);
+  outline-offset: 2px;
+}
+
+@theme inline {
+  --color-ad-ground: var(--ad-ground);
+  --color-ad-surface: var(--ad-surface);
+  --color-ad-raised: var(--ad-raised);
+  --color-ad-border: var(--ad-border);
+  --color-ad-rule: var(--ad-rule);
+  --color-ad-control: var(--ad-control);
+  --color-ad-text: var(--ad-text);
+  --color-ad-muted: var(--ad-muted);
+  --color-ad-faint: var(--ad-faint);
+  --color-ad-accent: var(--ad-accent);
+  --color-ad-accent-tint: var(--ad-accent-tint);
+  --color-ad-positive: var(--ad-positive);
+  --color-ad-positive-ink: var(--ad-positive-ink);
+  --color-ad-positive-tint: var(--ad-positive-tint);
+  --color-ad-negative: var(--ad-negative);
+  --color-ad-negative-tint: var(--ad-negative-tint);
+  --color-ad-warning: var(--ad-warning);
+  --color-ad-warning-tint: var(--ad-warning-tint);
+  --color-ad-neutral-ink: var(--ad-neutral-ink);
+  --color-ad-neutral-tint: var(--ad-neutral-tint);
+  --color-ad-grid: var(--ad-grid);
+  --color-ad-mark-open: var(--ad-mark-open);
+  --color-ad-mark-refused: var(--ad-mark-refused);
+}

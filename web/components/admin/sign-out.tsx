@@ -1,21 +1,22 @@
 "use client";
 
+import { SignOutIcon } from "@phosphor-icons/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 /*
-  Signing out of the internal panel.
+  Signing out of the internal console.
 
-  A small client component because the bar around it is server-rendered and
-  this is the only part of it that needs to do something. The POST revokes the
-  session at the backend and drops the cookie, then `refresh()` throws away
-  every server-rendered page the old session saw -- which matters more here
-  than on a merchant screen, because those pages hold somebody else's figures.
+  A small client component because the shell around it is rendered on the
+  server and this is the only part of it that needs to do something. The POST
+  revokes the session at the backend and drops the cookie, then `refresh()`
+  throws away every server-rendered page the old session saw -- which matters
+  more here than on a merchant screen, because those pages hold somebody
+  else's figures.
 
-  It lives in the staff bar rather than an account menu because that bar is the
-  one thing on every internal screen. Somebody who is signed in as staff should
-  never have to go looking for the way out -- and on these screens, looking for
-  it means clicking around somebody else's business while still signed in.
+  It sits beside your name at the foot of the sidebar, on every screen, and in
+  the phone menu. Somebody signed in as staff should never have to go looking
+  for the way out.
 */
 export function SignOut() {
   const router = useRouter();
@@ -40,9 +41,11 @@ export function SignOut() {
       type="button"
       onClick={out}
       disabled={going}
-      className="text-pw-ink-600 hover:text-pw-ink underline underline-offset-2 disabled:opacity-60"
+      title="Sign out"
+      aria-label={going ? "Signing out" : "Sign out"}
+      className="text-ad-faint hover:text-ad-text hover:border-ad-control flex h-8 w-7 flex-none items-center justify-center rounded-full border border-transparent transition-colors disabled:opacity-60"
     >
-      {going ? "Signing out…" : "Sign out"}
+      <SignOutIcon size={16} aria-hidden />
     </button>
   );
 }

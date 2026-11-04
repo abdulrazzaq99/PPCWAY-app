@@ -1,245 +1,342 @@
-"use client";
-
+import {
+  ArrowsClockwiseIcon,
+  EyeIcon,
+  GaugeIcon,
+  KeyIcon,
+  LockSimpleIcon,
+  LockSimpleOpenIcon,
+  SlidersHorizontalIcon,
+  SquaresFourIcon,
+  StorefrontIcon,
+  WarningIcon,
+} from "@phosphor-icons/react/dist/ssr";
+import type { Icon } from "@phosphor-icons/react";
+import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
-import type { Whoami } from "@/lib/admin";
+import type { ReactNode } from "react";
+import { LEVEL_WORDS, count, type Door, type Whoami } from "@/lib/admin";
+import { adMono, adSans } from "./fonts";
+import { PhoneMenu } from "./menu";
+import { Search } from "./search";
 import { SignOut } from "./sign-out";
+import { Mark } from "./ui";
 
 /*
-  The panel's shell.
+  The console's frame: the "ruled T-frame" from the study's dark screens. A
+  labelled sidebar and a 64px top bar on one ground, divided only by 1px
+  rules, with the work on the same ground beside them. No inset sheet, no
+  tinted chrome; depth is the panels' one step darker than the ground.
 
-  The last version used the study's "no sidebar" archetype: a top bar over a
-  centred column. That archetype is for reports, viewers and products with few
-  destinations, and this product has seven. A tab row carrying seven
-  destinations over an empty page is why the panel read as a web page rather
-  than a tool, and why the content floated with three hundred pixels of dead
-  ground under it.
+  A labelled sidebar rather than the icon rail the style was dealt: the rail
+  suits five destinations or fewer, and this console has seven, used by staff
+  who should not have to learn what an icon means before they can find a
+  failing sync.
 
-  This is "tinted frame, white sheet", the commonest shell in the study: the
-  sidebar and the top bar share the page's tinted ground with no rule between
-  them, and the work sits on a white sheet inset from the window's right and
-  bottom edges, radius 16, a 1px edge and no shadow. The ground is the app's
-  own `--pw-ground`, which is already in that range, so this is the app's
-  palette arranged the way a tool arranges it.
+  The active destination is the style's one mark: its label brightens, and a
+  1px line in the accent lights the stretch of the sidebar's own edge beside
+  it. Nothing is filled.
 
-  Two measured things it also fixes. The product is named at the top of the
-  sidebar, because a screen whose product cannot be named from a screenshot
-  reads as a template. And counts appear only on destinations that need
-  action, with the noun clear from the label: "Failures 3" says what three is.
-
-  Not dark. No screen in the study puts a dark or saturated sidebar against a
-  light canvas, and the previous dark band across the top was exactly that.
-  The staff warning keeps its weight by sitting in the top bar in the warning
-  colour, where it is read before anything else, rather than by inverting a
-  whole strip of chrome.
+  The top bar carries three real things: the way back from wherever you are,
+  the search every screen needs, and the door, which is whether PPCWay may
+  write to Google at all. That last one is on every screen because it is the
+  most consequential state in the product, and somebody looking at a
+  merchant's proposals should never have to go and find out whether they
+  could be sent.
 */
 
-type Item = { href: string; label: string; needs: string; count?: number };
+type Item = { href: string; label: string; icon: Icon; needs: string; count?: number };
 
-/*
-  Declared here rather than inside `Shell`. A component created during render
-  is a new type on every render, so React throws its state away each time --
-  which for a drawer means it closes itself as you touch it.
-*/
-function Group({
-  title,
-  items,
-  here,
-  may,
-  onGo,
-}: {
-  title: string;
-  items: Item[];
-  here: string;
-  may: string[];
-  onGo: () => void;
-}) {
-  const shown = items.filter((one) => may.includes(one.needs));
-  if (!shown.length) return null;
+function groups(failures?: number): { title?: string; items: Item[] }[] {
+  return [
+    {
+      items: [
+        {
+          href: "/admin/metrics",
+          label: "Overview",
+          icon: SquaresFourIcon,
+          needs: "read_platform",
+        },
+        { href: "/admin", label: "Merchants", icon: StorefrontIcon, needs: "read_merchant" },
+      ],
+    },
+    {
+      title: "Running",
+      items: [
+        { href: "/admin/jobs", label: "Jobs", icon: ArrowsClockwiseIcon, needs: "run_job" },
+        /*
+          The one count in the sidebar, because it is the one queue that needs
+          a person, and "Failures 3" says what three is.
+        */
+        {
+          href: "/admin/errors",
+          label: "Failures",
+          icon: WarningIcon,
+          needs: "read_errors",
+          count: failures,
+        },
+        { href: "/admin/quota", label: "Quota", icon: GaugeIcon, needs: "read_platform" },
+      ],
+    },
+    {
+      title: "Control",
+      items: [
+        {
+          href: "/admin/platform",
+          label: "Settings",
+          icon: SlidersHorizontalIcon,
+          needs: "read_platform",
+        },
+        { href: "/admin/staff", label: "Access", icon: KeyIcon, needs: "grant_staff" },
+      ],
+    },
+  ];
+}
+
+function Nav({ who, here, failures }: { who: Whoami; here: string; failures?: number }) {
   return (
-    <div className="mt-6 first:mt-0">
-      {/* Sentence case, never uppercase: 9 of the 16 studied sidebars. */}
-      <p className="text-pw-ink-500 px-3 pb-2 text-[12px] leading-[16px]">{title}</p>
-      <ul>
-        {shown.map((one) => {
-          const current = here === one.href;
-          return (
-            <li key={one.href}>
-              <Link
-                href={one.href}
-                onClick={onGo}
-                aria-current={current ? "page" : undefined}
-                className={[
-                  "flex h-8 items-center justify-between gap-2 rounded-[8px] px-3 text-[14px] leading-[20px] transition-colors",
-                  current
-                    ? "bg-pw-border-strong/45 text-pw-ink font-medium"
-                    : "text-pw-ink-600 hover:bg-pw-border/50 hover:text-pw-ink",
-                ].join(" ")}
-              >
-                <span className="truncate">{one.label}</span>
-                {one.count ? (
-                  <span className="pw-num text-pw-bad text-[12px] leading-[16px] font-medium">
-                    {one.count}
-                  </span>
-                ) : null}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
+    <nav aria-label="Internal console">
+      {groups(failures).map((group, at) => {
+        const shown = group.items.filter((one) => who.may.includes(one.needs));
+        if (!shown.length) return null;
+        return (
+          <div key={group.title ?? at} className={at ? "mt-6" : ""}>
+            {group.title ? (
+              <p className="text-ad-faint px-5 pb-1.5 text-[12px] leading-[18px]">{group.title}</p>
+            ) : null}
+            <ul>
+              {shown.map((one) => {
+                const current = here === one.href;
+                const Glyph = one.icon;
+                return (
+                  <li key={one.href}>
+                    <Link
+                      href={one.href}
+                      aria-current={current ? "page" : undefined}
+                      className={[
+                        "relative flex h-9 items-center gap-3 px-5 text-[13px] transition-colors duration-150",
+                        current ? "text-ad-text font-medium" : "text-ad-muted hover:text-ad-text",
+                      ].join(" ")}
+                    >
+                      <Glyph
+                        size={16}
+                        aria-hidden
+                        className={current ? "text-ad-accent" : "text-ad-faint"}
+                      />
+                      <span className="min-w-0 flex-1 truncate">{one.label}</span>
+                      {one.count ? (
+                        <span className="ad-num text-ad-negative text-[12px]">
+                          {count(one.count)}
+                        </span>
+                      ) : null}
+                      {current ? (
+                        <span
+                          aria-hidden
+                          className="bg-ad-accent absolute top-1.5 -right-px bottom-1.5 w-px max-lg:hidden"
+                        />
+                      ) : null}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        );
+      })}
+    </nav>
+  );
+}
+
+function Brand() {
+  return (
+    <Link href="/admin" className="flex items-center gap-3" aria-label="PPCWay internal console">
+      <Image
+        src="/brand/ppcway-logo-white.svg"
+        alt="PPCway"
+        width={104}
+        height={24}
+        priority
+        className="h-6 w-auto"
+      />
+      <span className="border-ad-control text-ad-muted border-l pl-3 text-[12px] leading-[16px]">
+        Internal
+      </span>
+    </Link>
+  );
+}
+
+function Me({ who }: { who: Whoami }) {
+  const name = who.who ?? "Signed in";
+  return (
+    <div className="border-ad-border flex items-center gap-2 border-t py-4 pr-3 pl-5">
+      <Mark seed={name} name={name} size={26} />
+      <div className="min-w-0 flex-1">
+        {/* A long address truncates, and says itself in full on hover. */}
+        <p className="truncate text-[13px] leading-[18px]" title={name}>
+          {name}
+        </p>
+        <p className="text-ad-faint text-[12px] leading-[16px]">
+          {LEVEL_WORDS[who.level] ?? who.level} access
+        </p>
+      </div>
+      <SignOut />
     </div>
   );
 }
 
+const DOOR: Record<Door["state"], { words: string; short: string; tone: string }> = {
+  on: {
+    words: "Google writes on",
+    short: "Writes on",
+    tone: "bg-ad-positive-tint text-ad-positive-ink",
+  },
+  off: {
+    words: "Google writes off",
+    short: "Writes off",
+    tone: "bg-ad-warning-tint text-ad-warning",
+  },
+  stopped: {
+    words: "Google writes stopped",
+    short: "Stopped",
+    tone: "bg-ad-negative-tint text-ad-negative",
+  },
+};
+
+/* The door, on every screen. It links to the switch. */
+function DoorChip({ door }: { door: Door }) {
+  const look = DOOR[door.state];
+  const Glyph = door.state === "on" ? LockSimpleOpenIcon : LockSimpleIcon;
+  return (
+    <Link
+      href="/admin/platform"
+      title={door.words}
+      className={`inline-flex h-[30px] flex-none items-center gap-2 rounded-full px-3 text-[12px] font-medium whitespace-nowrap transition-opacity hover:opacity-85 ${look.tone}`}
+    >
+      <Glyph size={14} aria-hidden />
+      <span className="hidden sm:inline">{look.words}</span>
+      <span className="sm:hidden">{look.short}</span>
+    </Link>
+  );
+}
+
+export type Crumb = { label: string; href?: string };
+
 export function Shell({
   who,
-  looking_at,
-  counts,
+  here,
+  door,
+  crumbs,
+  lookingAt,
+  failures,
+  lookedFor = "",
   children,
 }: {
   who: Whoami;
-  looking_at?: string;
-  counts?: { failures?: number };
-  children: React.ReactNode;
+  /* Which destination this screen belongs to. */
+  here: string;
+  door?: Door;
+  crumbs?: Crumb[];
+  /* Set on a merchant's own screen: the name of the business being looked at. */
+  lookingAt?: string;
+  failures?: number;
+  lookedFor?: string;
+  children: ReactNode;
 }) {
-  const here = usePathname();
-  const [open, setOpen] = useState(false);
-
-  const work: Item[] = [
-    { href: "/admin", label: "Merchants", needs: "read_merchant" },
-    /*
-      No count on Overview. The chapter is explicit that a count's noun has to
-      be clear from the label, and "Overview 17" leaves a reader asking
-      seventeen of what. "Failures 3" does not.
-    */
-    { href: "/admin/metrics", label: "Overview", needs: "read_platform" },
-  ];
-  const health: Item[] = [
-    { href: "/admin/jobs", label: "Jobs", needs: "run_job" },
-    { href: "/admin/errors", label: "Failures", needs: "read_errors", count: counts?.failures },
-    { href: "/admin/quota", label: "Quota", needs: "read_platform" },
-  ];
-  const control: Item[] = [
-    { href: "/admin/platform", label: "Settings", needs: "read_platform" },
-    { href: "/admin/staff", label: "Access", needs: "grant_staff" },
-  ];
-
-  const sidebar = (
-    <>
-      <div className="flex items-center gap-2 px-3 pb-5">
-        <span
-          aria-hidden
-          className="bg-pw-blue flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] text-[12px] leading-none font-bold text-white"
-        >
-          P
-        </span>
-        <span className="text-pw-ink min-w-0 truncate text-[14px] leading-[20px] font-semibold">
-          PPCWay
-        </span>
-        <span className="text-pw-ink-500 shrink-0 text-[12px] leading-[16px]">internal</span>
-      </div>
-      <nav aria-label="Internal panel" className="flex-1">
-        <Group
-          title="Customers"
-          items={work}
-          here={here}
-          may={who.may}
-          onGo={() => setOpen(false)}
-        />
-        <Group
-          title="Running"
-          items={health}
-          here={here}
-          may={who.may}
-          onGo={() => setOpen(false)}
-        />
-        <Group
-          title="Control"
-          items={control}
-          here={here}
-          may={who.may}
-          onGo={() => setOpen(false)}
-        />
-      </nav>
-      {/* The user row the study puts at the bottom of 8 of 23 sidebars. */}
-      <div className="border-pw-border mt-6 border-t px-3 pt-3">
-        <p className="text-pw-ink truncate text-[13px] leading-[18px] font-medium">
-          {who.who ?? "Signed in"}
-        </p>
-        <p className="text-pw-ink-500 text-[12px] leading-[16px]">{who.level} access</p>
-        {/*
-          No "your dashboard" link. A PPCWay staff account does not own a
-          business, so there is no dashboard behind it: `home_for` refuses to
-          invent one, and following the link would land on a 409. Staff who
-          also happen to be customers reach their own business the way any
-          customer does, by signing in to it.
-        */}
-        <p className="mt-2 text-[13px] leading-[18px]">
-          <SignOut />
-        </p>
-      </div>
-    </>
-  );
-
   return (
-    <div className="bg-pw-ground min-h-[100dvh] lg:flex">
-      {/* Desktop sidebar: 232px, the study's median of 230. */}
-      <aside className="hidden w-[232px] shrink-0 flex-col px-3 py-5 lg:flex">{sidebar}</aside>
+    <div
+      className={`${adSans.variable} ${adMono.variable} adm min-h-[100dvh] lg:grid lg:grid-cols-[232px_minmax(0,1fr)]`}
+    >
+      <aside className="border-ad-border sticky top-0 hidden h-[100dvh] flex-col border-r lg:flex">
+        <div className="border-ad-border flex h-16 flex-none items-center border-b px-5">
+          <Brand />
+        </div>
+        <div className="flex-1 py-5">
+          <Nav who={who} here={here} failures={failures} />
+        </div>
+        <Me who={who} />
+      </aside>
 
-      {/* Phone and tablet: the same sidebar as a drawer, because seven
-          destinations do not fit across a handset and a scrolling tab row
-          hides the last three. */}
-      {open ? (
-        <>
-          <button
-            aria-label="Close the menu"
-            onClick={() => setOpen(false)}
-            className="bg-pw-ink/30 fixed inset-0 z-50 lg:hidden"
-          />
-          <aside className="bg-pw-ground fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col overflow-y-auto px-3 py-5 lg:hidden">
-            {sidebar}
-          </aside>
-        </>
-      ) : null}
+      <div className="flex min-w-0 flex-col">
+        <header className="border-ad-border bg-ad-ground sticky top-0 z-30 flex h-14 flex-none items-center gap-3 border-b px-4 sm:px-6 lg:h-16 lg:gap-5 lg:px-8">
+          <PhoneMenu>
+            <div className="px-5 pt-5 pb-3">
+              <Brand />
+            </div>
+            <div className="px-5 pb-5">
+              <Search id="ad-find-phone" defaultValue={lookedFor} wide />
+            </div>
+            <div className="flex-1 pb-6">
+              <Nav who={who} here={here} failures={failures} />
+            </div>
+            <Me who={who} />
+          </PhoneMenu>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* The top bar holds something real: who you are looking at, and the
-            way to the menu on a small screen. */}
-        <header className="flex h-12 shrink-0 items-center gap-3 px-4 lg:pr-4 lg:pl-0">
-          <button
-            onClick={() => setOpen(true)}
-            className="text-pw-ink-600 hover:text-pw-ink -ml-1 flex h-8 w-8 items-center justify-center rounded-[8px] lg:hidden"
-            aria-label="Open the menu"
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
-              <path
-                d="M2.5 4.5h13M2.5 9h13M2.5 13.5h13"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-          <span className="text-pw-ink text-[14px] leading-[20px] font-semibold lg:hidden">
-            PPCWay internal
-          </span>
+          <div className="lg:hidden">
+            <Image
+              src="/brand/ppcway-icon.svg"
+              alt="PPCway internal"
+              width={24}
+              height={24}
+              className="h-6 w-6"
+            />
+          </div>
 
-          {looking_at ? (
-            <p className="text-pw-warn-ink bg-pw-warn-bg border-pw-warn-border ml-auto truncate rounded-[8px] border px-2.5 py-1 text-[13px] leading-[18px] font-medium">
-              You are in {looking_at}&rsquo;s account, not your own
-            </p>
-          ) : (
-            <p className="text-pw-ink-500 ml-auto hidden truncate text-[12px] leading-[16px] lg:block">
-              Every account you open is recorded
-            </p>
-          )}
+          {crumbs?.length ? (
+            <nav aria-label="Where you are" className="hidden min-w-0 md:block">
+              <ol className="flex min-w-0 items-center gap-2 text-[13px]">
+                {crumbs.map((one, at) => (
+                  <li key={one.label} className="flex min-w-0 items-center gap-2">
+                    {at ? <span className="text-ad-control">/</span> : null}
+                    {one.href ? (
+                      <Link
+                        href={one.href}
+                        className="text-ad-muted hover:text-ad-text whitespace-nowrap transition-colors"
+                      >
+                        {one.label}
+                      </Link>
+                    ) : (
+                      <span className="text-ad-text truncate font-medium" aria-current="page">
+                        {one.label}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </nav>
+          ) : null}
+
+          <div className="hidden md:block">
+            <Search id="ad-find" defaultValue={lookedFor} shortcut />
+          </div>
+
+          <div className="ml-auto flex min-w-0 items-center gap-3">
+            {lookingAt ? (
+              /*
+                The sentence that does the work. Not "Viewing: Alpha Plumbing",
+                which reads as a field; a sentence about somebody else's
+                business does not.
+              */
+              <p className="bg-ad-warning-tint text-ad-warning hidden h-[30px] min-w-0 items-center gap-2 truncate rounded-full px-3 text-[12px] font-medium md:inline-flex">
+                <EyeIcon size={14} aria-hidden className="flex-none" />
+                <span className="truncate">You are in {lookingAt}&rsquo;s account</span>
+              </p>
+            ) : (
+              <p className="text-ad-faint hidden items-center gap-2 text-[12px] xl:flex">
+                <EyeIcon size={14} aria-hidden />
+                Opening an account is recorded
+              </p>
+            )}
+            {door ? <DoorChip door={door} /> : null}
+          </div>
         </header>
 
-        {/* The white sheet, inset from the window's right and bottom edges. */}
-        <div className="border-pw-border min-w-0 flex-1 overflow-hidden rounded-tl-[16px] border-t border-l bg-white max-lg:rounded-tr-[16px] max-lg:border-r lg:mr-2 lg:mb-2 lg:rounded-[16px] lg:border">
-          {children}
-        </div>
+        {lookingAt ? (
+          <p className="bg-ad-warning-tint text-ad-warning flex items-center gap-2 px-4 py-2 text-[12px] font-medium md:hidden">
+            <EyeIcon size={14} aria-hidden className="flex-none" />
+            You are in {lookingAt}&rsquo;s account
+          </p>
+        ) : null}
+
+        <main className="min-w-0 flex-1 px-4 pt-6 pb-12 sm:px-6 lg:px-8 lg:pt-8">{children}</main>
       </div>
     </div>
   );
