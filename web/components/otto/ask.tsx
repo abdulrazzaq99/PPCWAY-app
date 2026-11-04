@@ -13,6 +13,11 @@ import { Button } from "@/components/ui/button";
   The header and the first message both say Otto is an AI, which the client's
   brief requires. Both come from the server, so the words a merchant is shown
   and the words PPCWay can prove it showed them are the same string.
+
+  One conversation per visit to this screen. The server names it in the
+  stream's first event and each next question carries it back, so "and the
+  week before?" reaches Otto with the questions before it. "Start again"
+  forgets it, and so does leaving the page.
 */
 
 type Turn = { who: "them" | "otto"; words: string };
@@ -27,6 +32,7 @@ export function AskOtto() {
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
   const [trouble, setTrouble] = useState("");
+  const [conversation, setConversation] = useState("");
   const bottom = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -58,7 +64,9 @@ export function AskOtto() {
       const res = await fetch("/api/otto/ask", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: asking }),
+        body: JSON.stringify(
+          conversation ? { question: asking, conversation_id: conversation } : { question: asking },
+        ),
       });
       if (!res.ok || !res.body) {
         const problem = (await res.json().catch(() => ({}))) as { error?: string };
@@ -79,11 +87,14 @@ export function AskOtto() {
         rest = lines.pop() ?? "";
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
-          let step: { kind?: string; words?: string };
+          let step: { kind?: string; words?: string; id?: string };
           try {
             step = JSON.parse(line.slice(6));
           } catch {
             continue;
+          }
+          if (step.kind === "conversation" && step.id) {
+            setConversation(step.id);
           }
           if (step.kind === "looking" || step.kind === "writing") {
             setDoing((was) => [...was, step.words ?? ""]);
@@ -104,11 +115,28 @@ export function AskOtto() {
 
   return (
     <section className="border-pw-border bg-pw-card flex min-h-[520px] flex-col rounded-[var(--pw-r-card)] border">
-      <header className="border-pw-divider border-b px-5 py-4">
-        <p className="text-[15px] leading-[19px] font-bold">{disclosure.header}</p>
-        <p className="text-pw-ink-500 mt-1 text-[13px] leading-4">
-          Otto reads your account. It cannot change anything here.
-        </p>
+      <header className="border-pw-divider flex items-start justify-between gap-4 border-b px-5 py-4">
+        <div>
+          <p className="text-[15px] leading-[19px] font-bold">{disclosure.header}</p>
+          <p className="text-pw-ink-500 mt-1 text-[13px] leading-4">
+            Otto reads your account. It cannot change anything here.
+          </p>
+        </div>
+        {said.length ? (
+          /* Forgets the conversation: the next question starts from nothing. */
+          <button
+            type="button"
+            onClick={() => {
+              setSaid([]);
+              setConversation("");
+              setTrouble("");
+            }}
+            disabled={busy}
+            className="text-pw-blue shrink-0 text-[14px] leading-[19px] font-medium underline-offset-2 hover:underline disabled:opacity-50"
+          >
+            Start again
+          </button>
+        ) : null}
       </header>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">

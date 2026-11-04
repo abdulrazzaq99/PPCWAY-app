@@ -215,6 +215,79 @@ def open_conversation(
     return held
 
 
+#: How much of a conversation goes back to the model with each new question:
+#: enough for "and the week before?" to mean something, and few enough that a
+#: long session does not make every question cost what the session did.
+HISTORY_TURNS: Final = 6
+
+
+def continuing(
+    session: Session,
+    conversation_id: object,
+    *,
+    organization_id: uuid.UUID,
+    account_id: uuid.UUID,
+    customer_id: str,
+) -> Conversation | None:
+    """The conversation to carry on, or None to start a new one.
+
+    Only one this person started, in this business, about the Google Ads
+    account still connected. An id from somebody else's conversation, a
+    colleague's included, starts a fresh one rather than reading theirs; so
+    does an account reconnected mid-conversation, because history about the
+    old account would be read as the new one's.
+    """
+    if not conversation_id:
+        return None
+    try:
+        wanted = uuid.UUID(str(conversation_id))
+    except ValueError:
+        return None
+    held = session.get(Conversation, wanted)
+    if held is None:
+        return None
+    if (held.organization_id, held.account_id, held.customer_id) != (
+        organization_id,
+        account_id,
+        customer_id,
+    ):
+        log.info("a chat asked to continue a conversation that was not its own")
+        return None
+    return held
+
+
+def history_for(
+    session: Session, conversation_id: uuid.UUID, *, most: int = HISTORY_TURNS
+) -> list[dict[str, str]]:
+    """The conversation so far, as the model reads it: each question and the
+    answer Otto gave, oldest first.
+
+    Only answered turns. A refused one is left out on purpose: every earlier
+    question goes back through Model Armor with each new one, so a question it
+    blocked once would block everything after it and end the conversation.
+
+    Only the words, never the figures. A number from an earlier answer is not
+    one the number check will accept this turn, so "and the week before?" is
+    looked up again rather than carried over, which is what the system prompt
+    already asks of the model.
+    """
+    rows = session.scalars(
+        select(Turn)
+        .where(
+            Turn.conversation_id == conversation_id,
+            Turn.answer_from != "refused",
+            Turn.answer != "",
+        )
+        .order_by(Turn.asked_at.desc(), Turn.id.desc())
+        .limit(most)
+    ).all()
+    out: list[dict[str, str]] = []
+    for one in reversed(rows):
+        out.append({"role": "user", "content": one.question})
+        out.append({"role": "assistant", "content": one.answer})
+    return out
+
+
 def record_turn(
     session: Session,
     *,

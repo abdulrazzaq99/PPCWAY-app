@@ -46,14 +46,61 @@ from ppcway.model.service import Screening
 
 log = logging.getLogger(__name__)
 
-#: What a merchant is told when their message is blocked. Deliberately short
-#: and not an accusation: the common case is somebody pasting a customer's
-#: details in, not an attack, and either way the words are the same because
-#: telling them which filter fired is telling an attacker which filter fired.
-BLOCKED_WORDS: Final = (
+#: What a merchant is told when Model Armor stops their message, by what
+#: stopped it. Each says what to change, in plain words, and none names a filter
+#: or says how screening works. Short and not an accusation: the common case is
+#: a merchant pasting a customer's details in, not an attack.
+#:
+#: One sentence used to serve every block, so that nobody could learn which
+#: filter fired. That bought little, because "blocked or not" already tells
+#: somebody probing whether their wording failed, and it cost the merchant: a
+#: message stopped as an attempted instruction was told to take out personal
+#: details it never contained.
+
+#: Personal details: the likeliest real trigger, and the one a merchant can fix
+#: at once.
+PERSONAL_WORDS: Final = (
     "We could not send that message. Please rewrite it without any personal"
     " details -- names, addresses, card numbers -- and ask again."
 )
+
+#: A link that could not be checked as safe. Merchants paste their own pages.
+LINK_WORDS: Final = (
+    "We could not send that message, because a link in it could not be checked"
+    " as safe. Please ask again without the link."
+)
+
+#: Something that reads like an instruction to Otto rather than a question.
+#: Worded so an innocent message caught by it is not told it did wrong.
+INSTRUCTION_WORDS: Final = (
+    "We could not send that message, because it reads like an instruction to"
+    " change how Otto works. Please ask about your Google Ads account in your"
+    " own words."
+)
+
+#: Everything else: a topic Otto will not discuss, or a block Google did not
+#: name. It says what Otto is for rather than what was wrong.
+BLOCKED_WORDS: Final = (
+    "We could not send that message. Otto can only help with your Google Ads"
+    " account, so please ask about that in other words."
+)
+
+#: Which sentence a block gets when more than one filter fired, most useful
+#: first: a message with a card number in it is told about the card number.
+_WORDS_FOR: Final = (
+    ("sdp", PERSONAL_WORDS),
+    ("malicious_uris", LINK_WORDS),
+    ("pi_and_jailbreak", INSTRUCTION_WORDS),
+)
+
+
+def words_for(fired: set[str]) -> str:
+    """The sentence a merchant sees for a block, from the filters that fired."""
+    for name, words in _WORDS_FOR:
+        if name in fired:
+            return words
+    return BLOCKED_WORDS
+
 
 #: What they are told when screening itself failed. Different words, because
 #: the honest thing is that this is our problem and not their message.
@@ -196,8 +243,11 @@ class ModelArmor:
             log.warning("Model Armor did not complete: invocationResult=%s", invocation)
             return Screening(verdict="blocked", because=UNAVAILABLE_WORDS)
         if state == MATCH_FOUND:
-            log.info("Model Armor blocked a message: %s", _which_fired(result))
-            return Screening(verdict="blocked", because=BLOCKED_WORDS)
+            fired = _fired(result)
+            log.info(
+                "Model Armor blocked a message: %s", ", ".join(sorted(fired)) or "no filter named"
+            )
+            return Screening(verdict="blocked", because=words_for(fired))
         if state == NO_MATCH:
             return Screening(verdict="clean")
 
@@ -207,13 +257,14 @@ class ModelArmor:
         return Screening(verdict="blocked", because=UNAVAILABLE_WORDS)
 
 
-def _which_fired(result: dict[str, Any]) -> str:
-    """Which filters matched, for the log only.
+def _fired(result: dict[str, Any]) -> set[str]:
+    """Which filters matched, by Google's own names for them.
 
-    Never shown to a merchant: telling somebody which filter fired tells an
-    attacker which filter fired, and the words they see are the same either way.
+    Used to choose the merchant's sentence and for the log. The names
+    themselves are never shown: the sentence says what to change, not which
+    check caught it.
     """
-    fired: list[str] = []
+    fired: set[str] = set()
     for name, wrapper in (result.get("filterResults") or {}).items():
         if not isinstance(wrapper, dict):
             continue
@@ -222,6 +273,6 @@ def _which_fired(result: dict[str, Any]) -> str:
                 continue
             found = inner.get("matchState") or (inner.get("inspectResult") or {}).get("matchState")
             if found == MATCH_FOUND:
-                fired.append(str(name))
+                fired.add(str(name))
                 break
-    return ", ".join(sorted(fired)) or "no filter named"
+    return fired

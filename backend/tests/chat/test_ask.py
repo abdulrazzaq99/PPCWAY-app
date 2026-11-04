@@ -148,6 +148,35 @@ def test_a_question_is_looked_up_before_it_is_answered(db: DbSession) -> None:
     assert "540.00" in out[-1].words
 
 
+def test_the_conversation_so_far_goes_to_the_model_before_the_question(
+    db: DbSession,
+) -> None:
+    """The endpoint now carries a conversation on; the loop puts the earlier
+    questions and answers first, in order, and the new question last."""
+    an_account(db)
+    models = Saying(_words("The week before was quieter."))
+    earlier = [
+        {"role": "user", "content": "How many leads did I get last week?"},
+        {"role": "assistant", "content": "Twelve, last week."},
+    ]
+    list(
+        answer(
+            models,
+            db,
+            "And the week before?",
+            organization_id=uuid.uuid4(),
+            customer_id=CUSTOMER,
+            currency="CAD",
+            role=Role.OWNER,
+            today=TODAY,
+            history=earlier,
+        )
+    )
+    sent = models.asked[0]["said"]
+    assert sent[:2] == earlier
+    assert sent[2] == {"role": "user", "content": "And the week before?"}
+
+
 def test_a_number_no_tool_returned_is_rewritten_once(db: DbSession) -> None:
     """The number check, same rule as the inbox cards."""
     an_account(db)

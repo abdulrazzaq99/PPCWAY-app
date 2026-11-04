@@ -1582,9 +1582,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         a different experience from four seconds of nothing.
 
         One event per thing that happens, each a JSON object with a `kind`:
-        `looking` while a lookup runs, `writing` while a proposal is written,
-        `answer` for the words, `trouble` where it could not. The last event is
-        always one of `answer` or `trouble`, so a client knows when to stop.
+        `conversation` first, with the id to send back to carry the
+        conversation on; `looking` while a lookup runs, `writing` while a
+        proposal is written, `answer` for the words, `trouble` where it could
+        not. The last of those is always one of `answer` or `trouble`, so a
+        client knows when to stop.
+
+        A question can carry `conversation_id`. Where it names a conversation
+        this person started, in this business, about this account, Otto sees
+        the earlier questions and its own answers; otherwise a new
+        conversation begins.
         """
         from ppcway.chat import ask as asking
         from ppcway.chat import transcript as transcripts
@@ -1620,18 +1627,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 " on your dashboard in the meantime.",
             )
 
-        held = transcripts.open_conversation(
+        # Carried on where the screen asks and the conversation is this
+        # person's own, about this account; otherwise a new one. The history is
+        # the earlier questions and Otto's answers, never their figures, so
+        # "and the week before?" means something and is still looked up.
+        held = transcripts.continuing(
             session,
+            body.get("conversation_id"),
             organization_id=place.id,
             account_id=account.id,
             customer_id=customer_id,
-            about=question,
         )
+        history = transcripts.history_for(session, held.id) if held else []
+        if held is None:
+            held = transcripts.open_conversation(
+                session,
+                organization_id=place.id,
+                account_id=account.id,
+                customer_id=customer_id,
+                about=question,
+            )
 
         def events() -> Iterator[str]:
             said = ""
             source = "refused"
             looked: list[str] = []
+            # First, which conversation this is, so the screen can carry it on.
+            yield f"data: {json_dumps({'kind': 'conversation', 'id': str(held.id)})}\n\n"
             for step in asking.answer(
                 models,
                 session,
@@ -1641,6 +1663,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 currency=connection.currency if connection else "",
                 role=role,
                 connection=connection,
+                history=history,
             ):
                 if step.kind in {"looking", "writing"}:
                     looked.append(step.words)
