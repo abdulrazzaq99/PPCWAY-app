@@ -168,13 +168,14 @@ export function Shell({
           {who.who ?? "Signed in"}
         </p>
         <p className="text-pw-ink-500 text-[12px] leading-[16px]">{who.level} access</p>
-        <p className="mt-2 flex items-center gap-3 text-[13px] leading-[18px]">
-          <Link
-            href="/home"
-            className="text-pw-ink-600 hover:text-pw-ink underline underline-offset-2"
-          >
-            Your dashboard
-          </Link>
+        {/*
+          No "your dashboard" link. A PPCWay staff account does not own a
+          business, so there is no dashboard behind it: `home_for` refuses to
+          invent one, and following the link would land on a 409. Staff who
+          also happen to be customers reach their own business the way any
+          customer does, by signing in to it.
+        */}
+        <p className="mt-2 text-[13px] leading-[18px]">
           <SignOut />
         </p>
       </div>

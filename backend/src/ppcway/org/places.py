@@ -26,12 +26,34 @@ class NotAllowed(PermissionError):
     whether a thing exists is itself something to know."""
 
 
+class StaffHasNoBusiness(RuntimeError):
+    """PPCWay's own people do not own a business of their own.
+
+    Raised rather than quietly returning None, because every caller of
+    `home_for` was written expecting a business back and a None would turn
+    into an attribute error somewhere less obvious.
+    """
+
+
 def home_for(session: DbSession, account: UserAccount) -> Organization:
     """The organisation this person belongs to, made on the spot if they have none.
 
     Somebody who signed up before organisations existed, or who has just arrived
     from the free audit, owns a business of one. They do not fill in a form to
     get it; the first thing they do in the app creates it.
+
+    **Except PPCWay's own staff, who get nothing made for them.** A member of
+    staff works on other people's businesses and has none of their own. Without
+    this, opening the app as staff silently created a business named after the
+    email address, so `admin@ppcway.com` became a merchant called "admin" --
+    which then appeared in the internal panel's own list of merchants, next to
+    real customers. That is the `org.Role.ADMIN` and PPCWay-staff confusion
+    arriving by the back door, after the two were carefully kept apart
+    everywhere else.
+
+    An existing membership is still honoured: somebody who was a customer
+    before they joined PPCWay keeps their business, and that is a real
+    situation rather than a bug.
     """
     place = session.scalar(
         select(Organization)
@@ -41,6 +63,14 @@ def home_for(session: DbSession, account: UserAccount) -> Organization:
     )
     if place is not None:
         return place
+
+    from ppcway.staff.guard import level_of
+
+    if level_of(session, account) is not None:
+        raise StaffHasNoBusiness(
+            "This is a PPCWay staff account. It works on other businesses and does"
+            " not have one of its own."
+        )
 
     place = Organization(name=account.name or account.email.split("@")[0] or "My business")
     session.add(place)

@@ -163,7 +163,10 @@ def test_a_pass_writes_what_the_rules_found(db: sessionmaker[Session]) -> None:
     with db() as session:
         row = session.scalars(sa.select(OptimizationAction)).one()
     assert row.status == Status.AWAITING_APPROVAL.value
-    assert row.job_run == "nightly-2026-11-03"
+    # Derived from the same clock the pass used. Hardcoding the date made this
+    # pass on one day and fail on every other, which is the bug the rest of
+    # this suite's fixtures were already fixed for.
+    assert row.job_run == f"nightly-{NOW.date().isoformat()}"
     assert row.rule_id == "R1"
 
 

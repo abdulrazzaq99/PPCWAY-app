@@ -762,8 +762,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return _mailer(settings)
 
     def _home(session: Session, account: UserAccount) -> Organization:
-        """The business this person is in, made on first use."""
-        return home_for(session, account)
+        """The business this person is in, made on first use.
+
+        A staff account has none, and that is a 409 rather than a 403: nothing
+        is forbidden, there is simply no business here to show. The screens
+        send them to the internal panel instead.
+        """
+        from ppcway.org.places import StaffHasNoBusiness
+
+        try:
+            return home_for(session, account)
+        except StaffHasNoBusiness as exc:
+            raise HTTPException(409, str(exc)) from None
 
     def _allowed(session: Session, account: UserAccount, place: Organization, what: str) -> None:
         """Refuse plainly. The interface hides what it can; this is what decides."""

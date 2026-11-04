@@ -393,3 +393,61 @@ def test_looks_are_scoped_to_the_business_asked_about(
         session.commit()
         assert len(who_looked(session, organization_id=first.id)) == 1
         assert len(who_looked(session, organization_id=uuid.uuid4())) == 0
+
+
+# --- staff do not own a business --------------------------------------------
+
+
+def test_a_staff_account_is_not_given_a_business_of_its_own(
+    factory: sessionmaker[DbSession],
+) -> None:
+    """The confusion arriving by the back door.
+
+    `home_for` creates a business named after the email on first use, so
+    opening the app as `admin@ppcway.com` silently made a merchant called
+    "admin" -- which then appeared in the internal panel's own list of
+    merchants, beside real customers. It was on screen.
+
+    Staff work on other people's businesses and have none of their own.
+    """
+    from ppcway.org.places import StaffHasNoBusiness
+
+    with factory() as session:
+        helper = person(session, "help@ppcway.com")
+        grant(
+            session,
+            account_id=helper.id,
+            level=Level.SUPPORT,
+            by_account_id=None,
+            because="answers tickets",
+        )
+        session.commit()
+        with pytest.raises(StaffHasNoBusiness, match="does not have one of its own"):
+            home_for(session, helper)
+
+
+def test_an_ordinary_person_still_gets_one(factory: sessionmaker[DbSession]) -> None:
+    """The rule must not reach anybody but staff."""
+    with factory() as session:
+        owner = person(session, "owner@alpha.ie")
+        assert home_for(session, owner) is not None
+
+
+def test_a_customer_who_later_joins_ppcway_keeps_their_business(
+    factory: sessionmaker[DbSession],
+) -> None:
+    """A real situation rather than a bug: the membership came first, so it is
+    honoured. Only the creating of a new one is refused."""
+    with factory() as session:
+        both = person(session, "dana@alpha.ie")
+        theirs = home_for(session, both)
+        session.commit()
+        grant(
+            session,
+            account_id=both.id,
+            level=Level.ENGINEER,
+            by_account_id=None,
+            because="joined PPCWay in March",
+        )
+        session.commit()
+        assert home_for(session, both).id == theirs.id
