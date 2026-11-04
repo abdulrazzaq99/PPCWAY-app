@@ -24,6 +24,7 @@ from ppcway.auth.models import UserAccount
 from ppcway.db.base import Base
 from ppcway.model.log import PromptLog
 from ppcway.opt.models import OptimizationAction, Status
+from ppcway.org.models import Organization
 from ppcway.org.places import home_for
 from ppcway.staff.stats import (
     STUCK_AFTER,
@@ -56,7 +57,15 @@ def person(session: DbSession, email: str) -> UserAccount:
     return account
 
 
-def a_business(session: DbSession, email: str, name: str, *, connected: bool = True) -> uuid.UUID:
+def a_business(
+    session: DbSession,
+    email: str,
+    name: str,
+    *,
+    connected: bool = True,
+    customer: str = CUSTOMER,
+    status: str = "ENABLED",
+) -> uuid.UUID:
     owner = person(session, email)
     place = home_for(session, owner)
     place.name = name
@@ -67,14 +76,29 @@ def a_business(session: DbSession, email: str, name: str, *, connected: bool = T
                 account_id=owner.id,
                 organization_id=place.id,
                 ciphertext="locked",
-                customer_id=CUSTOMER,
+                customer_id=customer,
                 customer_name=name,
                 currency="CAD",
-                account_status="ENABLED",
+                account_status=status,
             )
         )
     session.flush()
     return place.id
+
+
+def a_sync(session: DbSession, customer: str, *, finished: bool = True) -> None:
+    """One sync of one account, finished or still going."""
+    session.add(
+        SyncRun(
+            id=uuid.uuid4(),
+            customer_id=customer,
+            kind="structure",
+            status="done" if finished else "running",
+            started_at=NOW - timedelta(minutes=30),
+            finished_at=NOW - timedelta(minutes=29) if finished else None,
+        )
+    )
+    session.flush()
 
 
 def an_action(session: DbSession, place: uuid.UUID, status: Status, *, ago: int = 1) -> None:
@@ -479,6 +503,124 @@ def test_a_healthy_business_has_nothing_to_say(factory: sessionmaker[DbSession])
         )
         session.commit()
         assert merchants(session)[0].trouble == ""
+
+
+def every_kind_of_business(session: DbSession) -> None:
+    """One business of each kind the list tells apart."""
+    a_business(session, "a@one.ie", "Healthy", customer="1000000001")
+    a_sync(session, "1000000001")
+    a_business(session, "b@one.ie", "Unconnected", connected=False)
+    a_business(session, "c@one.ie", "Suspended", customer="1000000003", status="SUSPENDED")
+    a_sync(session, "1000000003")
+    a_business(session, "d@one.ie", "Never finished a sync", customer="1000000004")
+    a_sync(session, "1000000004", finished=False)
+    a_business(session, "e@one.ie", "Status not read yet", customer="1000000005", status="")
+    a_sync(session, "1000000005")
+    # A reconnect: the old connection was suspended, the newer one is fine.
+    place = a_business(session, "f@one.ie", "Reconnected", customer="1000000006")
+    a_sync(session, "1000000006")
+    owner = person(session, "f2@one.ie")
+    session.add(
+        AdsConnection(
+            id=uuid.uuid4(),
+            account_id=owner.id,
+            organization_id=place,
+            ciphertext="locked",
+            customer_id="1000000099",
+            account_status="SUSPENDED",
+            created_at=NOW - timedelta(days=90),
+        )
+    )
+    session.flush()
+
+
+def test_the_need_a_person_tab_is_exactly_the_rows_with_trouble(
+    factory: sessionmaker[DbSession],
+) -> None:
+    """The tab is filtered in SQL and the row's trouble in Python. If the two
+    ever disagree, a business is counted as needing a person and shows none,
+    or needs one and is never shown on the tab."""
+    from ppcway.staff.stats import count_merchants
+
+    with factory() as session:
+        every_kind_of_business(session)
+        session.commit()
+        everyone = merchants(session)
+        flagged = {one.name for one in merchants(session, show="attention")}
+        assert flagged == {one.name for one in everyone if one.trouble}
+        assert flagged == {"Unconnected", "Suspended", "Never finished a sync"}
+        assert count_merchants(session)["attention"] == 3
+
+
+def test_the_not_connected_tab_is_exactly_the_rows_without_an_account(
+    factory: sessionmaker[DbSession],
+) -> None:
+    from ppcway.staff.stats import count_merchants
+
+    with factory() as session:
+        every_kind_of_business(session)
+        session.commit()
+        unconnected = {one.name for one in merchants(session, show="unconnected")}
+        assert unconnected == {one.name for one in merchants(session) if not one.connected}
+        assert unconnected == {"Unconnected"}
+        assert count_merchants(session) == {"all": 6, "attention": 3, "unconnected": 1}
+
+
+def test_the_newest_connection_decides_the_row_and_the_tab_alike(
+    factory: sessionmaker[DbSession],
+) -> None:
+    """A reconnect leaves the old row behind. The list used to take whichever
+    connection came back first; the row and the tab now both take the newest
+    one that names an account."""
+    with factory() as session:
+        every_kind_of_business(session)
+        session.commit()
+        row = next(one for one in merchants(session) if one.name == "Reconnected")
+        assert (row.customer_id, row.trouble) == ("1000000006", "")
+
+
+def test_merchants_come_a_page_at_a_time_with_nothing_twice(
+    factory: sessionmaker[DbSession],
+) -> None:
+    with factory() as session:
+        for at in range(5):
+            place = a_business(session, f"p{at}@one.ie", f"Business {at}", connected=False)
+            session.get(Organization, place).created_at = NOW - timedelta(days=at)
+        session.commit()
+        pages = [merchants(session, most=2, skip=at) for at in (0, 2, 4)]
+        assert [len(page) for page in pages] == [2, 2, 1]
+        names = [one.name for page in pages for one in page]
+        # Newest first across pages, and every business exactly once.
+        assert names == [f"Business {at}" for at in range(5)]
+
+
+def test_businesses_made_in_the_same_moment_keep_one_order(
+    factory: sessionmaker[DbSession],
+) -> None:
+    """A transaction stamps every row it makes with one time, so ties are
+    ordinary. Without a second key a page boundary could move between
+    requests."""
+    with factory() as session:
+        for at in range(4):
+            place = a_business(session, f"t{at}@one.ie", f"Tie {at}", connected=False)
+            session.get(Organization, place).created_at = NOW
+        session.commit()
+        one_by_one = [merchants(session, most=1, skip=at)[0].organization_id for at in range(4)]
+        assert len(set(one_by_one)) == 4
+        assert one_by_one == [one.organization_id for one in merchants(session, most=4)]
+
+
+def test_the_counts_follow_the_search(factory: sessionmaker[DbSession]) -> None:
+    from ppcway.staff.stats import count_merchants
+
+    with factory() as session:
+        every_kind_of_business(session)
+        session.commit()
+        assert count_merchants(session, look_for="sus") == {
+            "all": 1,
+            "attention": 1,
+            "unconnected": 0,
+        }
 
 
 def test_the_list_can_be_searched_by_name(factory: sessionmaker[DbSession]) -> None:

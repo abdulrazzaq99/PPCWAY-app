@@ -31,6 +31,7 @@ import {
   type Look,
   type Merchant,
   type MerchantRow,
+  type MerchantShow,
   type Overview,
   type PlatformView,
   type Quota,
@@ -474,25 +475,43 @@ export function AdminMerchants({
   who,
   chrome,
   rows,
+  total,
+  counts,
+  page,
+  per,
   trouble,
   lookedFor,
   show,
 }: {
   who: Whoami;
   chrome: Chrome;
+  /* This page of the open tab. */
   rows: MerchantRow[];
+  /* How many the open tab holds. */
+  total: number;
+  /* Every tab's count, under the same search. */
+  counts: Record<MerchantShow, number>;
+  page: number;
+  per: number;
   trouble: string;
   lookedFor: string;
-  show: string;
+  show: "" | "attention" | "unconnected";
 }) {
-  const needing = rows.filter((one) => one.trouble);
-  const unconnected = rows.filter((one) => !one.connected);
-  const shown = show === "attention" ? needing : show === "unconnected" ? unconnected : rows;
-  const q = lookedFor ? `q=${encodeURIComponent(lookedFor)}` : "";
-  const link = (s: string) => {
-    const parts = [s ? `show=${s}` : "", q].filter(Boolean).join("&");
-    return parts ? `/admin?${parts}` : "/admin";
+  const pages = Math.max(1, Math.ceil(total / per));
+  const link = (tab: string, n = 1) => {
+    const q = new URLSearchParams();
+    if (tab) q.set("show", tab);
+    if (lookedFor) q.set("q", lookedFor);
+    if (n > 1) q.set("page", String(n));
+    const tail = q.toString();
+    return tail ? `/admin?${tail}` : "/admin";
   };
+  const tabName =
+    show === "attention"
+      ? "Need a person"
+      : show === "unconnected"
+        ? "Not connected"
+        : "Every business";
 
   return (
     <Shell
@@ -505,9 +524,9 @@ export function AdminMerchants({
       <Head
         title="Merchants"
         pill={
-          rows.length ? (
-            needing.length ? (
-              <Pill tone="warn">{count(needing.length)} need a person</Pill>
+          counts.all ? (
+            counts.attention ? (
+              <Pill tone="warn">{count(counts.attention)} need a person</Pill>
             ) : (
               <Pill tone="good">All healthy</Pill>
             )
@@ -530,17 +549,17 @@ export function AdminMerchants({
         <Tabs
           label="Which businesses"
           tabs={[
-            { label: "All", href: link(""), count: rows.length, here: !show },
+            { label: "All", href: link(""), count: counts.all, here: !show },
             {
               label: "Need a person",
               href: link("attention"),
-              count: needing.length,
+              count: counts.attention,
               here: show === "attention",
             },
             {
               label: "Not connected",
               href: link("unconnected"),
-              count: unconnected.length,
+              count: counts.unconnected,
               here: show === "unconnected",
             },
           ]}
@@ -549,12 +568,20 @@ export function AdminMerchants({
 
       <div className="mt-6 grid gap-6">
         <Problem words={trouble} />
-        {shown.length ? (
-          <section className="border-ad-border bg-ad-surface overflow-hidden rounded-[6px] border">
+        {rows.length ? (
+          <Panel
+            title={tabName}
+            meta={`${count(total)} ${total === 1 ? "business" : "businesses"}${
+              pages > 1 ? `, page ${count(page)} of ${count(pages)}` : ""
+            }.`}
+            flush
+            className="overflow-clip"
+          >
             <Table
               caption="Businesses"
               title="name"
               lead="ads"
+              stickyHead
               cols={[
                 { key: "name", label: "Business", width: "34%" },
                 { key: "ads", label: "Google Ads" },
@@ -564,7 +591,7 @@ export function AdminMerchants({
                 { key: "sync", label: "Last sync", num: true },
                 { key: "go", label: "", minor: true },
               ]}
-              lines={shown.map((one) => {
+              lines={rows.map((one) => {
                 const state = adsState(one);
                 const href = `/admin?view=merchant&id=${one.organization_id}`;
                 return {
@@ -623,7 +650,30 @@ export function AdminMerchants({
                 };
               })}
             />
-          </section>
+            <div className="border-ad-rule border-t px-5 py-4">
+              <Pager
+                page={page}
+                per={per}
+                total={total}
+                noun={total === 1 ? "business" : "businesses"}
+                href={(n) => link(show, n)}
+              />
+            </div>
+          </Panel>
+        ) : total > 0 ? (
+          /* A page past the end, from an edited or an old link. */
+          <Empty
+            title={`There is no page ${count(page)}`}
+            words={`${count(total)} ${total === 1 ? "business fills" : "businesses fill"} ${count(pages)} page${pages === 1 ? "" : "s"}.`}
+            action={
+              <Link
+                href={link(show, pages)}
+                className="text-ad-accent hover:text-ad-text text-[13px] font-medium transition-colors"
+              >
+                Go to the last page
+              </Link>
+            }
+          />
         ) : (
           <Empty
             title={
@@ -1394,7 +1444,7 @@ export function AdminQuota({
                                 {who.name}
                               </Link>
                             ) : (
-                              <p className="text-ad-muted">No business on record</p>
+                              <p className="text-ad-muted">Google Ads account</p>
                             )}
                             <p className="ad-num text-ad-faint text-[13px] leading-[18px]">
                               {adsId(one.customer_id)}

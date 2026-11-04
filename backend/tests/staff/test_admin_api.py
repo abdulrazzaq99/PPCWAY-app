@@ -459,6 +459,38 @@ def test_the_jobs_list_comes_in_pages_and_says_how_many_there_are(
         assert (plain["limit"], len(plain["runs"])) == (100, 30)
 
 
+def test_the_merchant_list_comes_in_pages_with_every_tabs_count(
+    world: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    app, factory = world
+    token = signed_in(factory, "help@ppcway.com", Level.SUPPORT)
+    with factory() as session:
+        for at in range(3):
+            place = home_for(session, person(session, f"owner{at}@trade.ie"))
+            place.name = f"Trade {at}"
+        session.commit()
+    with TestClient(app) as client:
+        page = client.get(
+            "/v1/admin/merchants?show=unconnected&limit=2&offset=2", headers=head(token)
+        ).json()
+        assert (page["show"], page["total"], page["offset"], page["limit"]) == (
+            "unconnected",
+            3,
+            2,
+            2,
+        )
+        assert len(page["merchants"]) == 1
+        assert page["counts"] == {"all": 3, "attention": 3, "unconnected": 3}
+        # An edited URL gets the first page of everybody, not an error.
+        odd = client.get(
+            "/v1/admin/merchants?show=everything&limit=0&offset=-1", headers=head(token)
+        ).json()
+        assert (odd["show"], odd["limit"], odd["offset"]) == ("all", 1, 0)
+        # Asked as before, it answers as before.
+        plain = client.get("/v1/admin/merchants", headers=head(token)).json()
+        assert (plain["limit"], len(plain["merchants"])) == (100, 3)
+
+
 def test_the_access_history_names_people_rather_than_ids(
     world: tuple[FastAPI, sessionmaker[Session]],
 ) -> None:

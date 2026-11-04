@@ -460,7 +460,7 @@ export function Table({
               ) : null}
             </div>
             {rest.length ? (
-              <dl className="text-ad-faint mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] leading-[18px]">
+              <dl className="text-ad-faint mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-[13px] leading-[18px]">
                 {rest.map((c) => (
                   <div key={c.key} className="flex items-center gap-1.5">
                     <dt>{c.label}</dt>

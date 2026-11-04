@@ -15,6 +15,9 @@ import {
 
 export const metadata: Metadata = { title: "Merchants · PPCWay internal" };
 
+/* Twenty-five businesses a page, the same as the jobs list. */
+const PER = 25;
+
 /*
   The merchant list, and one merchant's own screen.
 
@@ -31,9 +34,16 @@ export const metadata: Metadata = { title: "Merchants · PPCWay internal" };
 export default async function AdminMerchantsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; q?: string; id?: string; show?: string; all?: string }>;
+  searchParams: Promise<{
+    view?: string;
+    q?: string;
+    id?: string;
+    show?: string;
+    all?: string;
+    page?: string;
+  }>;
 }) {
-  const { view, q, id, show, all } = await searchParams;
+  const { view, q, id, show, all, page: pageAsked } = await searchParams;
   const { data: who, trouble: whoTrouble } = await readWhoami();
   if (!who?.staff) return <NotForYou trouble={whoTrouble} />;
 
@@ -64,15 +74,49 @@ export default async function AdminMerchantsPage({
   }
   if (view === "change-log") return <AdminSpec spec={changeLog} />;
 
-  const [{ data, trouble }, chrome] = await Promise.all([readMerchants(q ?? ""), readChrome(who)]);
+  /*
+    The list, a page at a time. A page number that is not a whole number above
+    zero is page 1, and an unknown tab is everybody: a URL somebody typed must
+    not break the screen they typed it on.
+  */
+  const tab = show === "attention" || show === "unconnected" ? show : "";
+  const page = /^\d+$/.test(pageAsked ?? "") ? Math.max(1, Number(pageAsked)) : 1;
+  const [{ data, trouble }, chrome] = await Promise.all([
+    readMerchants(q ?? "", { show: tab || "all", limit: PER, offset: (page - 1) * PER }),
+    readChrome(who),
+  ]);
+
+  /*
+    An older backend ignores the page and the tab and sends the newest hundred
+    with no counts. Then the hundred are filtered and paged here, which is
+    honest about what can be seen.
+  */
+  const paged = typeof data?.total === "number" && data?.counts;
+  const got = data?.merchants ?? [];
+  const local = {
+    all: got.length,
+    attention: got.filter((one) => one.trouble).length,
+    unconnected: got.filter((one) => !one.connected).length,
+  };
+  const inTab =
+    tab === "attention"
+      ? got.filter((one) => one.trouble)
+      : tab === "unconnected"
+        ? got.filter((one) => !one.connected)
+        : got;
+
   return (
     <AdminMerchants
       who={who}
       chrome={chrome}
-      rows={data?.merchants ?? []}
+      rows={paged ? got : inTab.slice((page - 1) * PER, page * PER)}
+      total={paged ? (data?.total ?? 0) : inTab.length}
+      counts={paged ? data!.counts! : local}
+      page={page}
+      per={PER}
       trouble={trouble}
       lookedFor={q ?? ""}
-      show={show === "attention" || show === "unconnected" ? show : ""}
+      show={tab}
     />
   );
 }

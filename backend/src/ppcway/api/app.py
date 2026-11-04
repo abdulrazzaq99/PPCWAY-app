@@ -2949,14 +2949,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def admin_merchants(
         session: Annotated[Session, Depends(get_session)],
         look_for: str = "",
+        show: str = "all",
+        limit: int = 100,
+        offset: int = 0,
         x_session_token: Annotated[str | None, Header()] = None,
     ) -> dict[str, Any]:
-        """Every business, with enough on each row to decide who needs help."""
+        """Businesses, a page at a time, with enough on each row to decide who
+        needs help.
+
+        `show` is the tab: everybody, those that need a person, or those with no
+        Google Ads account. `total` is how many the tab holds and `counts` is
+        every tab's, under the same search, so the tabs can say how many each
+        holds whichever one is open. Asked as before, it answers as before: the
+        newest hundred.
+        """
         from ppcway.staff import stats
         from ppcway.staff.guard import note_look
 
         account, level = _staff(session, x_session_token, "read_merchant")
-        rows = stats.merchants(session, look_for=look_for)
+        show = show if show in stats.SHOWS else "all"
+        limit = max(1, min(limit, 200))
+        offset = max(0, offset)
+        rows = stats.merchants(session, look_for=look_for, show=show, most=limit, skip=offset)
+        counts = stats.count_merchants(session, look_for=look_for)
         # The list, not one business. Recorded without an organisation rather
         # than not at all: "who went looking through the customer list" is a
         # question worth being able to answer too.
@@ -2979,6 +2994,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 for one in rows
             ],
             "looked_for": look_for,
+            "show": show,
+            "total": counts[show],
+            "counts": counts,
+            "offset": offset,
+            "limit": limit,
         }
 
     @app.get("/v1/admin/merchants/{organization_id}")

@@ -71,6 +71,23 @@ export type MerchantRow = {
   trouble: string;
 };
 
+/*
+  One page of the merchant list. `total` is how many the open tab holds and
+  `counts` is every tab's under the same search. Both are absent from an older
+  backend, which sends the newest hundred and leaves the counting to the screen.
+*/
+export type MerchantShow = "all" | "attention" | "unconnected";
+
+export type MerchantsPage = {
+  merchants: MerchantRow[];
+  looked_for?: string;
+  show?: MerchantShow;
+  total?: number;
+  counts?: Record<MerchantShow, number>;
+  offset?: number;
+  limit?: number;
+};
+
 export type Flag = {
   name: string;
   on: boolean;

@@ -174,6 +174,69 @@ const ROWS: MerchantRow[] = [
   },
 ];
 
+/*
+  More businesses for the paged list: 46 Irish trades after the eight above,
+  three pages in all. None has anything waiting, so the overview's 17 still
+  adds up, and a few are unconnected or stale so the tabs have something to
+  count on every page.
+*/
+const SURNAMES = [
+  "Brennan",
+  "Byrne",
+  "Callaghan",
+  "Carroll",
+  "Connolly",
+  "Daly",
+  "Doherty",
+  "Doyle",
+  "Duffy",
+  "Fitzgerald",
+  "Flanagan",
+  "Gallagher",
+  "Healy",
+  "Keane",
+  "Lynch",
+  "Maguire",
+  "McCarthy",
+  "McGrath",
+  "Moran",
+  "Nolan",
+  "O'Connor",
+  "O'Neill",
+  "Quinn",
+  "Sheehan",
+  "Walsh",
+];
+const TRADES = [
+  "Plumbing",
+  "Roofing",
+  "Electrical",
+  "Glazing",
+  "Carpentry",
+  "Plastering",
+  "Heating",
+  "Joinery",
+  "Painting",
+  "Gutters",
+];
+const MORE: MerchantRow[] = Array.from({ length: 46 }, (_, i) => {
+  const unconnected = i % 9 === 3;
+  const stale = i % 11 === 7;
+  const id = String(3184620573 + i * 7919);
+  return {
+    organization_id: `fx-${String(i).padStart(3, "0")}`,
+    name: `${SURNAMES[(i * 7) % SURNAMES.length]} ${TRADES[(i * 3) % TRADES.length]}`,
+    customer_id: unconnected ? "" : id,
+    connected: !unconnected,
+    account_status: unconnected ? "" : "ENABLED",
+    people: 1 + (i % 4),
+    waiting: 0,
+    applied: (i * 13) % 47,
+    last_sync: unconnected ? null : at(stale ? (2 + (i % 3)) * DAY : (5 + ((i * 17) % 50)) * MIN),
+    trouble: unconnected ? "No Google Ads account connected." : "",
+  };
+});
+
 function fig(label: string, value: number, window = "7d", change: number | null = null): Figure {
   return {
     label,
@@ -567,10 +630,10 @@ const LOOKS: Look[] = [
 export default async function Preview({
   searchParams,
 }: {
-  searchParams: Promise<{ screen?: string; state?: string; page?: string }>;
+  searchParams: Promise<{ screen?: string; state?: string; page?: string; show?: string }>;
 }) {
   if (process.env.NODE_ENV === "production") notFound();
-  const { screen, state, page } = await searchParams;
+  const { screen, state, page, show } = await searchParams;
   const empty = state === "empty";
   const chrome: Chrome = { door: doorOf(PLATFORM), failures: empty ? 0 : FAULTS.length };
 
@@ -669,16 +732,34 @@ export default async function Preview({
       return <AdminPlatform who={WHO} chrome={chrome} view={PLATFORM} trouble="" />;
     case "staff":
       return <AdminStaff who={WHO} chrome={chrome} grants={GRANTS} trouble="" />;
-    default:
+    default: {
+      const every = empty ? [] : [...ROWS, ...MORE];
+      const tab = show === "attention" || show === "unconnected" ? show : "";
+      const inTab =
+        tab === "attention"
+          ? every.filter((r) => r.trouble)
+          : tab === "unconnected"
+            ? every.filter((r) => !r.connected)
+            : every;
+      const atPage = /^\d+$/.test(page ?? "") ? Math.max(1, Number(page)) : 1;
       return (
         <AdminMerchants
           who={WHO}
           chrome={chrome}
-          rows={empty ? [] : ROWS}
+          rows={inTab.slice((atPage - 1) * 25, atPage * 25)}
+          total={inTab.length}
+          counts={{
+            all: every.length,
+            attention: every.filter((r) => r.trouble).length,
+            unconnected: every.filter((r) => !r.connected).length,
+          }}
+          page={atPage}
+          per={25}
           trouble=""
           lookedFor=""
-          show=""
+          show={tab}
         />
       );
+    }
   }
 }

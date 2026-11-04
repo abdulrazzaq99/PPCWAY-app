@@ -6,7 +6,8 @@ import type {
   JobsPage,
   Look,
   Merchant,
-  MerchantRow,
+  MerchantShow,
+  MerchantsPage,
   Overview,
   PlatformView,
   Quota,
@@ -65,9 +66,17 @@ export async function readOverview(window = "7d"): Promise<Read<Overview>> {
   return get<Overview>(`/v1/admin/overview?window=${encodeURIComponent(window)}`);
 }
 
-export async function readMerchants(lookFor = ""): Promise<Read<{ merchants: MerchantRow[] }>> {
-  const q = lookFor ? `?look_for=${encodeURIComponent(lookFor)}` : "";
-  return get<{ merchants: MerchantRow[] }>(`/v1/admin/merchants${q}`);
+export async function readMerchants(
+  lookFor = "",
+  {
+    show = "all",
+    limit = 100,
+    offset = 0,
+  }: { show?: MerchantShow; limit?: number; offset?: number } = {},
+): Promise<Read<MerchantsPage>> {
+  const q = new URLSearchParams({ show, limit: String(limit), offset: String(offset) });
+  if (lookFor) q.set("look_for", lookFor);
+  return get<MerchantsPage>(`/v1/admin/merchants?${q}`);
 }
 
 export async function readMerchant(id: string): Promise<Read<Merchant>> {

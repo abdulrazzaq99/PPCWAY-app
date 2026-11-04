@@ -9,7 +9,9 @@ export const metadata: Metadata = { title: "Quota · PPCWay internal" };
   How much of Google's daily allowance each account has used.
 
   The quota rows carry only a Google Ads id, so the business list is read too
-  and each id is shown with the name a person would recognise. That read is a
+  (the most it gives in one page, 200) and each id is shown with the name a
+  person would recognise. An id with no name in that page is shown as an id,
+  not as a business that does not exist. That read is a
   look through the customer list and is recorded as one, which is honest: this
   screen shows the list's names.
 */
@@ -18,7 +20,7 @@ export default async function AdminQuotaPage() {
   if (!who?.staff) return <NotForYou trouble={whoTrouble} />;
   const [{ data, trouble }, list, chrome] = await Promise.all([
     readQuotaAll(),
-    who.may.includes("read_merchant") ? readMerchants("") : Promise.resolve(null),
+    who.may.includes("read_merchant") ? readMerchants("", { limit: 200 }) : Promise.resolve(null),
     readChrome(who),
   ]);
   const names: Record<string, { name: string; id: string }> = {};

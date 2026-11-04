@@ -24,8 +24,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
-from sqlalchemy import Select, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import Select, func, or_, select
+from sqlalchemy.orm import Session, aliased
 
 from ppcway.ads.mirror import SyncRun
 from ppcway.ads.models import AdsConnection
@@ -440,23 +440,115 @@ class MerchantRow:
         return ""
 
 
-def merchants(session: Session, *, look_for: str = "", most: int = 100) -> list[MerchantRow]:
-    """Every business, newest first, with enough to decide who needs attention.
+#: The merchant list's tabs. "attention" is every business whose row has
+#: trouble to show; "unconnected" is every business with no Google Ads account.
+SHOWS: Final = ("all", "attention", "unconnected")
+
+
+def _newest_connection() -> Any:
+    """The id of a business's newest connection that names a Google Ads account.
+
+    One rule for the row and for the filter. A business can hold more than one
+    connection (a reconnect leaves the old row), and the list used to take
+    whichever the database returned first, so the tab could count a business
+    one way and its row could show it another.
+    """
+    pick = aliased(AdsConnection)
+    return (
+        select(pick.id)
+        .where(pick.organization_id == Organization.id, pick.customer_id != "")
+        .order_by(pick.created_at.desc(), pick.id.desc())
+        .limit(1)
+        .correlate(Organization)
+        .scalar_subquery()
+    )
+
+
+def _businesses(*, look_for: str = "", show: str = "all") -> list[Any]:
+    """The filters a page of the list and its counts share.
+
+    "attention" is `MerchantRow.trouble` written as SQL, so a page of the
+    "Need a person" tab can be read without building every row to find out
+    which ones have trouble. The three tests, in the row's order: no
+    connection; Google reports a status other than ENABLED; never synced to
+    the end. A test in this module keeps the two definitions in step.
+    """
+    where: list[Any] = []
+    if look_for.strip():
+        where.append(func.lower(Organization.name).like(f"%{look_for.strip().lower()}%"))
+    newest = _newest_connection()
+    if show == "unconnected":
+        where.append(newest.is_(None))
+    elif show == "attention":
+        conn, run = aliased(AdsConnection), aliased(SyncRun)
+        bad_status = (
+            select(conn.id)
+            .where(conn.id == newest, conn.account_status.not_in(("ENABLED", "")))
+            .exists()
+        )
+        never_synced = (
+            select(conn.id)
+            .where(
+                conn.id == newest,
+                ~select(run.id)
+                .where(run.customer_id == conn.customer_id, run.finished_at.is_not(None))
+                .exists(),
+            )
+            .exists()
+        )
+        where.append(or_(newest.is_(None), bad_status, never_synced))
+    return where
+
+
+def count_merchants(session: Session, *, look_for: str = "") -> dict[str, int]:
+    """How many businesses each tab holds, under the same search."""
+    return {
+        show: _count(
+            session,
+            select(func.count())
+            .select_from(Organization)
+            .where(*_businesses(look_for=look_for, show=show)),
+        )
+        for show in SHOWS
+    }
+
+
+def merchants(
+    session: Session,
+    *,
+    look_for: str = "",
+    show: str = "all",
+    most: int = 100,
+    skip: int = 0,
+) -> list[MerchantRow]:
+    """Businesses, newest first, a page at a time, with enough on each row to
+    decide who needs attention.
 
     Counted per row rather than in one grouped query, which is slower and
     deliberate: the grouped version needs outer joins across four tables and
-    the first reader to change it will get a count wrong. At a hundred rows the
-    difference is not worth the bug.
+    the first reader to change it will get a count wrong. It is only ever done
+    for one page, so the cost is bounded by the page, not by the platform.
+
+    Ordered by the id after the creation time: businesses made in one
+    transaction share a timestamp, and without a second key a page boundary
+    could fall differently from one request to the next.
     """
-    wanted = select(Organization).order_by(Organization.created_at.desc()).limit(most)
-    if look_for.strip():
-        like = f"%{look_for.strip().lower()}%"
-        wanted = wanted.where(func.lower(Organization.name).like(like))
+    show = show if show in SHOWS else "all"
+    wanted = (
+        select(Organization)
+        .where(*_businesses(look_for=look_for, show=show))
+        .order_by(Organization.created_at.desc(), Organization.id.desc())
+        .offset(max(0, skip))
+        .limit(most)
+    )
 
     out: list[MerchantRow] = []
     for place in session.scalars(wanted):
         connection = session.scalars(
-            select(AdsConnection).where(AdsConnection.organization_id == place.id).limit(1)
+            select(AdsConnection)
+            .where(AdsConnection.organization_id == place.id, AdsConnection.customer_id != "")
+            .order_by(AdsConnection.created_at.desc(), AdsConnection.id.desc())
+            .limit(1)
         ).first()
         customer_id = (connection.customer_id if connection else "") or ""
         last = None
