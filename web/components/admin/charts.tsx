@@ -283,6 +283,8 @@ const RUN_WORDS: Record<RunKind, string> = {
 /*
   Every recent run as one mark, oldest on the left and the newest at the
   right edge, so a gap in the heartbeat or a run of red reads at a glance.
+  On a phone the marks and their gaps narrow to 1px, so a hundred runs need
+  199px and always fit; they never run past the card.
   The marks are runs, not time: the strip shows what happened in order, and
   the table under it says when.
 */
@@ -299,7 +301,7 @@ export function RunStrip({ runs }: { runs: JobRun[] }) {
   return (
     <figure className="ad-strip m-0">
       <div
-        className="flex h-8 items-stretch gap-[2px]"
+        className="flex h-8 items-stretch gap-px sm:gap-[2px]"
         role="img"
         aria-label={`The last ${ordered.length} runs, oldest first: ${kinds
           .map((k) => `${tally[k]} ${RUN_WORDS[k].toLowerCase()}`)
@@ -309,7 +311,7 @@ export function RunStrip({ runs }: { runs: JobRun[] }) {
           <span
             key={one.id}
             title={`${one.kind} ${one.customer_id ? `on ${one.customer_id}` : ""}, ${RUN_WORDS[kindOf(one)].toLowerCase()}, ${dayOf(one.started_at)} ${clock(one.started_at)} UTC`}
-            className={`block max-w-[18px] min-w-[2px] flex-1 rounded-[1px] ${RUN_MARK[kindOf(one)]}`}
+            className={`block max-w-[18px] min-w-px flex-1 rounded-[1px] ${RUN_MARK[kindOf(one)]}`}
           />
         ))}
       </div>

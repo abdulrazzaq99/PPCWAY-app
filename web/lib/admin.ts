@@ -206,6 +206,24 @@ export type JobRun = {
   words: string;
 };
 
+/*
+  One page of job runs, and how many there are in all. `total` and the page
+  fields are absent from an older backend, which sends the latest hundred.
+*/
+export type JobsPage = { runs: JobRun[]; total?: number; offset?: number; limit?: number };
+
+/* The scheduled jobs by the name a person would give them. */
+export const JOB_WORDS: Record<string, string> = {
+  structure: "Structure sync",
+  today: "Today’s figures",
+  backfill: "Backfill",
+  first: "First sync",
+};
+
+export function jobWords(kind: string): string {
+  return JOB_WORDS[kind] ?? words(kind);
+}
+
 export type Fault = {
   where: string;
   what: string;

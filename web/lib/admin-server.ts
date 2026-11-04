@@ -3,7 +3,7 @@ import { doorOf, type Chrome, type Door } from "@/lib/admin";
 import type {
   Fault,
   Grant,
-  JobRun,
+  JobsPage,
   Look,
   Merchant,
   MerchantRow,
@@ -78,9 +78,13 @@ export async function readPlatform(): Promise<Read<PlatformView>> {
   return get<PlatformView>("/v1/admin/platform");
 }
 
-export async function readJobs(failedOnly = false): Promise<Read<{ runs: JobRun[] }>> {
-  const q = failedOnly ? "?failed_only=true" : "";
-  return get<{ runs: JobRun[] }>(`/v1/admin/jobs${q}`);
+export async function readJobs(
+  failedOnly = false,
+  { limit = 100, offset = 0 }: { limit?: number; offset?: number } = {},
+): Promise<Read<JobsPage>> {
+  const q = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (failedOnly) q.set("failed_only", "true");
+  return get<JobsPage>(`/v1/admin/jobs?${q}`);
 }
 
 export async function readErrors(window = "7d"): Promise<Read<{ faults: Fault[] }>> {

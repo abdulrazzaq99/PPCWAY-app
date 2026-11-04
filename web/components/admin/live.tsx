@@ -16,6 +16,7 @@ import {
   dateOf,
   dayHeading,
   direction,
+  jobWords,
   fateOf,
   signed,
   staleness,
@@ -46,6 +47,7 @@ import {
   Mark,
   Meter,
   More,
+  Pager,
   Panel,
   Pill,
   Problem,
@@ -935,27 +937,55 @@ export function AdminJobs({
   who,
   chrome,
   runs,
+  strip,
+  total,
+  totals,
+  page,
+  per,
   trouble,
   failedOnly,
 }: {
   who: Whoami;
   chrome: Chrome;
+  /* This page of the table. */
   runs: JobRun[];
+  /* The latest hundred runs, whichever page is open: the heartbeat. */
+  strip: JobRun[] | null;
+  /* Every run the current tab matches. */
+  total: number;
+  /* Both tabs' totals, where they could be read. */
+  totals: { all?: number; failed?: number };
+  page: number;
+  per: number;
   trouble: string;
   failedOnly: boolean;
 }) {
-  const stuck = runs.filter((one) => one.stuck);
-  const failed = runs.filter((one) => one.status === "failed");
+  /*
+    The pill reads the heartbeat, not the page: "2 never finished" is about the
+    platform now, and page 7 of last week's runs has nothing to say about that.
+  */
+  const recent = strip ?? (page === 1 ? runs : []);
+  const stuck = recent.filter((one) => one.stuck);
+  const failed = recent.filter((one) => one.status === "failed");
+  const pages = Math.max(1, Math.ceil(total / per));
+  const href = (n: number) => {
+    const q = new URLSearchParams();
+    if (failedOnly) q.set("failed", "1");
+    if (n > 1) q.set("page", String(n));
+    const tail = q.toString();
+    return tail ? `/admin/jobs?${tail}` : "/admin/jobs";
+  };
+
   return (
     <Shell who={who} here="/admin/jobs" door={chrome.door} failures={chrome.failures}>
       <Head
         title="Jobs"
         pill={
-          runs.length ? (
+          recent.length ? (
             stuck.length ? (
               <Pill tone="bad">{count(stuck.length)} never finished</Pill>
             ) : failed.length ? (
-              <Pill tone="warn">{count(failed.length)} failed</Pill>
+              <Pill tone="warn">{count(failed.length)} of the latest failed</Pill>
             ) : (
               <Pill tone="good">All finished</Pill>
             )
@@ -963,97 +993,129 @@ export function AdminJobs({
         }
         lead={
           failedOnly
-            ? "The scheduled reads of Google Ads that failed, newest first. Times in UTC."
-            : `The scheduled reads of Google Ads. The last ${count(runs.length)} runs, newest first. Times in UTC.`
+            ? "Every scheduled read of Google Ads that failed, newest first. Times in UTC."
+            : "The scheduled reads of Google Ads, newest first. Times in UTC."
         }
       />
       <div className="mt-5">
         <Tabs
           label="Which runs"
           tabs={[
-            { label: "Every run", href: "/admin/jobs", here: !failedOnly },
-            { label: "Failed only", href: "/admin/jobs?failed=1", here: failedOnly },
+            { label: "Every run", href: "/admin/jobs", count: totals.all, here: !failedOnly },
+            {
+              label: "Failed only",
+              href: "/admin/jobs?failed=1",
+              count: totals.failed,
+              here: failedOnly,
+            },
           ]}
         />
       </div>
 
       <div className="mt-6 grid gap-6">
         <Problem words={trouble} />
+        {!failedOnly && strip?.length ? (
+          <Panel
+            title="Run by run"
+            meta={`The latest ${count(strip.length)}, one mark each. A gap or a red run reads at a glance.`}
+          >
+            <RunStrip runs={strip} />
+          </Panel>
+        ) : null}
+
         {runs.length ? (
-          <>
-            {!failedOnly ? (
-              <Panel
-                title="Run by run"
-                meta="Each mark is one run. A gap or a red run reads at a glance."
-              >
-                <RunStrip runs={runs} />
-              </Panel>
-            ) : null}
-            <section className="border-ad-border bg-ad-surface overflow-hidden rounded-[6px] border">
-              <Table
-                caption="Job runs"
-                title="job"
-                lead="state"
-                cols={[
-                  { key: "job", label: "Job", width: "22%" },
-                  { key: "state", label: "State" },
-                  { key: "said", label: "What happened", width: "38%" },
-                  { key: "took", label: "Took", num: true },
-                  { key: "when", label: "Started", num: true },
-                ]}
-                lines={runs.map((one) => {
-                  const state = runState(one);
-                  return {
-                    id: one.id,
-                    cells: {
-                      job: (
-                        <div className="min-w-0">
-                          <p className="font-medium">{words(one.kind)}</p>
-                          <p className="ad-num text-ad-faint text-[13px] leading-[18px]">
-                            {one.customer_id ? adsId(one.customer_id) : "Every account"}
-                          </p>
-                        </div>
-                      ),
-                      state: <Pill tone={state.tone}>{state.words}</Pill>,
-                      /*
-                        A clean run's sentence only repeats the Took column, so
-                        it is left out and the rows that say something stand
-                        out by having something to say.
-                      */
-                      said:
-                        state.words === "Finished" ? (
-                          <span className="text-ad-faint">-</span>
-                        ) : (
-                          <span className={state.tone === "bad" ? "text-ad-text" : ""}>
+          <Panel
+            title={failedOnly ? "Failed runs" : "Every run"}
+            meta={`${count(total)} in all, newest first. Page ${count(page)} of ${count(pages)}.`}
+            flush
+            className="overflow-clip"
+          >
+            <Table
+              caption={failedOnly ? "Failed job runs" : "Job runs"}
+              title="job"
+              lead="state"
+              stickyHead
+              cols={[
+                { key: "job", label: "Job", width: "26%" },
+                { key: "state", label: "What happened" },
+                { key: "took", label: "Took", num: true },
+                { key: "when", label: "Started", num: true },
+              ]}
+              lines={runs.map((one) => {
+                const state = runState(one);
+                return {
+                  id: one.id,
+                  cells: {
+                    job: (
+                      <div className="min-w-0">
+                        <p className="font-medium">{jobWords(one.kind)}</p>
+                        <p className="ad-num text-ad-faint text-[13px] leading-[18px]">
+                          {one.customer_id ? adsId(one.customer_id) : "Every account"}
+                        </p>
+                      </div>
+                    ),
+                    /*
+                      The state, and under it what happened when there is
+                      something to say. A clean run's sentence only repeated
+                      the Took column, and on a quiet day it left a column of
+                      dashes across the whole table.
+                    */
+                    state: (
+                      <div className="flex min-w-0 flex-col items-start gap-1">
+                        <Pill tone={state.tone}>{state.words}</Pill>
+                        {state.words !== "Finished" ? (
+                          <p
+                            className={`text-[13px] leading-[18px] ${
+                              state.tone === "bad" ? "text-ad-text" : "text-ad-muted"
+                            }`}
+                          >
                             {one.words}
-                          </span>
-                        ),
-                      took:
-                        one.took_seconds === null ? (
-                          <span className="text-ad-faint">-</span>
-                        ) : (
-                          `${count(one.took_seconds)} s`
-                        ),
-                      when: (
-                        <div>
-                          <p>{clock(one.started_at)}</p>
-                          <p className="text-ad-faint text-[13px] leading-[18px]">
-                            {ago(one.started_at)}
                           </p>
-                        </div>
+                        ) : null}
+                      </div>
+                    ),
+                    took:
+                      one.took_seconds === null ? (
+                        <span className="text-ad-faint">-</span>
+                      ) : (
+                        `${count(one.took_seconds)} s`
                       ),
-                    },
-                  };
-                })}
-              />
-            </section>
-          </>
+                    when: (
+                      <div>
+                        <p>{stamp(one.started_at)}</p>
+                        <p className="text-ad-faint text-[13px] leading-[18px]">
+                          {ago(one.started_at)}
+                        </p>
+                      </div>
+                    ),
+                  },
+                };
+              })}
+            />
+            <div className="border-ad-rule border-t px-5 py-4">
+              <Pager page={page} per={per} total={total} noun="runs" href={href} />
+            </div>
+          </Panel>
+        ) : total > 0 ? (
+          /* A page past the end, from an edited or an old link. */
+          <Empty
+            title={`There is no page ${count(page)}`}
+            words={`${count(total)} runs fill ${count(pages)} page${pages === 1 ? "" : "s"}.`}
+            action={
+              <Link
+                href={href(pages)}
+                className="text-ad-accent hover:text-ad-text text-[13px] font-medium transition-colors"
+              >
+                Go to the last page
+              </Link>
+            }
+          />
         ) : (
           <Empty
             title={failedOnly ? "No run has failed" : "Nothing has run yet"}
             words={
               failedOnly
-                ? "Every recent run finished."
+                ? "Every recorded run finished or is still running."
                 : "A fresh deployment has run no jobs. The syncs start on their own schedule."
             }
           />

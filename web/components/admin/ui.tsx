@@ -1,6 +1,7 @@
+import { CaretLeftIcon, CaretRightIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
-import { initials, tintOf } from "@/lib/admin";
+import { count, initials, tintOf } from "@/lib/admin";
 
 /*
   The console's parts. Every screen is built from these, so the rules are
@@ -374,6 +375,7 @@ export function Table({
   title,
   lead,
   caption,
+  stickyHead = false,
 }: {
   cols: Col[];
   lines: Line[];
@@ -382,6 +384,12 @@ export function Table({
   /* The key figure: the right of line 1 on the phone. */
   lead?: string;
   caption: string;
+  /*
+    Keep the header row in view under the top bar while a long page scrolls.
+    The panel around it must clip rather than hide its overflow, or the header
+    sticks to the panel instead of the window.
+  */
+  stickyHead?: boolean;
 }) {
   const rest = cols.filter((c) => c.key !== title && c.key !== lead && !c.minor);
   return (
@@ -398,6 +406,10 @@ export function Table({
                   style={c.width ? { width: c.width } : undefined}
                   className={`text-ad-faint h-9 px-5 text-[12px] font-normal whitespace-nowrap ${
                     c.num ? "text-right" : "text-left"
+                  } ${
+                    stickyHead
+                      ? "bg-ad-surface sticky z-10 shadow-[0_1px_0_var(--ad-border)] md:top-14 lg:top-16"
+                      : ""
                   }`}
                 >
                   {c.label}
@@ -461,6 +473,148 @@ export function Table({
         ))}
       </ul>
     </>
+  );
+}
+
+/* ---------- paging ---------- */
+
+/*
+  The pages a pager names: always the first and the last, the current one and
+  its neighbours, and a gap wherever pages are skipped. "1 ... 4 5 6 ... 52".
+*/
+function pageList(page: number, pages: number): (number | "gap")[] {
+  const keep = new Set([1, pages, page - 1, page, page + 1].filter((n) => n >= 1 && n <= pages));
+  const out: (number | "gap")[] = [];
+  let last = 0;
+  for (const n of [...keep].sort((a, b) => a - b)) {
+    if (n - last === 2) out.push(n - 1);
+    else if (n - last > 2) out.push("gap");
+    out.push(n);
+    last = n;
+  }
+  return out;
+}
+
+/*
+  A full list's paging: the range in words on the left, the pages on the
+  right. Plain links, so every page has its own address and works without a
+  script. The current page carries the console's one selection mark, the 1px
+  accent line as wide as its number; Previous and Next are the controls, and
+  at either end they stay in place, dimmed, so the row does not shift.
+*/
+export function Pager({
+  page,
+  per,
+  total,
+  noun,
+  href,
+}: {
+  page: number;
+  per: number;
+  total: number;
+  /* What is being counted, plural: "runs". */
+  noun: string;
+  href: (page: number) => string;
+}) {
+  const pages = Math.max(1, Math.ceil(total / per));
+  const from = total ? (page - 1) * per + 1 : 0;
+  const to = Math.min(total, page * per);
+  const step =
+    "inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors";
+  return (
+    <nav
+      aria-label={`Pages of ${noun}`}
+      className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3"
+    >
+      <p className="text-ad-muted text-[13px] leading-[20px]">
+        <span className="ad-num text-ad-text">
+          {count(from)}-{count(to)}
+        </span>{" "}
+        of <span className="ad-num text-ad-text">{count(total)}</span> {noun}
+      </p>
+      {pages > 1 ? (
+        <ul className="flex flex-wrap items-center gap-1">
+          <li>
+            {page > 1 ? (
+              <Link
+                href={href(page - 1)}
+                rel="prev"
+                className={`${step} text-ad-text border-ad-control hover:border-ad-faint border`}
+              >
+                <CaretLeftIcon size={13} aria-hidden />
+                Previous
+              </Link>
+            ) : (
+              <span
+                aria-disabled="true"
+                className={`${step} border-ad-border text-ad-faint border opacity-60`}
+              >
+                <CaretLeftIcon size={13} aria-hidden />
+                Previous
+              </span>
+            )}
+          </li>
+          {/*
+            On a phone the numbers would wrap the row onto two lines, so it
+            says where you are in words between the two controls instead.
+          */}
+          <li className="text-ad-muted px-2 text-[13px] sm:hidden">
+            Page <span className="ad-num text-ad-text">{count(page)}</span> of{" "}
+            <span className="ad-num">{count(pages)}</span>
+          </li>
+          {pageList(page, pages).map((n, at) =>
+            n === "gap" ? (
+              <li
+                key={`gap-${at}`}
+                aria-hidden
+                className="text-ad-faint px-1.5 text-[13px] max-sm:hidden"
+              >
+                &hellip;
+              </li>
+            ) : (
+              <li key={n} className="max-sm:hidden">
+                <Link
+                  href={href(n)}
+                  aria-label={`Page ${n}`}
+                  aria-current={n === page ? "page" : undefined}
+                  className={`ad-num relative inline-flex h-8 min-w-8 items-center justify-center px-2 text-[13px] transition-colors ${
+                    n === page ? "text-ad-text font-medium" : "text-ad-faint hover:text-ad-text"
+                  }`}
+                >
+                  {count(n)}
+                  {n === page ? (
+                    <span
+                      aria-hidden
+                      className="bg-ad-accent absolute right-2 bottom-1 left-2 h-px"
+                    />
+                  ) : null}
+                </Link>
+              </li>
+            ),
+          )}
+          <li>
+            {page < pages ? (
+              <Link
+                href={href(page + 1)}
+                rel="next"
+                className={`${step} text-ad-text border-ad-control hover:border-ad-faint border`}
+              >
+                Next
+                <CaretRightIcon size={13} aria-hidden />
+              </Link>
+            ) : (
+              <span
+                aria-disabled="true"
+                className={`${step} border-ad-border text-ad-faint border opacity-60`}
+              >
+                Next
+                <CaretRightIcon size={13} aria-hidden />
+              </span>
+            )}
+          </li>
+        </ul>
+      ) : null}
+    </nav>
   );
 }
 

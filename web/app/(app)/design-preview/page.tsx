@@ -353,21 +353,22 @@ const FAULTS: Fault[] = [
 ];
 
 /*
-  The last 60 runs: a structure sync every few minutes across the connected
-  accounts, the nightly metrics read, three failures, two that never
-  finished and one running now.
+  240 runs, ten pages: a structure sync every few minutes across the
+  connected accounts, today's figures every ninth, one backfill, five
+  failures, two that never finished and one running now.
 */
-function runs(): JobRun[] {
+function runs(n = 240): JobRun[] {
   const accounts = ROWS.filter((r) => r.connected).map((r) => r.customer_id);
   const out: JobRun[] = [];
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < n; i++) {
     const started = i * 13 * MIN + 2 * MIN;
     const customer = accounts[i % accounts.length];
-    const kind = i % 9 === 4 ? "metrics" : "structure";
-    const failed = i === 6 || i === 23 || i === 41;
+    const kind = i % 9 === 4 ? "today" : i === 131 ? "backfill" : "structure";
+    const failed = i === 6 || i === 23 || i === 41 || i === 77 || i === 152;
     const stuck = i === 9 || i === 10;
     const running = i === 0;
-    const took = running || stuck ? null : kind === "metrics" ? 74 + (i % 7) * 9 : 6 + (i % 5) * 3;
+    const took =
+      running || stuck ? null : kind === "structure" ? 6 + (i % 5) * 3 : 74 + (i % 7) * 9;
     out.push({
       id: `run-${i}`,
       customer_id: customer,
@@ -566,10 +567,10 @@ const LOOKS: Look[] = [
 export default async function Preview({
   searchParams,
 }: {
-  searchParams: Promise<{ screen?: string; state?: string }>;
+  searchParams: Promise<{ screen?: string; state?: string; page?: string }>;
 }) {
   if (process.env.NODE_ENV === "production") notFound();
-  const { screen, state } = await searchParams;
+  const { screen, state, page } = await searchParams;
   const empty = state === "empty";
   const chrome: Chrome = { door: doorOf(PLATFORM), failures: empty ? 0 : FAULTS.length };
 
@@ -617,16 +618,24 @@ export default async function Preview({
           trouble=""
         />
       );
-    case "jobs":
+    case "jobs": {
+      const every = empty ? [] : runs();
+      const at = /^\d+$/.test(page ?? "") ? Math.max(1, Number(page)) : 1;
       return (
         <AdminJobs
           who={WHO}
           chrome={chrome}
-          runs={empty ? [] : runs()}
+          runs={every.slice((at - 1) * 25, at * 25)}
+          strip={every.slice(0, 100)}
+          total={every.length}
+          totals={{ all: every.length, failed: every.filter((r) => r.status === "failed").length }}
+          page={at}
+          per={25}
           trouble=""
           failedOnly={false}
         />
       );
+    }
     case "errors":
       return (
         <AdminErrors
