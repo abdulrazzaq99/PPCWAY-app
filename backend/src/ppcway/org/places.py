@@ -54,7 +54,25 @@ def home_for(session: DbSession, account: UserAccount) -> Organization:
     An existing membership is still honoured: somebody who was a customer
     before they joined PPCWay keeps their business, and that is a real
     situation rather than a bug.
+
+    **One business, even when the first page load asks four times at once.**
+    This reads and then writes, and a dashboard opening fires several requests
+    together. Each one found no membership, none could see the others'
+    uncommitted row, and each made a business: two were found in production for
+    one account, which is why the internal panel listed the same name twice.
+
+    So the account's own row is taken for update first. Concurrent callers
+    queue on it, and the one that waited sees the membership the first one
+    committed. The lock is on `account` rather than on `organization` because
+    the account is what exists before the race starts.
     """
+    # Postgres only. SQLite has no row locks and no concurrency to speak of in
+    # the tests, so there it is a plain no-op rather than an error.
+    if session.bind is not None and session.bind.dialect.name == "postgresql":
+        session.execute(
+            select(UserAccount.id).where(UserAccount.id == account.id).with_for_update()
+        )
+
     place = session.scalar(
         select(Organization)
         .join(Membership, Membership.organization_id == Organization.id)
