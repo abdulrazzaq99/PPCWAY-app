@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -18,12 +18,14 @@ from sqlalchemy.orm import Session as DbSession
 
 from ppcway.ads.mirror import MICRO, CampaignDay, MirrorCampaign
 from ppcway.auth.models import UserAccount  # noqa: F401 - a foreign key target
+from ppcway.chat import tools as toolbox
 from ppcway.chat.ask import (
     DISCLOSURE,
     FALLBACK,
     HOW_TO_ANSWER,
     MOST_ROUNDS,
     NotAllowed,
+    Spent,
     answer,
     may_chat,
 )
@@ -175,6 +177,148 @@ def test_the_conversation_so_far_goes_to_the_model_before_the_question(
     sent = models.asked[0]["said"]
     assert sent[:2] == earlier
     assert sent[2] == {"role": "user", "content": "And the week before?"}
+
+
+def _costing(answer_: Answer, *, given: int, made: int) -> Answer:
+    """The same reply, with the tokens a real call would report."""
+    from dataclasses import replace
+
+    return replace(answer_, input_tokens=given, output_tokens=made, took_ms=900)
+
+
+def test_every_model_call_a_question_takes_is_counted(db: DbSession) -> None:
+    """Each round of looking things up and the answer itself. The monthly
+    ceiling sums what is counted here, and a call left out is one it never
+    sees."""
+    an_account(db)
+    spent = Spent()
+    models = Saying(
+        _costing(_wants("get_metrics", days=7), given=4_000, made=60),
+        _costing(_words("Your ads brought people in this week."), given=5_200, made=90),
+    )
+    list(
+        answer(
+            models,
+            db,
+            "how did my ads do this week?",
+            organization_id=uuid.uuid4(),
+            customer_id=CUSTOMER,
+            currency="CAD",
+            role=Role.OWNER,
+            today=TODAY,
+            spent=spent,
+        )
+    )
+    assert (spent.input_tokens, spent.output_tokens, spent.took_ms) == (9_200, 150, 1_800)
+    assert spent.model == SONNET
+
+
+def test_the_rewrite_the_number_check_asks_for_is_counted_too(db: DbSession) -> None:
+    an_account(db)
+    spent = Spent()
+    models = Saying(
+        _costing(_words("You spent 987654 dollars."), given=3_000, made=40),
+        _costing(_words("I do not have that figure."), given=3_100, made=30),
+    )
+    list(
+        answer(
+            models,
+            db,
+            "how much have I spent?",
+            organization_id=uuid.uuid4(),
+            customer_id=CUSTOMER,
+            currency="CAD",
+            role=Role.OWNER,
+            today=TODAY,
+            spent=spent,
+        )
+    )
+    assert (spent.input_tokens, spent.output_tokens) == (6_100, 70)
+
+
+def a_busier_week(db: DbSession) -> None:
+    """Last week costlier than the one before, so their spends differ."""
+    db.add(
+        MirrorCampaign(
+            id=uuid.uuid4(),
+            customer_id=CUSTOMER,
+            resource_name=f"customers/{CUSTOMER}/campaigns/12",
+            campaign_id="12",
+            name="Boiler repair",
+            status="ENABLED",
+            channel="SEARCH",
+            budget_micros=round(25.0 * MICRO),
+            seen_at=NOW,
+        )
+    )
+    for back in range(1, 61):
+        db.add(
+            CampaignDay(
+                id=uuid.uuid4(),
+                customer_id=CUSTOMER,
+                campaign_id="12",
+                day=TODAY - timedelta(days=back),
+                impressions=500,
+                clicks=25,
+                cost_micros=round((20.0 if back <= 7 else 15.0) * MICRO),
+                conversions=2.0,
+                calls=1.0,
+                refreshed_at=NOW,
+            )
+        )
+    db.commit()
+
+
+def test_a_number_the_lookup_gave_the_model_is_one_it_may_say(db: DbSession) -> None:
+    """Found on the live chat: "compared with CAD 150.45 before" was rejected
+    as invented, though the lookup had given the model exactly that figure as
+    the week before's spend. So were the window's dates. The rewrite was then
+    told the number came from nowhere, could not fix it, and the merchant got
+    the fallback. A number a lookup returned this turn is a number Otto may
+    say, in the form it was given or rounded."""
+    a_busier_week(db)
+    # What the lookup itself hands the model, so the sentence quotes exactly
+    # that: the window's dates, the week before's spend, and the calls.
+    looked = toolbox.run(
+        "get_metrics",
+        toolbox.Asked(
+            session=db,
+            organization_id=uuid.uuid4(),
+            customer_id=CUSTOMER,
+            currency="CAD",
+            args={"days": 7},
+            today=TODAY,
+            handles=None,
+            connection=None,
+        ),
+    ).data
+    start, end = date.fromisoformat(looked["from"]), date.fromisoformat(looked["to"])
+    assert looked["spend_before"] != looked["spend"], "the fixture's weeks must differ"
+    models = Saying(
+        _wants("get_metrics", days=7),
+        _words(
+            f"Between {start.day} {start:%B} and {end.day} {end:%B} you spent"
+            f" CAD {looked['spend']:,.2f}, against CAD {looked['spend_before']:,.2f} the week"
+            f" before, and {round(looked['calls'])} people called."
+        ),
+    )
+    said = _run(db, models)
+    assert said[-1].kind == "answer"
+    assert "could not write them up" not in said[-1].words
+    assert len(models.asked) == 2, "no rewrite was needed"
+
+
+def test_a_number_no_lookup_returned_is_still_caught(db: DbSession) -> None:
+    """Licensing what the lookups gave is not licensing everything: a figure
+    Otto worked out itself, like a cost per click, is still not one it may say."""
+    a_busier_week(db)
+    models = Saying(
+        _wants("get_metrics", days=7),
+        _words("You paid CAD 0.80 a click."),
+        _words("You paid CAD 0.80 a click."),
+    )
+    said = _run(db, models)
+    assert said[-1].words == FALLBACK
 
 
 def test_a_number_no_tool_returned_is_rewritten_once(db: DbSession) -> None:

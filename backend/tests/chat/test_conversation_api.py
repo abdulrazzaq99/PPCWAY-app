@@ -31,9 +31,12 @@ from ppcway.auth.models import UserAccount
 from ppcway.auth.sessions import sign_in_existing
 from ppcway.chat import ask as asking
 from ppcway.chat.ask import Said
+from ppcway.chat.transcript import Turn, this_month
 from ppcway.config import Settings
 from ppcway.db.base import Base
 from ppcway.db.session import get_session
+from ppcway.model.service import Answer
+from ppcway.org.models import Organization
 from ppcway.org.places import home_for
 from ppcway.staff import models as _staff_tables  # noqa: F401 - home_for reads staff_grant
 
@@ -54,9 +57,28 @@ def world(
     seen: list[dict[str, Any]] = []
 
     def recording(
-        models: Any, session: Any, question: str, *, history: Any = (), **_: Any
+        models: Any,
+        session: Any,
+        question: str,
+        *,
+        history: Any = (),
+        spent: Any = None,
+        **_: Any,
     ) -> Iterator[Said]:
         seen.append({"question": question, "history": list(history)})
+        if spent is not None:
+            # What one real call reports, in OpenRouter's spelling. A question
+            # can ask for a costlier one by saying "expensive".
+            spent.add(
+                Answer(
+                    text="",
+                    model="anthropic/claude-sonnet-5.5",
+                    prompt_version="otto-test",
+                    input_tokens=7_000_000 if "expensive" in question else 4_000,
+                    output_tokens=200,
+                    took_ms=1_200,
+                )
+            )
         yield Said(kind="answer", words=f"About: {question}")
 
     monkeypatch.setattr(asking, "answer", recording)
@@ -164,3 +186,44 @@ def test_somebody_elses_conversation_is_not_read(
         )
     assert mine != theirs
     assert seen[1]["history"] == []
+
+
+def test_what_a_question_cost_is_written_down_and_counted(
+    world: tuple[FastAPI, sessionmaker[Session], list[dict[str, Any]]],
+) -> None:
+    """It used to be written down as nothing, so the ceiling never moved."""
+    app, factory, _seen = world
+    token = a_merchant(factory, "dana@alphaplumbing.ie")
+    with TestClient(app) as client:
+        ask(client, token, question="How did last week go?")
+    with factory() as session:
+        turn = session.query(Turn).one()
+        assert (turn.input_tokens, turn.output_tokens) == (4_000, 200)
+        assert turn.cost_usd > 0
+        assert this_month(session, turn.organization_id).used_usd == turn.cost_usd
+
+
+def test_the_ceiling_refuses_the_next_question_once_it_is_reached(
+    world: tuple[FastAPI, sessionmaker[Session], list[dict[str, Any]]],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """One very long question spends past the Starter plan's provisional
+    ceiling. The next is refused before a token is spent, in words that do not
+    blame the merchant, and the crossing is logged for whoever is on call."""
+    app, factory, seen = world
+    token = a_merchant(factory, "dana@alphaplumbing.ie")
+    with TestClient(app) as client, caplog.at_level("WARNING"):
+        ask(client, token, question="An expensive question about a whole year")
+        refused = client.post(
+            "/v1/otto/ask", headers={"x-session-token": token}, json={"question": "And now?"}
+        )
+    assert refused.status_code == 429
+    assert "limit of what PPCWay spends" in refused.json()["detail"]
+    assert "you have spent" not in refused.json()["detail"].lower()
+    assert len(seen) == 1, "the refused question never reached the model"
+    logged = [one.getMessage() for one in caplog.records]
+    assert any("reached its monthly ceiling" in one for one in logged)
+    assert any("crossed 80% of its monthly ceiling" in one for one in logged)
+    with factory() as session:
+        place = session.query(Organization).one()
+        assert this_month(session, place.id).spent_out

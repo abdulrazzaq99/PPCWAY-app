@@ -259,6 +259,60 @@ def _allowed(figures: Iterable[Figure]) -> set[float]:
     return ok
 
 
+#: An ISO date as a lookup returns it. A sentence says "28 October", so the
+#: day, the month and the year are each a number it may use.
+_ISO_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
+
+
+def numbers_given(data: Any) -> set[float]:
+    """Every number a lookup put in front of the model, as a sentence would say it.
+
+    The rule the tools were written to: a number the model was given is a
+    number it may say. A lookup returns its figures and also the rest of what
+    it read -- the period before, calls and forms, the window's dates -- and
+    the model rightly quotes those too. Checked against the figures alone,
+    "compared with CAD 150.45 before" was rejected as invented while the
+    lookup had supplied exactly 150.45, and the rewrite could not fix what was
+    not wrong.
+
+    Each value counts with the forms a sentence would use: rounded, and a share
+    as a percentage. Numbers inside text count too (a campaign called "Boiler
+    24/7", our own verdict sentences), because the model saw them. What is
+    still not licensed is anything the model works out for itself.
+    """
+    out: set[float] = set()
+
+    def plain(value: float) -> None:
+        number = abs(float(value))
+        out.update({number, round(number, 2), round(number, 1), float(round(number))})
+        if 0 < number < 1:
+            percent = number * 100
+            out.update({percent, round(percent, 2), round(percent, 1), float(round(percent))})
+
+    def walk(value: Any) -> None:
+        if isinstance(value, bool) or value is None:
+            return
+        if isinstance(value, (int, float)):
+            plain(value)
+        elif isinstance(value, str):
+            dated = _ISO_DATE.match(value)
+            if dated:
+                for part in dated.groups():
+                    plain(float(part))
+            else:
+                for number in numbers_in(value):
+                    plain(number)
+        elif isinstance(value, dict):
+            for one in value.values():
+                walk(one)
+        elif isinstance(value, (list, tuple, set)):
+            for one in value:
+                walk(one)
+
+    walk(data)
+    return out
+
+
 def unmatched(
     text: str,
     figures: Sequence[Figure],

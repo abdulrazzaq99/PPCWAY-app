@@ -37,7 +37,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
-from ppcway.model.jobs import HAIKU, OPUS, SONNET
+from ppcway.model.jobs import FOR_OPENROUTER, HAIKU, OPUS, SONNET
 
 #: True while the figures in this file are ours rather than the client's. A
 #: test asserts it, so that it has to be changed deliberately along with them.
@@ -111,6 +111,23 @@ def plan_for(name: str) -> Plan:
     return PLANS.get((name or "").strip().lower(), PLANS[FALLBACK])
 
 
+def priced_as(model: str) -> str | None:
+    """The name a model's price is kept under, whichever provider spelled it.
+
+    OpenRouter echoes "anthropic/claude-sonnet-5.5" where the price table says
+    "claude-sonnet-5-5", and a name the table does not know is priced at
+    nothing. Every chat turn went through OpenRouter under its spelling, so
+    every turn cost nothing and the monthly ceiling could never be reached. A
+    dated or tagged variant of a known spelling counts as that model.
+    """
+    if model in PER_MILLION:
+        return model
+    for canonical, spelled in FOR_OPENROUTER.items():
+        if model == spelled or model.startswith((f"{spelled}-", f"{spelled}:")):
+            return canonical
+    return None
+
+
 def cost_of(model: str, *, input_tokens: int, output_tokens: int, cached: int = 0) -> float:
     """An estimate of what one model call cost, in US dollars.
 
@@ -120,7 +137,7 @@ def cost_of(model: str, *, input_tokens: int, output_tokens: int, cached: int = 
     where the cached ones are not also in the first, and getting that backwards
     would overstate every cached call.
     """
-    prices = PER_MILLION.get(model)
+    prices = PER_MILLION.get(priced_as(model) or "")
     if prices is None:
         return 0.0
     rate_in, rate_out, rate_cached = prices

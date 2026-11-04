@@ -168,3 +168,37 @@ def test_a_caller_may_license_numbers_that_are_not_figures() -> None:
 def test_small_counting_words_are_not_treated_as_claims() -> None:
     spend = a_figure()
     assert unmatched("Both of your 2 campaigns spent 412.50.", [spend]) == []
+
+
+# --- numbers a lookup gave the model ----------------------------------------
+
+
+def test_every_number_a_lookup_returned_may_be_said() -> None:
+    """A number the model was given is one it may say, nested or not."""
+    from ppcway.metric.figures import numbers_given
+
+    given = numbers_given(
+        {
+            "spend_before": 150.4512,
+            "calls": 7,
+            "rows": [{"clicks": 42}, {"clicks": 9}],
+            "read": True,
+            "nothing": None,
+        }
+    )
+    assert {150.4512, 150.45, 150.5, 150.0, 7.0, 42.0, 9.0} <= given
+    assert 1.0 not in given, "a True is not the number one"
+
+
+def test_a_date_gives_its_day_month_and_year() -> None:
+    """A sentence says "29 October 2026", not "2026-10-29"."""
+    from ppcway.metric.figures import numbers_given
+
+    assert {29.0, 10.0, 2026.0} <= numbers_given({"from": "2026-10-29"})
+
+
+def test_a_share_may_be_said_as_a_percentage_and_text_counts_too() -> None:
+    from ppcway.metric.figures import numbers_given
+
+    given = numbers_given({"impression_share": 0.634, "campaign": "Boiler repair 24/7"})
+    assert {63.4, 63.0, 24.0, 7.0} <= given

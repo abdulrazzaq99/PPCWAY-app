@@ -1652,6 +1652,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             said = ""
             source = "refused"
             looked: list[str] = []
+            # Every model call this question takes, so the monthly ceiling
+            # counts what it costs. It used to be recorded as nothing.
+            spent = asking.Spent()
             # First, which conversation this is, so the screen can carry it on.
             yield f"data: {json_dumps({'kind': 'conversation', 'id': str(held.id)})}\n\n"
             for step in asking.answer(
@@ -1664,6 +1667,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 role=role,
                 connection=connection,
                 history=history,
+                spent=spent,
             ):
                 if step.kind in {"looking", "writing"}:
                     looked.append(step.words)
@@ -1686,7 +1690,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     tools_used=looked,
                     figure_ids=[],
                     invented=[],
+                    model=spent.model,
+                    input_tokens=spent.input_tokens,
+                    output_tokens=spent.output_tokens,
+                    cached_tokens=spent.cached_tokens,
+                    took_ms=spent.took_ms,
                 )
+                # Half and four fifths of PPCWay's own ceiling, once each as
+                # the month crosses them. The internal console's overview lists
+                # the businesses past four fifths for whoever is on call.
+                after = transcripts.this_month(own, place.id)
+                if after.spent_out and not standing.spent_out:
+                    log.warning(
+                        "chat spend for organisation %s reached its monthly ceiling;"
+                        " its questions are refused until next month",
+                        place.id,
+                    )
+                crossed = transcripts.crossed_a_line(standing, after)
+                if crossed is not None:
+                    log.warning(
+                        "chat spend for organisation %s crossed %d%% of its monthly ceiling",
+                        place.id,
+                        round(crossed * 100),
+                    )
             yield 'data: {"kind": "done"}\n\n'
 
         return StreamingResponse(

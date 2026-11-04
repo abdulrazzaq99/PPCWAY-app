@@ -348,7 +348,9 @@ def crossed_a_line(before: Spend, after: Spend) -> float | None:
     """
     from ppcway.chat.plans import WARN_AT
 
-    for line in WARN_AT:
+    # Highest first: one long question can jump past both, and then the alert
+    # that matters is four fifths, not the half it also passed on the way.
+    for line in sorted(WARN_AT, reverse=True):
         if before.share_used < line <= after.share_used:
             return line
     return None

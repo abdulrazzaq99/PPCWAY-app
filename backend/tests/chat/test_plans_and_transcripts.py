@@ -112,6 +112,21 @@ def test_a_model_nobody_priced_costs_nothing_rather_than_guessing() -> None:
     assert cost_of("claude-something-new", input_tokens=1_000_000, output_tokens=100) == 0.0
 
 
+def test_openrouters_name_for_a_model_is_priced_like_ours() -> None:
+    """Every chat turn goes through OpenRouter, which echoes its own spelling.
+    Priced at nothing, the monthly ceiling could never be reached."""
+    ours = cost_of(SONNET, input_tokens=10_000, output_tokens=500)
+    assert ours > 0
+    assert cost_of("anthropic/claude-sonnet-5.5", input_tokens=10_000, output_tokens=500) == ours
+    # A dated or tagged variant of a known spelling is that model too.
+    assert (
+        cost_of("anthropic/claude-sonnet-5.5-20261101", input_tokens=10_000, output_tokens=500)
+        == ours
+    )
+    # A name nobody priced still costs nothing rather than a guess.
+    assert cost_of("anthropic/claude-sonnet-9.9", input_tokens=10_000, output_tokens=500) == 0
+
+
 def test_cached_input_is_cheaper_not_extra() -> None:
     """Anthropic reports cached tokens separately from fresh ones. Adding them
     on top of the input count would overstate every cached call."""
@@ -370,6 +385,16 @@ def test_each_threshold_is_noticed_once_as_it_is_crossed(line: float) -> None:
     after = Spend(used_usd=line * 10, ceiling_usd=10.0, questions=2, questions_allowed=100)
     assert crossed_a_line(before, after) == line
     assert crossed_a_line(after, after) is None, "and not again once past it"
+
+
+def test_one_question_past_both_lines_reports_the_higher() -> None:
+    """A single long question can jump from nothing to past four fifths. The
+    alert that matters then is four fifths, not the half it passed on the way."""
+    from ppcway.chat.transcript import Spend
+
+    before = Spend(used_usd=0.0, ceiling_usd=10.0, questions=0, questions_allowed=100)
+    after = Spend(used_usd=9.0, ceiling_usd=10.0, questions=1, questions_allowed=100)
+    assert crossed_a_line(before, after) == max(WARN_AT)
 
 
 def test_twelve_months_is_the_window() -> None:

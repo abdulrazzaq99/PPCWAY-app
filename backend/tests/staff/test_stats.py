@@ -426,6 +426,46 @@ def test_no_businesses_at_all_is_not_reported_as_trouble(
         assert platform(session, now=NOW).trouble == ()
 
 
+def spent_this_month(session: DbSession, place: uuid.UUID, usd: float) -> None:
+    """One chat turn costing this much, this month."""
+    from ppcway.chat.transcript import Conversation, Turn
+
+    held = Conversation(organization_id=place, customer_id=CUSTOMER, started_at=NOW)
+    session.add(held)
+    session.flush()
+    session.add(
+        Turn(
+            conversation_id=held.id,
+            organization_id=place,
+            question="q",
+            answer="a",
+            answer_from="model",
+            cost_usd=usd,
+            asked_at=NOW,
+        )
+    )
+    session.flush()
+
+
+def test_businesses_near_or_past_otto_s_spend_ceiling_are_named(
+    factory: sessionmaker[DbSession],
+) -> None:
+    """The brief's alert at four fifths, put where whoever is on call looks.
+    Half is only logged: half of a month's allowance mid-month is normal."""
+    with factory() as session:
+        near = a_business(session, "a@one.ie", "Alpha")
+        out = a_business(session, "b@one.ie", "Beacon")
+        fine = a_business(session, "c@one.ie", "Corrib")
+        spent_this_month(session, near, 10.0)  # Starter's provisional ceiling is 12
+        spent_this_month(session, out, 12.5)
+        spent_this_month(session, fine, 6.5)
+        session.commit()
+        trouble = platform(session, now=NOW).trouble
+    assert "1 business used all of Otto's spend for this month." in " ".join(trouble)
+    assert any("1 business used over four fifths" in one for one in trouble)
+    assert not any("3 business" in one or "2 business" in one for one in trouble)
+
+
 def test_a_pile_of_unanswered_proposals_is_worth_saying(
     factory: sessionmaker[DbSession],
 ) -> None:

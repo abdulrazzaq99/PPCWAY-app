@@ -29,6 +29,8 @@ from sqlalchemy.orm import Session, aliased
 
 from ppcway.ads.mirror import SyncRun
 from ppcway.ads.models import AdsConnection
+from ppcway.chat.plans import WARN_AT, plan_for
+from ppcway.chat.transcript import Turn as ChatTurn
 from ppcway.model.log import PromptLog
 from ppcway.opt.models import OptimizationAction, Status
 from ppcway.org.models import Membership, Organization
@@ -343,6 +345,8 @@ def platform(session: Session, *, window: str = "7d", now: datetime | None = Non
         ),
     )
 
+    near, out = _spend_this_month(session, now)
+
     return Platform(
         at=now,
         window=window,
@@ -366,8 +370,35 @@ def platform(session: Session, *, window: str = "7d", now: datetime | None = Non
             waiting=waiting,
             connected=connected,
             merchants=merchants,
+            spend_near=near,
+            spend_out=out,
         ),
     )
+
+
+def _spend_this_month(session: Session, now: datetime) -> tuple[int, int]:
+    """How many businesses are past four fifths of Otto's monthly spend, and how
+    many have used it all.
+
+    The brief's alert at four fifths, put where whoever is on call already
+    looks. Half is only logged, as the chat crosses it: on this list it would be
+    noise, because half a month's allowance in the middle of a month is normal.
+    """
+    month = datetime(now.year, now.month, 1, tzinfo=UTC)
+    near = out = 0
+    for organization_id, used in session.execute(
+        select(ChatTurn.organization_id, func.coalesce(func.sum(ChatTurn.cost_usd), 0.0))
+        .where(ChatTurn.asked_at >= month)
+        .group_by(ChatTurn.organization_id)
+    ):
+        place = session.get(Organization, organization_id)
+        ceiling = plan_for(place.plan if place else "").spend_ceiling_usd
+        share = float(used or 0.0) / ceiling if ceiling else 0.0
+        if share >= 1:
+            out += 1
+        elif share >= WARN_AT[-1]:
+            near += 1
+    return near, out
 
 
 def _what_needs_attention(
@@ -378,6 +409,8 @@ def _what_needs_attention(
     waiting: Count,
     connected: Count,
     merchants: Count,
+    spend_near: int = 0,
+    spend_out: int = 0,
 ) -> tuple[str, ...]:
     """Everything wrong, in words, worst first.
 
@@ -400,6 +433,17 @@ def _what_needs_attention(
         said.append(
             f"{model_trouble.value} model call{'s' if model_trouble.value > 1 else ''} came"
             f" back with nothing {over(model_trouble.window)}."
+        )
+    if spend_out:
+        said.append(
+            f"{spend_out} business{'es' if spend_out > 1 else ''} used all of Otto's spend"
+            f" for this month. {'Their' if spend_out > 1 else 'Its'} questions are refused"
+            f" until it starts again next month."
+        )
+    if spend_near:
+        said.append(
+            f"{spend_near} business{'es' if spend_near > 1 else ''} used over four fifths"
+            f" of Otto's spend for this month."
         )
     if waiting.value >= 50:
         said.append(

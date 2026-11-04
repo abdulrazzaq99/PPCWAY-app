@@ -49,9 +49,9 @@ from ppcway.chat import propose
 from ppcway.chat import tools as toolbox
 from ppcway.chat.propose import Handles
 from ppcway.chat.untrusted import THE_RULE
-from ppcway.metric.figures import Figure, unmatched
+from ppcway.metric.figures import Figure, numbers_given, unmatched
 from ppcway.model.jobs import Job
-from ppcway.model.service import Models, ModelUnavailable
+from ppcway.model.service import Answer, Models, ModelUnavailable
 from ppcway.org.models import CAN, Role
 
 log = logging.getLogger(__name__)
@@ -137,6 +137,32 @@ class Turn:
     rounds: int = 0
 
 
+@dataclass
+class Spent:
+    """Every model call one question took, added up for the transcript.
+
+    The transcript prices the total and the monthly ceiling sums those prices,
+    so a call left out here is a call the ceiling never sees. Each round of
+    looking things up counts, the answer counts, and so does the one rewrite
+    the number check may ask for. A question Model Armor stopped sent nothing
+    and adds nothing.
+    """
+
+    model: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_tokens: int = 0
+    took_ms: int = 0
+
+    def add(self, said: Answer) -> None:
+        if said.model and (said.input_tokens or said.output_tokens or said.cached_tokens):
+            self.model = said.model
+        self.input_tokens += said.input_tokens or 0
+        self.output_tokens += said.output_tokens or 0
+        self.cached_tokens += said.cached_tokens or 0
+        self.took_ms += said.took_ms or 0
+
+
 class NotAllowed(PermissionError):
     """This person may not use the chat."""
 
@@ -171,6 +197,7 @@ def answer(
     connection: Any = None,
     history: Sequence[dict[str, Any]] = (),
     today: date | None = None,
+    spent: Spent | None = None,
 ) -> Iterator[Said]:
     """Answer one question, yielding status lines and then the answer.
 
@@ -191,6 +218,9 @@ def answer(
 
     messages: list[dict[str, Any]] = [*history, {"role": "user", "content": question}]
     figures: list[Figure] = []
+    #: Every number this turn's lookups put in front of the model, figures or
+    #: not. The answer may say any of them; see `numbers_given`.
+    given: set[float] = set()
 
     for round_number in range(MOST_ROUNDS):
         turn.rounds = round_number + 1
@@ -203,6 +233,8 @@ def answer(
                 customer_id=customer_id,
                 tools=offered,
             )
+            if spent is not None:
+                spent.add(said)
         except ModelUnavailable as exc:
             log.info("chat could not reach the model: %s", exc)
             yield Said(kind="trouble", words="I cannot reach my own brain just now.")
@@ -219,7 +251,7 @@ def answer(
 
         wanted = said.tool_calls
         if not wanted:
-            text, source = _checked(models, said.text, figures, messages)
+            text, source = _checked(models, said.text, figures, messages, spent=spent, given=given)
             turn.text, turn.source = text, source
             turn.figures = figures
             yield Said(kind="answer", words=text)
@@ -256,6 +288,7 @@ def answer(
                     continue
                 yield Said(kind="writing", words="putting that in their inbox")
                 said_back = propose.create_proposal(asked)
+                given.update(numbers_given(said_back))
                 turn.proposed.append(str(said_back.get("status", "")))
                 results.append({"id": call.id, "name": call.name, "result": said_back})
                 continue
@@ -264,6 +297,7 @@ def answer(
             if found.doing:
                 yield Said(kind="looking", words=found.doing)
             figures.extend(found.figures)
+            given.update(numbers_given(found.data))
             results.append({"id": call.id, "name": call.name, "result": found.data})
         messages = [
             *messages,
@@ -302,6 +336,9 @@ def _checked(
     text: str,
     figures: Sequence[Figure],
     messages: Sequence[dict[str, Any]],
+    *,
+    spent: Spent | None = None,
+    given: set[float] | None = None,
 ) -> tuple[str, str]:
     """Every number in the answer, matched against what the tools returned.
 
@@ -312,7 +349,8 @@ def _checked(
     if not said:
         return FALLBACK, "template"
 
-    wrong = unmatched(said, list(figures))
+    also = given or set()
+    wrong = unmatched(said, list(figures), also=also)
     if not wrong:
         return said, "model"
 
@@ -336,10 +374,12 @@ def _checked(
                 },
             ],
         )
+        if spent is not None:
+            spent.add(again)
     except ModelUnavailable:
         return FALLBACK, "template"
 
     second = (again.text or "").strip()
-    if second and not unmatched(second, list(figures)):
+    if second and not unmatched(second, list(figures), also=also):
         return second, "rewrite"
     return FALLBACK, "template"
