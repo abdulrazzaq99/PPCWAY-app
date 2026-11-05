@@ -350,3 +350,49 @@ def test_nothing_here_talks_to_google(db: sessionmaker[Session]) -> None:
         name.startswith(("httpx", "google.ads", "ppcway.ads.oauth", "ppcway.ads.sync"))
         for name in reached
     )
+
+
+def test_what_will_be_sent_is_fixed_when_the_change_is_offered(
+    db: sessionmaker[Session],
+) -> None:
+    """What reaches Google is what the merchant was shown, not whatever the
+    rule would find on the day it is sent -- and the things it touches go with
+    it, so a hands-off pin still stops it at approval and at the door."""
+    from dataclasses import replace
+
+    group = "customers/2580586343/adGroups/21"
+    card = replace(
+        a_card(),
+        resources=(group,),
+        payload={
+            "change": "exclude_search",
+            "text": "boiler repair jobs",
+            "match_type": "EXACT",
+            "ad_groups": [group],
+        },
+    )
+    with db() as session:
+        row = write_proposal(
+            session,
+            card,
+            needs_a_person(),
+            organization_id=a_business(session),
+            guardrail_config_version=3,
+            now=NOW,
+        )
+        session.commit()
+    assert row.payload == {
+        "change": "exclude_search",
+        "text": "boiler repair jobs",
+        "match_type": "EXACT",
+        "ad_groups": [group],
+        "resources": [group],
+    }
+
+    from ppcway.opt.answer import _as_proposal
+
+    assert _as_proposal(row).resources == (group,)
+
+
+def test_a_change_with_nothing_to_send_records_no_payload(db: sessionmaker[Session]) -> None:
+    assert _write(db, needs_a_person()).payload is None

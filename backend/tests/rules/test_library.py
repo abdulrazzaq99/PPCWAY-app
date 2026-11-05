@@ -272,3 +272,52 @@ def test_pause_only_is_what_the_rule_says_it_is(db: DbSession) -> None:
     assert rule("R4").kind == "pause_ad"
     assert said.to_proposal().kind == "pause_ad"
     assert said.reversible
+
+
+def test_a_search_is_excluded_from_every_ad_group_it_was_answered_from(db: DbSession) -> None:
+    """The rule adds the spend up across ad groups, so the exclusion covers
+    them all, or "stops about this much a month" would be true of half of it."""
+    a_term(db, "pdf to word", clicks=60, spend=50.0, ad_group_id="21")
+    a_term(db, "pdf to word", clicks=60, spend=50.0, ad_group_id="22", day=date(2026, 10, 21))
+    (said,) = _found(db)
+    assert said.payload == {
+        "change": "exclude_search",
+        "text": "pdf to word",
+        "match_type": "EXACT",
+        "ad_groups": ["customers/1/adGroups/21", "customers/1/adGroups/22"],
+    }
+    assert said.resources == ("customers/1/adGroups/21", "customers/1/adGroups/22"), (
+        "what the merchant pinned as hands-off is checked against all of them"
+    )
+
+
+@pytest.mark.parametrize(
+    "term",
+    [
+        "how do i become a plumber in ontario without going to college first please",
+        # Four words, ninety-one characters.
+        "waterproofingcompanies " * 4,
+    ],
+)
+def test_a_search_too_long_to_be_a_keyword_is_not_offered(db: DbSession, term: str) -> None:
+    """Google takes ten words and eighty characters. Offering to exclude more
+    would be offering a change that fails the moment somebody says yes."""
+    a_term(db, term.strip(), clicks=140, spend=96.0)
+    assert _found(db) == []
+
+
+def test_a_search_answered_from_no_ad_group_is_not_offered(db: DbSession) -> None:
+    """Performance Max reports searches like this. There is no ad group to put
+    the exclusion in."""
+    a_term(db, "pdf to word", clicks=140, spend=96.0, ad_group_id="")
+    assert _found(db) == []
+
+
+def test_a_refused_ad_is_paused_by_its_own_resource_name(db: DbSession) -> None:
+    an_ad(db, "901")
+    (said,) = disapproved_ads(db, "1", currency="CAD", today=TODAY)
+    assert said.payload == {
+        "change": "set_ad_status",
+        "ad": "customers/1/adGroupAds/21~901",
+        "status": "PAUSED",
+    }

@@ -285,7 +285,7 @@ const OVERVIEW: Overview = {
   writes: {
     anything_can_be_written: false,
     words:
-      "PPCWay is not writing to any Google Ads account. That is this deployment's setting, not a switch, and it takes a deploy to change.",
+      "PPCWay is not writing to any Google Ads account. Writes were switched off here: Done testing the write path on the test account for today.",
     stops: [{ scope: "7741029388", because: "Suspended by Google", ours: true }],
   },
   figures: {
@@ -318,6 +318,14 @@ const PLATFORM: PlatformView = {
   words: OVERVIEW.writes.words,
   anything_can_be_written: false,
   may_stop_writes: true,
+  may_switch_writes: true,
+  writes: {
+    on: false,
+    source: "panel",
+    because: "Done testing the write path on the test account for today.",
+    set_by: "admin@ppcway.com",
+    set_at: at(2 * HOUR + 40 * MIN),
+  },
   stops: [
     {
       scope: "7741029388",
@@ -333,8 +341,8 @@ const PLATFORM: PlatformView = {
       on: false,
       what_it_does:
         "Whether PPCWay may change anything in a merchant's Google Ads account. Off means every approved change is recorded and nothing is sent.",
-      changeable: false,
-      why_not: "This comes from the deployment's settings; it takes a deploy to change.",
+      changeable: true,
+      why_not: "",
     },
     {
       name: "Applying without asking",

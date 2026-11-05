@@ -1,10 +1,11 @@
 """The switches the panel can throw, and who is allowed to throw them.
 
 Two properties carry this file. Reading the platform and changing it need
-different authority -- stopping writes is the one control that changes what
-happens to a merchant's money. And nothing here can *start* writes the
-deployment has not enabled, because a panel button that appeared to turn on
-live writing to Google Ads would be the most dangerous control in the product.
+different authority -- stopping writes and switching them on are the controls
+that change what happens to a merchant's money. And writes are the one
+setting that is a switch here: since 5 November, at the owner's request, a
+principal can turn them on and off without a deploy, with a reason kept, and
+the kill switch still wins.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from ppcway.staff.controls import (
     release_writes,
     standing,
     stop_writes,
+    switch_writes,
 )
 from ppcway.staff.guard import NotAllowed, NotStaff, grant
 from ppcway.staff.models import Level
@@ -175,17 +177,82 @@ def test_lifting_nothing_is_not_an_error(factory: sessionmaker[DbSession]) -> No
 # --- the two reasons writes can be off, which need different fixes ----------
 
 
-def test_a_setting_that_is_off_is_reported_as_a_setting_not_a_switch(
+def test_writes_off_says_whether_it_was_the_setting_or_a_person(
     factory: sessionmaker[DbSession],
 ) -> None:
-    """ "Writes are off" has two causes and the fix differs: one is a deploy,
-    the other is a button. A screen that conflates them sends somebody to press
-    a button that cannot help."""
+    """ "Writes are off" has two causes, and the screen says which: nobody has
+    switched them on, or somebody switched them off and said why."""
     with factory() as session:
         boss = staff(session, "boss@ppcway.com", Level.PRINCIPAL)
         said = says(session, boss, writes_enabled=False)
-        assert "takes a deploy" in said.words  # type: ignore[attr-defined]
+        assert "this deployment's setting leaves them off" in said.words  # type: ignore[attr-defined]
         assert not said.anything_can_be_written  # type: ignore[attr-defined]
+
+        switch_writes(
+            session, boss, on=True, because="testing on the test account", writes_enabled=False
+        )
+        switch_writes(
+            session, boss, on=False, because="done testing for today", writes_enabled=False
+        )
+        said = says(session, boss, writes_enabled=False)
+        assert "switched off here" in said.words  # type: ignore[attr-defined]
+        assert "done testing for today" in said.words  # type: ignore[attr-defined]
+
+
+def test_the_panel_switch_outranks_the_deployment_setting_both_ways(
+    factory: sessionmaker[DbSession],
+) -> None:
+    with factory() as session:
+        boss = staff(session, "boss@ppcway.com", Level.PRINCIPAL)
+        assert not switch.gate(session, default=False).is_open
+        switch_writes(
+            session, boss, on=True, because="testing on the test account", writes_enabled=False
+        )
+        assert switch.gate(session, default=False).is_open
+        switch_writes(session, boss, on=False, writes_enabled=True)
+        gate = switch.gate(session, default=True)
+        assert not gate.is_open, "off in the panel, whatever the deployment says"
+        assert gate.source == "panel"
+
+
+def test_only_a_principal_switches_writes_and_switching_on_needs_a_reason(
+    factory: sessionmaker[DbSession],
+) -> None:
+    with factory() as session:
+        engineer = staff(session, "eng@ppcway.com", Level.ENGINEER)
+        boss = staff(session, "boss@ppcway.com", Level.PRINCIPAL)
+        with pytest.raises(NotAllowed):
+            switch_writes(
+                session, engineer, on=True, because="I would like it on", writes_enabled=False
+            )
+        with pytest.raises(ValueError, match="say why"):
+            switch_writes(session, boss, on=True, because="on", writes_enabled=False)
+        assert not switch.gate(session, default=False).is_open
+
+
+def test_switching_to_the_state_it_is_in_records_nothing(
+    factory: sessionmaker[DbSession],
+) -> None:
+    """A row is a decision. Pressing "off" on a gate that is off decided nothing."""
+    with factory() as session:
+        boss = staff(session, "boss@ppcway.com", Level.PRINCIPAL)
+        switch_writes(session, boss, on=False, writes_enabled=False)
+        assert session.scalars(sa.select(switch.WriteGate)).all() == []
+
+
+def test_every_flip_is_kept_with_who_and_why(factory: sessionmaker[DbSession]) -> None:
+    """ "Who turned writes on last Tuesday, and why?" """
+    with factory() as session:
+        boss = staff(session, "boss@ppcway.com", Level.PRINCIPAL)
+        switch_writes(
+            session, boss, on=True, because="testing on the test account", writes_enabled=False
+        )
+        switch_writes(session, boss, on=False, writes_enabled=False)
+        rows = session.scalars(sa.select(switch.WriteGate).order_by(switch.WriteGate.set_at)).all()
+        assert [(r.is_open, r.because, r.set_by) for r in rows] == [
+            (True, "testing on the test account", boss.id),
+            (False, "Switched off in the panel.", boss.id),
+        ]
 
 
 def test_a_platform_stop_is_reported_as_a_stop(factory: sessionmaker[DbSession]) -> None:
@@ -224,11 +291,11 @@ def test_accounts_stopped_one_by_one_are_counted_not_confused_with_the_platform(
 # --- the flags are honest about not being switches --------------------------
 
 
-def test_no_flag_pretends_to_be_changeable_from_the_panel(
+def test_no_other_flag_pretends_to_be_changeable_from_the_panel(
     factory: sessionmaker[DbSession],
 ) -> None:
     """A screen that shows a toggle for something only a deploy can change
-    teaches people the panel is lying to them."""
+    teaches people the panel is lying to them. Writes are the one switch."""
     with factory() as session:
         boss = staff(session, "boss@ppcway.com", Level.PRINCIPAL)
         every = flags(
@@ -240,16 +307,17 @@ def test_no_flag_pretends_to_be_changeable_from_the_panel(
             model_provider="openrouter",
             armor_template="projects/p/locations/us-central1/templates/t",
         )
-        assert every, "there is something to show"
-        assert all(not one.changeable for one in every)
-        assert all(one.why_not for one in every), "each says why it cannot be changed"
+        others = [one for one in every if one.name != "Writing to Google Ads"]
+        assert others, "there is something to show"
+        assert all(not one.changeable for one in others)
+        assert all(one.why_not for one in others), "each says why it cannot be changed"
 
 
-def test_the_two_dangerous_settings_are_reported_and_not_offered(
+def test_writes_are_offered_and_applying_without_asking_is_not(
     factory: sessionmaker[DbSession],
 ) -> None:
-    """A button that could turn on live writing to a merchant's account would
-    be the most dangerous control in the product, so it does not exist."""
+    """Writes are a switch here, principal only. Applying without asking stays
+    the deployment's: it is the client's decision, tied to the Terms."""
     with factory() as session:
         boss = staff(session, "boss@ppcway.com", Level.PRINCIPAL)
         every = {
@@ -265,7 +333,7 @@ def test_the_two_dangerous_settings_are_reported_and_not_offered(
             )
         }
         assert not every["Writing to Google Ads"].on
-        assert not every["Writing to Google Ads"].changeable
+        assert every["Writing to Google Ads"].changeable
         assert not every["Applying without asking"].on
         assert not every["Applying without asking"].changeable
 

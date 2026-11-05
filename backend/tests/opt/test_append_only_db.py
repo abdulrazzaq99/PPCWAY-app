@@ -298,3 +298,54 @@ def test_a_new_version_is_how_limits_change(db: sessionmaker[Session]) -> None:
             .order_by(GuardrailConfig.version)
         ).all()
     assert list(versions) == [1, 2]
+
+
+def test_which_sender_took_a_change_cannot_be_undone_or_rewritten(
+    logged: tuple[sessionmaker[Session], uuid.UUID, uuid.UUID],
+) -> None:
+    """Clearing `taken_at` would let a second sender send the change again."""
+    db, _place, action = logged
+    _allows(db, "UPDATE opt_action SET taken_at = now() WHERE id = :i", {"i": action})
+    said = _refuses(db, "UPDATE opt_action SET taken_at = NULL WHERE id = :i", {"i": action})
+    assert "opt_action.taken_at was already written" in said
+
+
+def test_what_google_said_cannot_be_rewritten(
+    logged: tuple[sessionmaker[Session], uuid.UUID, uuid.UUID],
+) -> None:
+    """Or the log could say a change landed when Google said it did not."""
+    db, _place, action = logged
+    landed = '{"landed": ["customers/1/adGroupCriteria/21~9"]}'
+    _allows(
+        db,
+        "UPDATE opt_action SET outcome = CAST(:o AS json) WHERE id = :i",
+        {"o": landed, "i": action},
+    )
+    _allows(
+        db,
+        "UPDATE opt_action SET outcome = CAST(:o AS json) WHERE id = :i",
+        {"o": landed, "i": action},
+    )
+    said = _refuses(
+        db,
+        "UPDATE opt_action SET outcome = CAST(:o AS json) WHERE id = :i",
+        {"o": '{"landed": []}', "i": action},
+    )
+    assert "opt_action.outcome was already written" in said
+
+
+def test_who_switched_writes_on_cannot_be_tidied_away(db: sessionmaker[Session]) -> None:
+    """The first question after anything goes wrong is who turned writes on,
+    and why. The database refuses to let the answer be edited or removed."""
+    with db() as session:
+        row = sa.text(
+            "INSERT INTO ads_write_gate (id, is_open, because, set_at)"
+            " VALUES (:i, true, 'testing the write path', now())"
+        )
+        gate = uuid.uuid4()
+        session.execute(row, {"i": gate})
+        session.commit()
+    said = _refuses(db, "UPDATE ads_write_gate SET is_open = false WHERE id = :i", {"i": gate})
+    assert "rows may not be changed" in said
+    said = _refuses(db, "DELETE FROM ads_write_gate WHERE id = :i", {"i": gate})
+    assert "rows may not be deleted" in said

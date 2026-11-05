@@ -5,12 +5,19 @@ purpose: each one is held by a different person for a different reason, and
 collapsing them into one flag would mean the engineer's deploy switch and the
 merchant's own choice were the same lever.
 
-1. **The write gate.** Off unless the deployment says otherwise. PPCWay does
-   not yet have Google Standard access, the client's brief puts a gate on the
-   write path closing on 6 December, and the Terms and Google filings have to
-   be updated before anything is applied unattended. So nothing writes until
+1. **The write gate.** Off unless somebody turns it on. PPCWay does not yet
+   have Google Standard access, the client's brief puts a gate on the write
+   path closing on 6 December, and the Terms and Google filings have to be
+   updated before anything is applied unattended. So nothing writes until
    somebody sets it, and the default in code is the safe one rather than the
    convenient one.
+
+   Since 5 November it is a switch in the internal panel as well as a
+   setting, at the owner's request: a redeploy for every on and off was the
+   wrong cost for the one control that gets flipped while testing. The
+   latest time somebody switched it in the panel wins; until anybody has, the
+   deployment's `ADS_WRITES_ENABLED` stands. Principal access only, a reason
+   to switch it on, and every flip kept as a row -- see `WriteGate`.
 
 2. **The global kill switch.** PPCWay staff can stop every write for every
    account, now, without a deploy. The brief asks for it, and the reason to
@@ -74,6 +81,79 @@ class KillSwitch(Base):
         return not self.customer_id
 
 
+class WriteGate(Base):
+    """One time somebody switched writes to Google Ads on or off in the panel.
+
+    Rows, never changed: the latest one is the gate. "Who turned writes on
+    last Tuesday, and why?" is the first question after anything goes wrong,
+    and a setting somebody flipped and flipped back answers none of it. The
+    database refuses an update or a delete, so the history cannot be tidied.
+    """
+
+    __tablename__ = "ads_write_gate"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
+    is_open: Mapped[bool] = mapped_column(Boolean)
+    #: Why, in words. Required to open it; whoever reads the log later is told.
+    because: Mapped[str] = mapped_column(Text, default="")
+    set_by: Mapped[uuid.UUID | None] = mapped_column(Uuid(), nullable=True)
+    #: Written by the code rather than the database clock, to the microsecond,
+    #: so two flips in one second still have an order.
+    set_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Gate:
+    """Whether the gate is open, and where that answer came from."""
+
+    is_open: bool
+    #: "panel" when somebody switched it there, "deployment" when nobody has
+    #: and `ADS_WRITES_ENABLED` stands.
+    source: str
+    because: str = ""
+    set_by: uuid.UUID | None = None
+    set_at: datetime | None = None
+
+
+def gate(session: Session, *, default: bool) -> Gate:
+    """The write gate, read now. `default` is the deployment's own setting."""
+    latest = session.scalars(
+        select(WriteGate).order_by(WriteGate.set_at.desc(), WriteGate.id.desc()).limit(1)
+    ).first()
+    if latest is None:
+        return Gate(is_open=default, source="deployment")
+    return Gate(
+        is_open=bool(latest.is_open),
+        source="panel",
+        because=latest.because or "",
+        set_by=latest.set_by,
+        set_at=latest.set_at,
+    )
+
+
+def set_gate(
+    session: Session,
+    *,
+    is_open: bool,
+    because: str,
+    set_by: uuid.UUID | None,
+    now: datetime | None = None,
+) -> WriteGate:
+    """Open or shut the gate. Takes effect for the next change sent.
+
+    Who may do this, and what they must say, is `staff.controls`' to check:
+    this records the decision, it does not make it.
+    """
+    row = WriteGate(
+        is_open=is_open, because=because, set_by=set_by, set_at=now or datetime.now(UTC)
+    )
+    session.add(row)
+    session.commit()
+    return row
+
+
 @dataclass(frozen=True, slots=True)
 class Standing:
     """Whether writes may happen, and what to say when they may not."""
@@ -88,9 +168,9 @@ class Standing:
 def may_write(session: Session, *, customer_id: str, gate_open: bool) -> Standing:
     """All three answers, read now. Never cached.
 
-    `gate_open` is the deployment's own switch, passed in rather than read
-    here, so this function has no opinion about settings and can be tested
-    without them.
+    `gate_open` is the write gate, passed in rather than read here so this
+    function has no opinion about settings and can be tested without them.
+    Callers read it with `gate`, at the moment of writing.
     """
     if not gate_open:
         return Standing(

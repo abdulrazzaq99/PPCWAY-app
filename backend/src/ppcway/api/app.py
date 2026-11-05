@@ -1224,9 +1224,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         """The cards Otto has for this business, best first.
 
-        Phase 1 of the client's brief: shown, not applied. Nothing here writes
-        to Google and nothing writes the action log -- a card is a thing to
-        read, and the decision it invites has not been made.
+        Nothing here writes to Google and nothing writes the action log -- a
+        card is a thing to read, and the decision it invites has not been made.
+        Answering one is `approve` and `reject`, and approving is what sends.
 
         No model is called on this path. The rules produce a correct sentence
         for every card, and the better wording is written by the nightly job
@@ -1256,9 +1256,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # spend threshold and leaves only its hundred-click one, which is again
         # the safe direction: fewer proposals, not weaker ones.
         held = account_numbers(session, connection.customer_id, currency=connection.currency)
+        # Why an approved change is still waiting, if anything is holding
+        # every change on this account: the write gate or a kill switch.
+        from ppcway.gateway import switch
+
+        writes = switch.may_write(
+            session,
+            customer_id=connection.customer_id,
+            gate_open=switch.gate(session, default=settings.ads_writes_enabled).is_open,
+        )
         # The written proposals, which have ids and can therefore be
         # answered, plus anything the rules find that has no row yet, marked
-        # as a preview. See `rules.offered` for why both.
+        # as a preview. See `rules.offered` for why both. And below them,
+        # what became of the changes already said yes to.
         return inbox_for(
             session,
             organization_id=place.id,
@@ -1266,6 +1276,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             currency=connection.currency,
             target_cost_per_lead=held.cost_per_lead,
             protected=_brand_words(place, connection),
+            waiting_because="" if writes.may_write else writes.because,
         ).as_dict()
 
     def _brand_words(place: Organization, connection: AdsConnection) -> tuple[str, ...]:
@@ -1302,6 +1313,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "refused_by": said.refused_by,
         }
 
+    def _send_now(
+        session: Session,
+        said: object,
+        connection: AdsConnection,
+        action_id: str,
+        *,
+        undoing: bool = False,
+    ) -> dict[str, Any]:
+        """Send what somebody has just said yes to, and say what happened.
+
+        In the same request, so the merchant reads "done", or Google's reason,
+        or that writes are switched off and nothing in their account has
+        changed -- rather than a promise. Anything that cannot go now stays
+        approved and the scheduled pass sends it; taking the change before the
+        call stops the two from sending it twice.
+        """
+        from ppcway.gateway import send as sending
+        from ppcway.gateway import switch
+        from ppcway.opt.answer import Answered
+        from ppcway.opt.models import Status
+
+        assert isinstance(said, Answered)
+        out = _answer(said, action_id)
+        if said.status is not Status.APPROVED:
+            return out
+        sent = sending.send(
+            session,
+            said.action,
+            connection=connection,
+            # The panel's switch, read now, or the deployment's setting where
+            # nobody has used it.
+            gate_open=switch.gate(session, default=settings.ads_writes_enabled).is_open,
+            door_for=sending.doors(settings),
+        )
+        out["status"] = sent.status
+        out["words"] = sending.words_for(sent, undoing=undoing)
+        return out
+
     @app.post("/v1/otto/actions/{action_id}/approve")
     def approve_action(
         action_id: UUID,
@@ -1335,7 +1384,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(403, str(exc)) from None
         except answering.NotAnswerable as exc:
             raise HTTPException(409, str(exc)) from None
-        return _answer(said, str(action_id))
+        return _send_now(session, said, connection, str(action_id))
 
     @app.post("/v1/otto/actions/{action_id}/reject")
     def reject_action(
@@ -1382,7 +1431,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from ppcway.opt import answer as answering
 
         account = _signed_in(session, x_session_token)
-        place, role, _connection = _answerable(session, account)
+        place, role, connection = _answerable(session, account)
         try:
             said = answering.undo(
                 session,
@@ -1397,7 +1446,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(403, str(exc)) from None
         except answering.NotAnswerable as exc:
             raise HTTPException(409, str(exc)) from None
-        return _answer(said, str(action_id))
+        return _send_now(session, said, connection, str(action_id), undoing=True)
 
     @app.get("/v1/otto/auto-apply")
     def auto_apply_standing(
@@ -1568,6 +1617,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not expected or not x_sync_key or not compare_digest(x_sync_key, expected):
             raise HTTPException(403, "Not for you.")
         return tonight(session_factory(), settings, models=_models()).as_dict()
+
+    @app.post("/v1/internal/apply")
+    def scheduled_apply(
+        x_sync_key: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Send every approved change still waiting, for the scheduler.
+
+        What could not go when it was approved: held by the write gate or a
+        kill switch, by a day's quota, by a connection that needed renewing,
+        or approved unasked by the nightly pass. With writes off it reads the
+        log, reports how many are waiting and why, and opens no connection to
+        Google at all.
+        """
+        from ppcway.gateway.send import send_waiting
+
+        expected = settings.sync_key.get_secret_value() if settings.sync_key else ""
+        if not expected or not x_sync_key or not compare_digest(x_sync_key, expected):
+            raise HTTPException(403, "Not for you.")
+        return send_waiting(session_factory(), settings).as_dict()
 
     @app.post("/v1/otto/ask")
     async def otto_ask(
@@ -3158,7 +3226,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         x_session_token: Annotated[str | None, Header()] = None,
     ) -> dict[str, Any]:
         """The settings that govern behaviour, and what is stopped."""
-        from ppcway.staff.controls import flags, may_stop_writes, standing
+        from ppcway.staff.controls import flags, may_stop_writes, may_switch_writes, standing
 
         account, _level = _staff(session, x_session_token, "read_platform")
         where = standing(
@@ -3171,6 +3239,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "words": where.words,
             "anything_can_be_written": where.anything_can_be_written,
             "may_stop_writes": may_stop_writes(session, account),
+            "may_switch_writes": may_switch_writes(session, account),
+            "writes": _gate_view(session, where.gate),
             "stops": [
                 {
                     "scope": one.scope,
@@ -3222,6 +3292,63 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(422, str(exc)) from None
         session.commit()
         return {"stopped": True, "scope": stopped.scope, "words": stopped.words}
+
+    @app.post("/v1/admin/platform/writes")
+    def admin_switch_writes(
+        body: dict[str, Any],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Switch writes to Google Ads on or off, with no deploy. Principal only.
+
+        The owner's request of 5 November: the gate was the deployment's
+        setting alone, and a redeploy for every flip was the wrong cost. Every
+        flip is kept with who and why, and a stop pulled in the panel still
+        outranks it.
+        """
+        from ppcway.gateway import send as sending
+        from ppcway.staff import controls
+
+        account, _level = _staff(session, x_session_token, "set_flags")
+        on = body.get("on")
+        if not isinstance(on, bool):
+            raise HTTPException(422, "Say whether writes should be on or off.")
+        try:
+            gate = controls.switch_writes(
+                session,
+                account,
+                on=on,
+                because=str(body.get("because") or ""),
+                writes_enabled=settings.ads_writes_enabled,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        waiting = sending.waiting_count(session)
+        if gate.is_open:
+            words = "Writes to Google Ads are on."
+            if waiting:
+                words += (
+                    f" {waiting} approved change{'s are' if waiting != 1 else ' is'} waiting"
+                    " and will go out on the next send pass, each checked again first."
+                )
+        else:
+            words = "Writes to Google Ads are off. Approved changes wait until they are on."
+        return {"on": gate.is_open, "words": words, "writes": _gate_view(session, gate)}
+
+    def _gate_view(session: Session, gate: Any) -> dict[str, Any]:
+        """The write gate as the panel shows it: on or off, and on whose say."""
+        who = session.get(UserAccount, gate.set_by) if gate.set_by else None
+        return {
+            "on": gate.is_open,
+            "source": gate.source,
+            "because": gate.because,
+            "set_by": who.email if who is not None else None,
+            "set_at": (
+                (gate.set_at if gate.set_at.tzinfo else gate.set_at.replace(tzinfo=UTC)).isoformat()
+                if gate.set_at
+                else None
+            ),
+        }
 
     @app.post("/v1/admin/platform/release")
     def admin_release_writes(

@@ -11,11 +11,21 @@ to any level that may read the platform. Stopping writes and setting a flag
 need `principal`, because those two are the ones that change what happens to a
 merchant's money.
 
-**Nothing here can start writes that the deployment itself has not enabled.**
-`ads_writes_enabled` is a setting, not a switch: the panel can stop writes and
-can release a stop, and if the setting is off then writes remain off either
-way. A panel button that appeared to enable live writing to Google Ads would be
-the most dangerous control in the product, so it does not exist.
+**Writes to Google Ads are a switch here, since 5 November.** Until then they
+were the deployment's setting alone, and this module said a panel button that
+could turn on live writing would be the most dangerous control in the product.
+The owner asked for the button: a redeploy for every on and off was the wrong
+cost for the control that gets flipped while testing. So it exists, and it is
+built like the kill switch rather than like a preference:
+
+- principal access only, the level that already holds the kill switch;
+- a reason to switch it on, kept with who and when, and never edited;
+- the global kill switch still wins, so "stop everything" stays one button
+  whatever the gate says.
+
+The other settings stay the deployment's. Applying without asking in
+particular is not a switch here: it is the client's decision, tied to the
+Terms and the consent wording, not something to flip while testing.
 """
 
 from __future__ import annotations
@@ -75,9 +85,15 @@ class Standing:
     deploy, the other is a button.
     """
 
-    writes_enabled_in_this_deployment: bool
+    #: The write gate: the panel's latest switch, or the deployment's setting
+    #: where nobody has used it.
+    gate: switch.Gate
     auto_apply_enabled_in_this_deployment: bool
     stops: tuple[Stop, ...] = field(default_factory=tuple)
+
+    @property
+    def writes_on(self) -> bool:
+        return self.gate.is_open
 
     @property
     def platform_stopped(self) -> Stop | None:
@@ -88,15 +104,20 @@ class Standing:
 
     @property
     def anything_can_be_written(self) -> bool:
-        return self.writes_enabled_in_this_deployment and self.platform_stopped is None
+        return self.gate.is_open and self.platform_stopped is None
 
     @property
     def words(self) -> str:
         """One sentence a person can read at the top of the screen."""
-        if not self.writes_enabled_in_this_deployment:
+        if not self.gate.is_open:
+            if self.gate.source == "panel":
+                return (
+                    f"PPCWay is not writing to any Google Ads account. Writes were"
+                    f" switched off here{_on_day(self.gate.set_at)}: {self.gate.because}"
+                )
             return (
-                "PPCWay is not writing to any Google Ads account. That is this"
-                " deployment's setting, not a switch -- it takes a deploy to change."
+                "PPCWay is not writing to any Google Ads account. Nobody has switched"
+                " writes on here, and this deployment's setting leaves them off."
             )
         stopped = self.platform_stopped
         if stopped is not None:
@@ -107,6 +128,13 @@ class Standing:
                 f"{'s' if len(self.stops) > 1 else ''} stopped individually."
             )
         return "Writes are on and nothing is stopped."
+
+
+def _on_day(when: datetime | None) -> str:
+    if when is None:
+        return ""
+    at = when if when.tzinfo else when.replace(tzinfo=UTC)
+    return f" on {at.day} {at:%B} at {at:%H:%M} UTC"
 
 
 def _as_stop(row: switch.KillSwitch) -> Stop:
@@ -134,10 +162,63 @@ def standing(
         .order_by(switch.KillSwitch.pulled_at.desc())
     )
     return Standing(
-        writes_enabled_in_this_deployment=writes_enabled,
+        gate=switch.gate(session, default=writes_enabled),
         auto_apply_enabled_in_this_deployment=auto_apply_enabled,
         stops=tuple(_as_stop(row) for row in live),
     )
+
+
+def switch_writes(
+    session: Session,
+    account: UserAccount | None,
+    *,
+    on: bool,
+    because: str = "",
+    writes_enabled: bool,
+) -> switch.Gate:
+    """Turn writes to Google Ads on or off. Principal only.
+
+    `writes_enabled` is the deployment's setting, for the case where nobody has
+    used the switch yet. Switching on needs a reason, because it is the
+    direction that changes what happens to a merchant's money; switching off
+    does not, because nobody should hesitate to stop.
+
+    Asking for the state it is already in records nothing: a row is a decision,
+    and pressing "off" on a gate that is off decided nothing.
+    """
+    level = require(session, account, "set_flags")
+    reason = (because or "").strip()
+    if on and len(reason) < LEAST_REASON:
+        raise ValueError(
+            f"say why you are switching writes on, in at least {LEAST_REASON}"
+            f" characters. It is kept with your name, and {reason!r} does not tell"
+            " the next person anything."
+        )
+    now = switch.gate(session, default=writes_enabled)
+    if now.is_open == on:
+        return now
+    switch.set_gate(
+        session,
+        is_open=on,
+        because=reason or "Switched off in the panel.",
+        set_by=account.id if account is not None else None,
+    )
+    log.warning(
+        "writes to Google Ads switched %s by %s access: %s",
+        "on" if on else "off",
+        level.value,
+        reason or "no reason given",
+    )
+    return switch.gate(session, default=writes_enabled)
+
+
+def may_switch_writes(session: Session, account: UserAccount | None) -> bool:
+    """Whether to show the switch as something this person can press."""
+    from ppcway.staff.guard import level_of
+    from ppcway.staff.models import may
+
+    held = level_of(session, account)
+    return held is not None and may(held, "set_flags")
 
 
 def stop_writes(
@@ -273,25 +354,23 @@ def flags(
 ) -> tuple[Flag, ...]:
     """Every setting that governs behaviour, with what each one means.
 
-    Read-only, and honest about it. These come from the environment, so the
-    panel reports them and the deploy changes them. The two that matter most --
-    whether PPCWay may write to Google Ads at all, and whether it may do so
-    without asking -- are deliberately not switches: a button that could turn
-    on live writing to a merchant's account would be the most dangerous control
-    in the product.
+    Honest about which can be changed here. Writing to Google Ads is a switch
+    on this screen, principal only; everything else comes from the environment
+    and takes a deploy. Applying without asking stays one of those on purpose:
+    it is the client's decision, tied to the Terms and the consent wording.
     """
     require(session, account, "read_platform")
     a_deploy = "This comes from the deployment's settings; it takes a deploy to change."
+    gate = switch.gate(session, default=writes_enabled)
     return (
         Flag(
             name="Writing to Google Ads",
-            on=writes_enabled,
+            on=gate.is_open,
             what_it_does=(
                 "Whether PPCWay may change anything in a merchant's Google Ads account."
                 " Off means every approved change is recorded and nothing is sent."
             ),
-            changeable=False,
-            why_not=a_deploy,
+            changeable=True,
         ),
         Flag(
             name="Applying without asking",

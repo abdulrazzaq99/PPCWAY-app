@@ -36,6 +36,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -44,7 +45,7 @@ from sqlalchemy.orm import Session
 from ppcway.ads.models import AdsConnection
 from ppcway.opt.context import limits_for, standing_for
 from ppcway.opt.guardrails import Proposal, Verdict, judge
-from ppcway.opt.models import OptimizationAction, ProposedBy, Status
+from ppcway.opt.models import OptimizationAction, ProposedBy, Status, may_undo
 from ppcway.org.models import Role
 
 log = logging.getLogger(__name__)
@@ -136,7 +137,13 @@ def _as_proposal(action: OptimizationAction) -> Proposal:
         # freshness check reads, and it is why a six-day-old proposal is
         # refused at approval rather than applied on stale numbers.
         metrics_as_of=_oldest_figure(action),
-        resources=tuple(str(r) for r in (after.get("resources") or ())),
+        # Read from the payload, where the proposal put them. `after` is the
+        # older home and nothing writes it there any more; both are read so a
+        # row written either way is checked against what the merchant pinned.
+        resources=tuple(
+            str(r)
+            for r in ((action.payload or {}).get("resources") or after.get("resources") or ())
+        ),
         is_undo=action.undo_of is not None,
     )
 
@@ -226,11 +233,11 @@ def approve(
     action.approved_by = account_id
     action.approved_at = at
     session.commit()
-    return Answered(
-        action=action,
-        status=Status.APPROVED,
-        words="Approved. Otto will make the change and tell you when it is done.",
-    )
+    # Only "approved". Whether the change is made now, later, or not at all is
+    # the gateway's to say, and the caller says it: until 5 November this
+    # promised "Otto will make the change and tell you when it is done" with
+    # nothing behind it that could.
+    return Answered(action=action, status=Status.APPROVED, words="Approved.")
 
 
 def reject(
@@ -300,6 +307,12 @@ def undo(
             "That change cannot be put back. Money already spent and Google's own "
             "learning about your ads do not come back, whatever we do next."
         )
+    if not may_undo(action, now=at):
+        raise NotAnswerable(
+            "That change was made more than 30 days ago, so PPCWay no longer offers to"
+            " put it back. It can still be changed in Google Ads itself."
+        )
+    reverse = _reverse(action)
     already = session.scalars(
         select(OptimizationAction).where(
             OptimizationAction.undo_of == action.id,
@@ -321,6 +334,9 @@ def undo(
         # Swapped: the undo's job is to get back to where the original started.
         before=dict(action.after or {}),
         after=dict(action.before or {}),
+        # And exactly what to send to get there, worked out now from what was
+        # sent and what Google said it created, rather than at the door.
+        payload=reverse,
         reason=f"Putting back: {action.reason}",
         undo_plan="An undo of an undo is just the original change again.",
         rule_id=action.rule_id,
@@ -343,10 +359,35 @@ def undo(
     session.flush()
     putting_back.idempotency_key = f"undo:{putting_back.id}"
     session.commit()
-    return Answered(
-        action=putting_back,
-        status=Status.APPROVED,
-        words="We will put that back and tell you when it is done.",
+    return Answered(action=putting_back, status=Status.APPROVED, words="Putting that back.")
+
+
+def _reverse(action: OptimizationAction) -> dict[str, Any]:
+    """What to send to put this change back, from what was sent to make it.
+
+    An exclusion is put back by removing the very negative keywords Google
+    created, by the ids it gave them, which only its answer has. A status is put
+    back to the status the row recorded before. Anything else was written before
+    the log kept what it sent, and saying so beats sending a guess.
+    """
+    sent = action.payload or {}
+    change = sent.get("change")
+    if change == "exclude_search":
+        made = [str(name) for name in ((action.outcome or {}).get("landed") or []) if name]
+        if not made:
+            raise NotAnswerable(
+                "We have no record of what Google created for that change, so it cannot"
+                " be put back from here. It can be removed in Google Ads itself."
+            )
+        return {"change": "remove_exclusions", "criteria": made}
+    if change == "set_ad_status" and sent.get("ad"):
+        was = str((action.before or {}).get("status") or "")
+        if not was:
+            raise NotAnswerable("We have no record of what that ad was set to before.")
+        return {"change": "set_ad_status", "ad": str(sent["ad"]), "status": was}
+    raise NotAnswerable(
+        "That change was recorded before PPCWay kept what it sent to Google, so it"
+        " has to be put back in Google Ads itself."
     )
 
 

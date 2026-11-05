@@ -96,10 +96,23 @@ export type Flag = {
   why_not: string;
 };
 
+/* The write gate: on or off, and on whose say. */
+export type Gate = {
+  on: boolean;
+  /* "panel" when somebody switched it here, "deployment" when nobody has. */
+  source: "panel" | "deployment";
+  because: string;
+  set_by: string | null;
+  set_at: string | null;
+};
+
 export type PlatformView = {
   words: string;
   anything_can_be_written: boolean;
   may_stop_writes: boolean;
+  /* Optional: absent from an API older than the switch. */
+  may_switch_writes?: boolean;
+  writes?: Gate;
   stops: Stop[];
   flags: Flag[];
 };

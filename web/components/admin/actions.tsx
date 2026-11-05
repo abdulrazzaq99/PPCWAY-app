@@ -147,6 +147,127 @@ export function StopWrites({
   );
 }
 
+/* ---------- switch writes on and off ---------- */
+
+/*
+  The write gate, as a switch. The owner asked for it so that testing does not
+  need a redeploy for every on and off.
+
+  Off is one click: nobody should hesitate to stop. On is two, and the second
+  only after a reason is typed, because it is the direction that changes what
+  happens to a merchant's money, and the reason is kept with your name. The
+  switch does not move until the API says it has, so the screen never shows a
+  state the platform is not in.
+*/
+export function SwitchWrites({ on, may }: { on: boolean; may: boolean }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [because, setBecause] = useState("");
+  const [working, setWorking] = useState(false);
+  const [trouble, setTrouble] = useState("");
+  const [good, setGood] = useState("");
+
+  async function go(next: boolean) {
+    setWorking(true);
+    setTrouble("");
+    setGood("");
+    try {
+      const res = await fetch("/api/admin/platform", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ doing: "writes", on: next, because }),
+      });
+      const said = (await res.json().catch(() => ({}))) as { error?: string; words?: string };
+      if (!res.ok) {
+        setTrouble(said.error ?? "That did not work.");
+        return;
+      }
+      setGood(said.words ?? "Done.");
+      setOpen(false);
+      setBecause("");
+      router.refresh();
+    } catch {
+      setTrouble("The API is not reachable.");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  const ready = because.trim().length >= 12;
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={on}
+          aria-label="Writes to Google Ads"
+          disabled={!may || working}
+          onClick={() => (on ? go(false) : setOpen((was) => !was))}
+          className={`relative inline-flex h-[24px] w-[44px] flex-none items-center rounded-full border transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${
+            on ? "border-ad-positive bg-ad-positive" : "border-ad-control bg-ad-ground"
+          }`}
+        >
+          <span
+            aria-hidden
+            className={`bg-ad-text inline-block h-[18px] w-[18px] rounded-full shadow transition-transform duration-150 ${
+              on ? "translate-x-[22px]" : "translate-x-[2px]"
+            }`}
+          />
+        </button>
+        <span className="text-[13px] font-medium">
+          {working ? (on ? "Switching off…" : "Switching on…") : on ? "On" : "Off"}
+        </span>
+      </div>
+      {!may ? (
+        <p className="text-ad-faint mt-2 text-[12px] leading-[18px]">
+          Only principal access can switch writes on or off.
+        </p>
+      ) : null}
+
+      {open && !on ? (
+        <div className="border-ad-border bg-ad-ground mt-3 w-full max-w-[440px] rounded-[6px] border p-4">
+          <label htmlFor="writes-because" className="block text-[13px] font-medium">
+            Why are you switching writes on?
+          </label>
+          <p id="writes-because-help" className="text-ad-faint mt-0.5 text-[12px] leading-[18px]">
+            Approved changes start going to merchants’ Google Ads accounts, each checked again
+            first. Kept with your name. Twelve characters at least.
+          </p>
+          <input
+            id="writes-because"
+            aria-describedby="writes-because-help"
+            value={because}
+            onChange={(e) => setBecause(e.target.value)}
+            placeholder="Testing the write path on the test account"
+            className={`${FIELD} mt-2`}
+            autoFocus
+          />
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => go(true)}
+              disabled={working || !ready}
+              className={BUTTON.primary}
+            >
+              {working ? "Switching on…" : "Start writing to Google Ads"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              disabled={working}
+              className={BUTTON.quiet}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+      <Said trouble={trouble} good={good} />
+    </div>
+  );
+}
+
 /* ---------- grant access ---------- */
 
 export function GrantAccess() {

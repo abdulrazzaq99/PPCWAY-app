@@ -96,7 +96,7 @@ The same key header the three sync jobs already use. Read it once from Secret
 Manager into a shell variable rather than putting it on a command line:
 
 ```
-KEY=$(gcloud secrets versions access latest --secret=ppcway-sync-key \
+KEY=$(gcloud secrets versions access latest --secret=sync-key \
   --project=ppcway-509313)
 API=https://ppcway-api-734687676224.northamerica-northeast2.run.app
 
@@ -105,7 +105,7 @@ gcloud scheduler jobs create http ppcway-post-weekly \
   --location=northamerica-northeast2 --project=ppcway-509313 \
   --schedule="0 8 * * 1" --time-zone="America/Toronto" \
   --uri="$API/v1/internal/post" --http-method=POST \
-  --update-headers="x-sync-key=$KEY" \
+  --headers="x-sync-key=$KEY" \
   --attempt-deadline=600s
 
 # The alerts, every hour at half past. One letter per thing per day per business.
@@ -113,7 +113,7 @@ gcloud scheduler jobs create http ppcway-alerts \
   --location=northamerica-northeast2 --project=ppcway-509313 \
   --schedule="30 * * * *" --time-zone="America/Toronto" \
   --uri="$API/v1/internal/alerts" --http-method=POST \
-  --update-headers="x-sync-key=$KEY" \
+  --headers="x-sync-key=$KEY" \
   --attempt-deadline=600s
 
 # The nightly audit re-runs, 2am Toronto. Starts up to twenty and returns.
@@ -121,12 +121,18 @@ gcloud scheduler jobs create http ppcway-audit-nightly \
   --location=northamerica-northeast2 --project=ppcway-509313 \
   --schedule="0 2 * * *" --time-zone="America/Toronto" \
   --uri="$API/v1/internal/audit" --http-method=POST \
-  --update-headers="x-sync-key=$KEY" \
+  --headers="x-sync-key=$KEY" \
   --attempt-deadline=900s
 ```
 
 Check the secret's real name first with `gcloud secrets list --project=ppcway-509313`;
 the sync jobs were created with the same value, so whatever they use is the one.
+
+**Corrected 5 November 2026.** These commands first said `--update-headers`,
+which only `gcloud scheduler jobs update` takes. `create` takes `--headers`.
+gcloud answers an argument it does not recognise by printing it in full, so the
+wrong flag printed the key and it had to be rotated. The API reads the secret
+`sync-key` (`SYNC_KEY<-sync-key`), not `ppcway-sync-key`.
 
 ### 4. Prove each one, once
 

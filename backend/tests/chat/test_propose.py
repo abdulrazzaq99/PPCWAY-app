@@ -338,3 +338,39 @@ def test_handles_are_not_guessable() -> None:
     made = {handles.offer("search_term", term_hash=str(n)) for n in range(200)}
     assert len(made) == 200, "no collisions"
     assert all(h.startswith("h_") and len(h) > 10 for h in made)
+
+
+def test_asking_twice_does_not_put_a_second_card_in_the_inbox(
+    world: tuple[DbSession, uuid.UUID, AdsConnection],
+) -> None:
+    """The chat makes the same check the nightly pass does. Without it, asking
+    Otto about a search already waiting put a second card beside the first."""
+    db, _place, _connection = world
+    a_wasteful_term(db)
+    handles, handle = _a_handle(world)
+    first = create_proposal(_asked(world, handles, handle=handle, change="add_negative_keyword"))
+    assert first["proposed"] is True
+
+    handles, handle = _a_handle(world)
+    again = create_proposal(_asked(world, handles, handle=handle, change="add_negative_keyword"))
+    assert again["proposed"] is False
+    assert again["why"] == "That search is already in your Otto inbox, waiting for your answer."
+    assert len(db.scalars(sa.select(OptimizationAction)).all()) == 1
+
+
+def test_a_search_just_excluded_is_not_proposed_again_from_the_chat(
+    world: tuple[DbSession, uuid.UUID, AdsConnection],
+) -> None:
+    db, _place, _connection = world
+    a_wasteful_term(db)
+    handles, handle = _a_handle(world)
+    create_proposal(_asked(world, handles, handle=handle, change="add_negative_keyword"))
+    row = db.scalars(sa.select(OptimizationAction)).one()
+    row.status = Status.APPLIED.value
+    row.applied_at = _now()
+    db.commit()
+
+    handles, handle = _a_handle(world)
+    again = create_proposal(_asked(world, handles, handle=handle, change="add_negative_keyword"))
+    assert again["proposed"] is False
+    assert "excluded recently" in again["why"]

@@ -116,6 +116,7 @@ def approved(
     status: str = Status.APPROVED.value,
     undo_of: uuid.UUID | None = None,
     figures_age_hours: int = 2,
+    payload: dict[str, object] | None = None,
 ) -> uuid.UUID:
     with db() as session:
         row = OptimizationAction(
@@ -144,6 +145,7 @@ def approved(
             status=status,
             undo_of=undo_of,
             approved_at=NOW - timedelta(minutes=5),
+            payload=payload,
         )
         session.add(row)
         session.commit()
@@ -420,3 +422,144 @@ def test_a_skipped_check_says_it_was_skipped(
         )
     assert "velocity_limits:skipped_for_undo" in said.ran
     assert "scope" in said.ran, "and the ones that still apply are named plainly"
+
+
+def test_what_google_created_is_kept_on_the_row(
+    world: tuple[sessionmaker[Session], uuid.UUID, AdsConnection, uuid.UUID],
+) -> None:
+    """Only Google knows the id of the negative keyword it made, and putting
+    the change back is a remove of exactly that."""
+    db, place, connection, _person = world
+    action = approved(db, place)
+    made = "customers/2580586343/adGroupCriteria/21~900"
+    _apply(db, place, connection, action, Saying(Applied(landed=(made,), operations_used=1)))
+    with db() as session:
+        row = session.get(OptimizationAction, action)
+        assert row is not None and row.outcome is not None
+        assert row.outcome["landed"] == [made]
+        assert row.outcome["refused"] == []
+        assert row.taken_at is not None
+
+
+def test_google_s_reason_is_kept_when_it_refuses(
+    world: tuple[sessionmaker[Session], uuid.UUID, AdsConnection, uuid.UUID],
+) -> None:
+    """A failed change is explained from the row, not left as a bare status."""
+    db, place, connection, _person = world
+    action = approved(db, place)
+    _apply(db, place, connection, action, Saying(GoogleRefused("403 no permission")))
+    with db() as session:
+        row = session.get(OptimizationAction, action)
+        assert row is not None and row.outcome is not None
+        assert row.outcome["refused_whole"] == "403 no permission"
+        assert "would not make that change" in row.outcome["words"]
+
+
+def test_a_change_another_sender_has_taken_is_not_sent_again(
+    world: tuple[sessionmaker[Session], uuid.UUID, AdsConnection, uuid.UUID],
+) -> None:
+    """The request that approved it and the scheduled pass can both reach one
+    change. Only the one that takes it sends it."""
+    db, place, connection, _person = world
+    action = approved(db, place)
+    with db() as session:
+        row = session.get(OptimizationAction, action)
+        assert row is not None
+        row.taken_at = NOW - timedelta(seconds=2)
+        session.commit()
+    door = Saying(Applied(landed=("a",)))
+    with pytest.raises(CannotApply, match="already being sent"):
+        _apply(db, place, connection, action, door)
+    assert door.sent == []
+    with db() as session:
+        assert quota.room_today(session, CUSTOMER, today=date(2026, 11, 2)).used == 0, (
+            "nothing is counted for a change this sender did not send"
+        )
+
+
+def test_sending_twice_sends_once(
+    world: tuple[sessionmaker[Session], uuid.UUID, AdsConnection, uuid.UUID],
+) -> None:
+    db, place, connection, _person = world
+    action = approved(db, place)
+    door = Saying(Applied(landed=("customers/1/adGroupCriteria/21~900",)))
+    _apply(db, place, connection, action, door)
+    with pytest.raises(CannotApply, match="only an approved change"):
+        _apply(db, place, connection, action, door)
+    assert len(door.sent) == 1
+
+
+def test_a_full_day_leaves_the_change_approved_for_tomorrow(
+    world: tuple[sessionmaker[Session], uuid.UUID, AdsConnection, uuid.UUID],
+) -> None:
+    """Read before taking it: a change taken on a full day would be stuck."""
+    db, place, connection, _person = world
+    action = approved(db, place)
+    with db() as session:
+        quota.spend(session, CUSTOMER, quota.A_DAY, today=date(2026, 11, 2))
+        session.commit()
+    door = Saying(Applied(landed=("a",)))
+    with pytest.raises(CannotApply, match="allowance for today"):
+        _apply(db, place, connection, action, door)
+    assert door.sent == []
+    with db() as session:
+        row = session.get(OptimizationAction, action)
+        assert row is not None
+        assert row.status == Status.APPROVED.value
+        assert row.taken_at is None, "free to go out tomorrow"
+
+
+def test_a_last_moment_refusal_keeps_its_reason(
+    world: tuple[sessionmaker[Session], uuid.UUID, AdsConnection, uuid.UUID],
+) -> None:
+    db, place, connection, _person = world
+    action = approved(db, place, figures_age_hours=150)
+    _apply(db, place, connection, action, Saying(Applied(landed=("a",))))
+    with db() as session:
+        row = session.get(OptimizationAction, action)
+        assert row is not None and row.outcome is not None
+        assert row.outcome["ruling"]["check"] == "data_freshness"
+        assert row.taken_at is None, "refused before it was taken"
+
+
+def test_putting_an_exclusion_back_is_not_counted_as_a_pause(
+    world: tuple[sessionmaker[Session], uuid.UUID, AdsConnection, uuid.UUID],
+) -> None:
+    """Removing a negative keyword lets a search back in and stops nothing.
+    Counted as a pause, on an account with three live things it was a third
+    of the account, and the blast-radius check refused the undo."""
+    db, place, connection, _person = world
+    from ppcway.ads.mirror import MirrorKeyword
+
+    with db() as session:
+        for keyword in session.scalars(sa.select(MirrorKeyword)).all()[3:]:
+            keyword.gone_at = NOW
+        session.commit()
+    original = approved(db, place, status=Status.APPLIED.value)
+    made = "customers/2580586343/adGroupCriteria/21~900"
+    putting_back = approved(
+        db,
+        place,
+        undo_of=original,
+        payload={"change": "remove_exclusions", "criteria": [made]},
+    )
+    removal = Batch(
+        customer_id=CUSTOMER,
+        operations=(
+            Operation(resource_type="ad_group_criterion", doing=Doing.REMOVE, resource_name=made),
+        ),
+    )
+    with db() as session:
+        action = session.get(OptimizationAction, putting_back)
+        assert action is not None
+        said = apply_now(
+            session,
+            action,
+            removal,
+            door=Saying(Applied(landed=(made,))),
+            connection=session.get(AdsConnection, connection.id),
+            organization_id=place,
+            gate_open=True,
+            now=NOW,
+        )
+    assert said.status is Status.APPLIED, said.words

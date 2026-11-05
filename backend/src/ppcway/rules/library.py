@@ -30,6 +30,12 @@ MONTH: Final = 30.4
 #: Approval states in which an ad is actually capable of being shown.
 SERVING: Final = frozenset({"APPROVED", "APPROVED_LIMITED", ""})
 
+#: Google's limits on a keyword's text. A search longer than this cannot be
+#: added as a negative keyword of itself, so offering to exclude it would be
+#: offering a change that fails the moment somebody says yes.
+KEYWORD_MOST_WORDS: Final = 10
+KEYWORD_MOST_CHARACTERS: Final = 80
+
 
 @dataclass(frozen=True, slots=True)
 class Wasteful:
@@ -118,6 +124,23 @@ def wasteful_terms(
         ).all()
     }
 
+    # Every ad group each search was answered from, not one of them. The rule
+    # adds a search's spend up across all of them, so the exclusion has to
+    # cover all of them too, or the card's "stops about this much a month"
+    # would be true of half the money it counted.
+    answered_in: dict[str, set[str]] = {}
+    for term_hash, ad_group_id in session.execute(
+        select(SearchTermDay.term_hash, SearchTermDay.ad_group_id)
+        .where(
+            SearchTermDay.customer_id == customer_id,
+            SearchTermDay.day >= window.start,
+            SearchTermDay.day <= window.end,
+        )
+        .distinct()
+    ).all():
+        if ad_group_id:
+            answered_in.setdefault(term_hash, set()).add(str(ad_group_id))
+
     enough_clicks = spec.limits["enough_clicks"]
     multiple = spec.limits["wasted_multiple_of_target"]
     least = spec.limits["least_wasted"]
@@ -137,6 +160,13 @@ def wasteful_terms(
         if spend < least:
             continue
         if _is_protected(term, protected, blocked):
+            continue
+        if not _fits_a_keyword(term):
+            continue
+        groups = sorted(answered_in.get(row.term_hash, ()))
+        if not groups:
+            # Answered from no ad group -- Performance Max reports searches
+            # like this -- so there is nowhere to put an ad group exclusion.
             continue
 
         by_clicks = clicks / enough_clicks if enough_clicks else 0.0
@@ -208,10 +238,29 @@ def wasteful_terms(
                 after={"excluded": True, "match_type": "EXACT", "level": "ad_group"},
                 reversible=True,
                 as_of=as_of,
-                resources=(f"customers/{customer_id}/adGroups/{row.ad_group_id}",),
+                resources=tuple(f"customers/{customer_id}/adGroups/{g}" for g in groups),
+                # Exact match, as `after` has always said: the narrowest
+                # exclusion there is. It stops this search and nothing else,
+                # which is what makes R1 low risk.
+                payload={
+                    "change": "exclude_search",
+                    "text": term,
+                    "match_type": "EXACT",
+                    "ad_groups": [f"customers/{customer_id}/adGroups/{g}" for g in groups],
+                },
             )
         )
     return found
+
+
+def _fits_a_keyword(term: str) -> bool:
+    """Whether Google would take this search as the text of a keyword."""
+    text = term.strip()
+    return (
+        bool(text)
+        and len(text) <= KEYWORD_MOST_CHARACTERS
+        and len(text.split()) <= KEYWORD_MOST_WORDS
+    )
 
 
 def _is_protected(term: str, protected: Sequence[str], blocked: Sequence[str]) -> bool:
@@ -310,6 +359,7 @@ def disapproved_ads(
                 as_of=as_of,
                 pauses=1,
                 resources=(ad.resource_name,),
+                payload={"change": "set_ad_status", "ad": ad.resource_name, "status": "PAUSED"},
             )
         )
     return found

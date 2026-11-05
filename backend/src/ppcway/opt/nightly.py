@@ -32,8 +32,9 @@ recorded against that account rather than raised.
 **Nothing here applies a change.** Phase 2.3's gateway is the only thing that
 can, and this does not call it: applying is gated on the write gate, the kill
 switches and a consent record, and a nightly job that quietly started writing
-to Google the day a flag flipped would be the wrong shape entirely. When writes
-open, applying becomes its own pass with its own report.
+to Google the day a flag flipped would be the wrong shape entirely. Applying is
+its own pass with its own report -- `gateway.send.send_waiting`, behind
+`/v1/internal/apply` -- and a change this pass approves unasked waits for it.
 """
 
 from __future__ import annotations

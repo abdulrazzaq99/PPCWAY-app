@@ -101,6 +101,10 @@ def write_proposal(
         target_label=found.target_label,
         before=dict(found.before),
         after=dict(found.after),
+        # What the gateway will send, fixed now. With the things it touches
+        # alongside, so the hands-off check can still see them when the
+        # guardrails run again at approval and at the door.
+        payload=({**found.payload, "resources": list(found.resources)} if found.payload else None),
         reason=found.reason,
         evidence={"figures": [dict(cite) for cite in found.evidence]},
         expected_impact={

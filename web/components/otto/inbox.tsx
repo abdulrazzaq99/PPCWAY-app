@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { type Card, type Inbox, money, when } from "@/lib/otto";
+import { type Card, type Change, type Inbox, money, when } from "@/lib/otto";
 
 /*
   The inbox. The client's brief calls it the product, and the thing it has to
@@ -13,9 +13,11 @@ import { type Card, type Inbox, money, when } from "@/lib/otto";
   read, what we expect it to be worth, and how to put it back — and says which
   of those words are ours rather than a model's.
 
-  Nothing here changes a Google Ads account. Approving writes a decision; the
-  change itself goes out later, through the one door, with the guardrails run
-  again at that moment.
+  Approving is what changes a Google Ads account: the server checks the change
+  again, sends it through the one door, and answers with what happened — done,
+  Google's reason for refusing, or that writes are switched off and nothing in
+  the account has changed. Below the cards is what became of every change said
+  yes to, with a way to put back what was made.
 */
 
 type Answered = { status: string; words: string; refused_by?: string };
@@ -40,13 +42,7 @@ function Figures({ card }: { card: Card }) {
   );
 }
 
-function OneCard({
-  card,
-  onAnswered,
-}: {
-  card: Card;
-  onAnswered: (said: Answered) => void;
-}) {
+function OneCard({ card, onAnswered }: { card: Card; onAnswered: (said: Answered) => void }) {
   const [busy, setBusy] = useState("");
   const [trouble, setTrouble] = useState("");
 
@@ -129,6 +125,67 @@ function OneCard({
   );
 }
 
+function OneChange({ change }: { change: Change }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState("");
+  const [trouble, setTrouble] = useState("");
+
+  const putBack = async () => {
+    setBusy(true);
+    setTrouble("");
+    try {
+      const res = await fetch(`/api/otto/actions/${change.id}/undo`, { method: "POST" });
+      const answer = (await res.json().catch(() => ({}))) as { words?: string; error?: string };
+      if (!res.ok) {
+        setTrouble(answer.error ?? "That did not work.");
+        return;
+      }
+      setSaid(answer.words ?? "");
+      router.refresh();
+    } catch {
+      setTrouble("We could not reach Otto. Nothing was changed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li className="border-pw-divider flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-t py-4 first:border-t-0">
+      <div className="max-w-[560px] min-w-0">
+        <p className="text-[15px] leading-[20px] font-semibold">{change.title}</p>
+        <p className="text-pw-ink-500 mt-0.5 text-[13px] leading-4">{change.target.label}</p>
+        <p className="text-pw-ink-700 mt-2 text-[14px] leading-[19px]">{said || change.words}</p>
+        {trouble ? (
+          <p className="mt-2 text-[14px] leading-[19px] font-semibold text-red-700">{trouble}</p>
+        ) : null}
+      </div>
+      {change.may_undo && !said ? (
+        <Button variant="secondary" onClick={putBack} disabled={busy}>
+          {busy ? "Putting it back…" : "Undo"}
+        </Button>
+      ) : null}
+    </li>
+  );
+}
+
+function Changes({ changes }: { changes: Change[] }) {
+  if (changes.length === 0) return null;
+  return (
+    <section className="border-pw-border bg-pw-card rounded-[var(--pw-r-card)] border p-5 sm:p-6">
+      <h2 className="text-[17px] leading-[22px] font-semibold">Changes you said yes to</h2>
+      <p className="text-pw-ink-500 mt-1 text-[13px] leading-[17px]">
+        What happened to each one. Anything Otto made can be put back for thirty days.
+      </p>
+      <ul className="mt-2">
+        {changes.map((change) => (
+          <OneChange key={change.id} change={change} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function OttoInbox({ inbox, trouble }: { inbox: Inbox | null; trouble: string }) {
   const [answered, setAnswered] = useState<Record<string, Answered>>({});
   const router = useRouter();
@@ -185,6 +242,8 @@ export function OttoInbox({ inbox, trouble }: { inbox: Inbox | null; trouble: st
           />
         );
       })}
+
+      <Changes changes={inbox.changes ?? []} />
 
       <p className="text-pw-ink-500 text-[13px] leading-[17px]">
         {inbox.used_this_week} of 10 changes used this week

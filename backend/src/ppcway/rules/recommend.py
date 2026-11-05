@@ -110,6 +110,12 @@ class Recommendation:
     change_pct: float | None = None
     pauses: int = 0
     resources: tuple[str, ...] = ()
+    #: What the gateway is to send, as plain data: which change, and exactly
+    #: which things in Google it touches. Written into the log with the row, so
+    #: what goes to Google is what the merchant was shown rather than whatever
+    #: the rule would find on the day it is sent. Plain data because a rule
+    #: may not reach the gateway; `gateway.changes` turns it into operations.
+    payload: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def evidence(self) -> tuple[Mapping[str, Any], ...]:

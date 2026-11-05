@@ -123,14 +123,28 @@ def _operation(op: Any) -> dict[str, Any]:
 def _read(said: dict[str, Any], how_many: int) -> Applied:
     """Google's answer, reassembled into one entry per operation sent.
 
-    `results` is positional and short when operations failed, so it cannot be
-    zipped with the operations directly. The indexes of what failed are in
-    `partialFailureError.details`, and this builds the aligned list from both.
+    Google answers a partial-failure request with one result per operation, at
+    the same index, and an *empty* result where the operation failed -- its own
+    client libraries say so, and skip empty results when reading them. The
+    indexes of what failed are in `partialFailureError.details`.
+
+    Until 5 November this read `results` as short when operations failed and
+    walked it past each failure, which misplaces every result after the first
+    one refused: refuse the first of two, and the second -- which landed -- was
+    recorded as not landed, with its id lost. Both shapes are read now, by
+    position when the list is full length and by skipping when it is short.
     """
     refused = tuple(_refusals(said.get("partialFailureError") or {}))
     failed_at = {one.at for one in refused}
 
     results = said.get("results") or []
+    if len(results) == how_many:
+        by_place: list[str | None] = []
+        for i, got in enumerate(results):
+            name = got.get("resourceName") if isinstance(got, dict) else None
+            by_place.append(None if i in failed_at or not name else str(name))
+        return Applied(landed=tuple(by_place), refused=refused, operations_used=how_many)
+
     landed: list[str | None] = []
     took = iter(results)
     for i in range(how_many):
@@ -196,4 +210,13 @@ def _why(reply: httpx.Response) -> str:
         return f"Google refused the request: {reply.status_code}"
     error = said.get("error") or {}
     message = error.get("message") or reply.text[:200]
+    # The top message is often "Request contains an invalid argument." and the
+    # reason is underneath, in Google's own failure detail. The first one is
+    # what a person needs: "The developer token is not approved", say.
+    for detail in error.get("details") or []:
+        for failure in (detail.get("errors") or []) if isinstance(detail, dict) else []:
+            why = str(failure.get("message") or "")
+            code = _code_of(failure.get("errorCode") or {})
+            if why:
+                return f"Google refused the request: {reply.status_code} {why} ({code})"
     return f"Google refused the request: {reply.status_code} {message}"

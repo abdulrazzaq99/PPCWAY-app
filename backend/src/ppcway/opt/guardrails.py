@@ -30,6 +30,7 @@ from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any
 
+from ppcway.metric.figures import FRESH_HOURS
 from ppcway.opt.models import Autonomy
 
 log = logging.getLogger(__name__)
@@ -123,7 +124,11 @@ class Limits:
     max_changes_per_entity_day: int = 2
     max_changes_per_day: int = 20
     max_pause_pct: float = 10.0
-    staleness_minutes: int = 180
+    #: The brief's own figure: "No decision on data older than 36 hours". Three
+    #: hours until 5 November, which refused every search-term change approved
+    #: after breakfast -- those figures are settled a day behind and read once a
+    #: night -- so the merchant's yes could never get past its own recheck.
+    staleness_minutes: int = FRESH_HOURS * 60
     hands_off: tuple[str, ...] = ()
 
 

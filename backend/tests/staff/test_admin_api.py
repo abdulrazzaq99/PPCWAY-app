@@ -37,6 +37,7 @@ EVERY_ROUTE = (
     ("GET", "/v1/admin/staff"),
     ("POST", "/v1/admin/platform/stop"),
     ("POST", "/v1/admin/platform/release"),
+    ("POST", "/v1/admin/platform/writes"),
     ("POST", "/v1/admin/staff"),
 )
 
@@ -307,20 +308,106 @@ def test_the_overview_honours_the_window_asked_for(
         )
 
 
-def test_no_flag_is_offered_as_changeable(
+def test_only_writing_to_google_ads_is_offered_as_changeable(
     world: tuple[FastAPI, sessionmaker[Session]],
 ) -> None:
     """A toggle for something only a deploy can change teaches people the panel
-    is lying to them."""
+    is lying to them. Writes are the one switch here, since 5 November; every
+    other setting still says why it is not one."""
     app, factory = world
     token = signed_in(factory, "eng@ppcway.com", Level.ENGINEER)
     with TestClient(app) as client:
         body = client.get("/v1/admin/platform", headers=head(token)).json()
-    assert body["flags"], "there is something to show"
-    assert all(not one["changeable"] for one in body["flags"])
-    assert all(one["why_not"] for one in body["flags"])
     names = {one["name"]: one for one in body["flags"]}
     assert names["Writing to Google Ads"]["on"] is False
+    assert names["Writing to Google Ads"]["changeable"] is True
+    others = [one for one in body["flags"] if one["name"] != "Writing to Google Ads"]
+    assert others, "there is something else to show"
+    assert all(not one["changeable"] and one["why_not"] for one in others)
+    assert body["may_switch_writes"] is False, "an engineer reads it and cannot throw it"
+    assert body["writes"] == {
+        "on": False,
+        "source": "deployment",
+        "because": "",
+        "set_by": None,
+        "set_at": None,
+    }
+
+
+def test_a_principal_switches_writes_on_and_off_without_a_deploy(
+    world: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    """The owner's request: a redeploy for every flip was the wrong cost."""
+    app, factory = world
+    boss = signed_in(factory, "boss@ppcway.com", Level.PRINCIPAL)
+    with TestClient(app) as client:
+        assert client.get("/v1/admin/platform", headers=head(boss)).json()["may_switch_writes"]
+        on = client.post(
+            "/v1/admin/platform/writes",
+            headers=head(boss),
+            json={"on": True, "because": "testing the write path on the test account"},
+        )
+        assert on.status_code == 200, on.text
+        assert on.json()["on"] is True
+        body = client.get("/v1/admin/platform", headers=head(boss)).json()
+        assert body["anything_can_be_written"] is True
+        assert body["writes"]["source"] == "panel"
+        assert body["writes"]["set_by"] == "boss@ppcway.com"
+        assert body["writes"]["because"] == "testing the write path on the test account"
+        names = {one["name"]: one for one in body["flags"]}
+        assert names["Writing to Google Ads"]["on"] is True
+
+        off = client.post("/v1/admin/platform/writes", headers=head(boss), json={"on": False})
+        assert off.status_code == 200, off.text
+        body = client.get("/v1/admin/platform", headers=head(boss)).json()
+    assert body["anything_can_be_written"] is False
+    assert "switched off here" in body["words"]
+
+
+def test_switching_writes_on_needs_principal_access_and_a_reason(
+    world: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    app, factory = world
+    engineer = signed_in(factory, "eng@ppcway.com", Level.ENGINEER)
+    boss = signed_in(factory, "boss@ppcway.com", Level.PRINCIPAL)
+    with TestClient(app) as client:
+        refused = client.post(
+            "/v1/admin/platform/writes",
+            headers=head(engineer),
+            json={"on": True, "because": "an engineer would like writes on"},
+        )
+        assert refused.status_code == 403
+        no_reason = client.post(
+            "/v1/admin/platform/writes", headers=head(boss), json={"on": True, "because": "x"}
+        )
+        assert no_reason.status_code == 422
+        assert "say why" in no_reason.json()["detail"]
+        unclear = client.post("/v1/admin/platform/writes", headers=head(boss), json={"on": "yes"})
+        assert unclear.status_code == 422
+        body = client.get("/v1/admin/platform", headers=head(boss)).json()
+    assert body["anything_can_be_written"] is False, "none of those switched anything"
+
+
+def test_a_stop_still_wins_over_writes_switched_on(
+    world: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    """ "Stop everything" stays one button whatever the switch says."""
+    app, factory = world
+    boss = signed_in(factory, "boss@ppcway.com", Level.PRINCIPAL)
+    with TestClient(app) as client:
+        client.post(
+            "/v1/admin/platform/writes",
+            headers=head(boss),
+            json={"on": True, "because": "testing the write path on the test account"},
+        )
+        client.post(
+            "/v1/admin/platform/stop",
+            headers=head(boss),
+            json={"because": "stopped during an incident"},
+        )
+        body = client.get("/v1/admin/platform", headers=head(boss)).json()
+    assert body["anything_can_be_written"] is False
+    assert "stopped during an incident" in body["words"]
 
 
 def test_the_screen_is_told_whether_to_show_the_stop_button(
@@ -665,7 +752,7 @@ def test_the_setting_is_reported_ahead_of_a_stop_when_both_are_true(
             json={"because": "stopped during an incident"},
         )
         body = client.get("/v1/admin/platform", headers=head(token)).json()
-    assert "takes a deploy to change" in body["words"]
+    assert "this deployment's setting leaves them off" in body["words"]
     assert body["anything_can_be_written"] is False
     assert [one["because"] for one in body["stops"]] == ["stopped during an incident"]
 

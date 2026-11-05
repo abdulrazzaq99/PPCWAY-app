@@ -264,10 +264,18 @@ def test_a_small_pause_is_allowed() -> None:
 
 
 def test_old_figures_do_not_get_to_move_money() -> None:
-    said = ruling(proposal={"metrics_as_of": NOW - timedelta(hours=9)})
+    """The brief: "No decision on data older than 36 hours"."""
+    said = ruling(proposal={"metrics_as_of": NOW - timedelta(hours=40)})
     assert said.ruling.verdict is Verdict.REJECTED
     assert said.ruling.check == "data_freshness"
-    assert "9 hours old" in said.ruling.because
+    assert "40 hours old" in said.ruling.because
+
+
+def test_last_night_s_figures_can_still_be_said_yes_to_in_the_afternoon() -> None:
+    """Search terms are settled a day behind and read once a night. Three
+    hours, the old limit, refused every one approved after breakfast."""
+    said = ruling(proposal={"metrics_as_of": NOW - timedelta(hours=11)})
+    assert said.ruling.verdict is Verdict.APPROVED
 
 
 def test_a_naive_timestamp_is_read_as_utc_rather_than_refused() -> None:

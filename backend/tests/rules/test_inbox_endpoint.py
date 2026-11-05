@@ -10,6 +10,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 import sqlalchemy as sa
@@ -40,6 +41,7 @@ from ppcway.model import log as _prompt_log  # noqa: F401 - registers its table
 from ppcway.opt import consent as _consent  # noqa: F401 - registers its table
 from ppcway.opt.models import OptimizationAction
 from ppcway.org.places import home_for
+from ppcway.staff import models as _staff  # noqa: F401 - registers its table
 
 KEY = Fernet.generate_key()
 CUSTOMER = "2580586343"
@@ -48,6 +50,26 @@ TODAY = datetime.now(UTC).date()
 
 @pytest.fixture
 def app_and_db(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[FastAPI, sessionmaker[Session]]]:
+    yield from _app(monkeypatch)
+
+
+@pytest.fixture
+def writing_app(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[tuple[FastAPI, sessionmaker[Session], Recorder]]:
+    """The same app with writes to Google switched on, and Google faked at the
+    door: whatever the gateway sends is recorded and answered as landed."""
+    from ppcway.gateway import send as sending
+
+    door = Recorder()
+    monkeypatch.setattr(sending, "doors", lambda settings: lambda connection: door)
+    for app, factory in _app(monkeypatch, ads_writes_enabled=True, sync_key=SecretStr("key")):
+        yield app, factory, door
+
+
+def _app(
+    monkeypatch: pytest.MonkeyPatch, **over: object
+) -> Iterator[tuple[FastAPI, sessionmaker[Session]]]:
     engine = sa.create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=sa.pool.StaticPool
     )
@@ -70,8 +92,11 @@ def app_and_db(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[FastAPI, sessi
         google_oauth_client_secret=SecretStr("test-secret"),
         google_ads_developer_token=SecretStr("test-token"),
         google_oauth_token_key=SecretStr(KEY.decode()),
+        **over,  # type: ignore[arg-type]
     )
     app = create_app(settings)
+    # The internal endpoints open their own sessions, as the scheduler's do.
+    monkeypatch.setattr("ppcway.api.app.session_factory", lambda: factory)
 
     def one_session() -> Iterator[Session]:
         session = factory()
@@ -409,3 +434,162 @@ def test_a_card_already_written_is_not_also_previewed(
         tonight(factory, Settings(environment="test"))
         said = client.get("/v1/otto/inbox", headers={"x-session-token": token}).json()
     assert len(said["cards"]) == 1
+
+
+class Recorder:
+    """Google, as far as these tests need it: every batch lands."""
+
+    def __init__(self) -> None:
+        self.sent: list[Any] = []
+
+    def mutate(self, batch: Any) -> Any:
+        from ppcway.gateway.port import Applied
+
+        self.sent.append(batch)
+        return Applied(
+            landed=tuple(
+                f"customers/{CUSTOMER}/adGroupCriteria/21~{900 + len(self.sent) + n}"
+                for n in range(batch.how_many)
+            ),
+            operations_used=batch.how_many,
+        )
+
+
+def _offered(client: TestClient, factory: sessionmaker[Session], token: str) -> dict[str, Any]:
+    """The nightly pass writes what the rules found; the card it wrote."""
+    from ppcway.opt.nightly import tonight
+
+    night = tonight(factory, Settings(environment="test"))
+    assert night.proposed == 1, night.trouble
+    said = client.get("/v1/otto/inbox", headers={"x-session-token": token}).json()
+    (card,) = [one for one in said["cards"] if one["answerable"]]
+    return dict(card)
+
+
+def test_with_writes_off_a_yes_says_nothing_in_the_account_changed(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    """It used to say "Otto will make the change and tell you when it is done"
+    while nothing anywhere could make it."""
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        mirror(factory)
+        card = _offered(client, factory, token)
+        answered = client.post(
+            f"/v1/otto/actions/{card['id']}/approve", headers={"x-session-token": token}
+        ).json()
+        assert answered["status"] == "approved"
+        assert "nothing in your account has changed" in answered["words"]
+        assert "tell you when it is done" not in answered["words"]
+
+        inbox = client.get("/v1/otto/inbox", headers={"x-session-token": token}).json()
+    assert [one["answerable"] for one in inbox["cards"]] == [], (
+        "the approved search is neither offered again nor previewed"
+    )
+    (change,) = inbox["changes"]
+    assert change["status"] == "approved"
+    assert "PPCWay is not writing to Google Ads yet" in change["words"]
+    assert change["may_undo"] is False
+
+
+def test_with_writes_on_a_yes_is_made_and_can_be_put_back(
+    writing_app: tuple[FastAPI, sessionmaker[Session], Recorder],
+) -> None:
+    """The whole of step 3, through the endpoints a browser uses."""
+    app, factory, google_ = writing_app
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        mirror(factory)
+        card = _offered(client, factory, token)
+
+        answered = client.post(
+            f"/v1/otto/actions/{card['id']}/approve", headers={"x-session-token": token}
+        ).json()
+        assert answered["status"] == "applied", answered
+        assert answered["words"].startswith(
+            'Done. Searches for "boiler repair jobs" no longer show your ads.'
+        )
+        (made,) = google_.sent
+        assert made.operations[0].fields == {
+            "adGroup": f"customers/{CUSTOMER}/adGroups/21",
+            "negative": True,
+            "keyword": {"text": "boiler repair jobs", "matchType": "EXACT"},
+        }
+
+        inbox = client.get("/v1/otto/inbox", headers={"x-session-token": token}).json()
+        (change,) = inbox["changes"]
+        assert change["status"] == "applied"
+        assert change["may_undo"] is True
+        assert "You can undo it until" in change["words"]
+
+        put_back = client.post(
+            f"/v1/otto/actions/{card['id']}/undo", headers={"x-session-token": token}
+        ).json()
+        assert put_back["status"] == "applied", put_back
+        assert (
+            put_back["words"] == 'Done. Searches for "boiler repair jobs" can show your ads again.'
+        )
+        removal = google_.sent[1]
+        assert [op.doing.value for op in removal.operations] == ["remove"]
+        assert removal.operations[0].resource_name == f"customers/{CUSTOMER}/adGroupCriteria/21~901"
+
+        inbox = client.get("/v1/otto/inbox", headers={"x-session-token": token}).json()
+    (change,) = inbox["changes"]
+    assert change["status"] == "reverted"
+    assert "put back" in change["words"]
+    assert change["may_undo"] is False
+
+
+def test_the_scheduled_pass_needs_the_key_and_sends_what_is_waiting(
+    writing_app: tuple[FastAPI, sessionmaker[Session], Recorder],
+) -> None:
+    """What could not go at the moment it was approved goes on the next pass."""
+    from ppcway.gateway import switch
+
+    app, factory, google_ = writing_app
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        mirror(factory)
+        card = _offered(client, factory, token)
+        with factory() as session:
+            switch.stop(session, customer_id=CUSTOMER, because="Paused while we look.")
+        held = client.post(
+            f"/v1/otto/actions/{card['id']}/approve", headers={"x-session-token": token}
+        ).json()
+        assert held["status"] == "approved"
+        assert "Paused while we look." in held["words"]
+        assert google_.sent == []
+
+        assert client.post("/v1/internal/apply").status_code == 403
+        assert client.post("/v1/internal/apply", headers={"x-sync-key": "nope"}).status_code == 403
+
+        with factory() as session:
+            switch.release(session, customer_id=CUSTOMER)
+        done = client.post("/v1/internal/apply", headers={"x-sync-key": "key"}).json()
+    assert (done["waiting"], done["applied"]) == (1, 1), done
+    assert len(google_.sent) == 1
+
+
+def test_writes_switched_on_in_the_panel_need_no_deploy(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The deployment's setting is off, as in production. Switched on in the
+    panel, a yes is made there and then."""
+    from ppcway.gateway import send as sending
+    from ppcway.gateway import switch
+
+    google_ = Recorder()
+    monkeypatch.setattr(sending, "doors", lambda settings: lambda connection: google_)
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        mirror(factory)
+        card = _offered(client, factory, token)
+        with factory() as session:
+            switch.set_gate(session, is_open=True, because="testing the write path", set_by=None)
+        answered = client.post(
+            f"/v1/otto/actions/{card['id']}/approve", headers={"x-session-token": token}
+        ).json()
+    assert answered["status"] == "applied", answered
+    assert len(google_.sent) == 1

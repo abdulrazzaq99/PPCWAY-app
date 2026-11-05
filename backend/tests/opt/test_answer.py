@@ -78,7 +78,12 @@ def a_change(
     expires_in_days: int = 6,
     kind: str = "add_negative_keyword",
     reversible: bool = True,
+    applied_days_ago: float = 0.125,
+    payload: dict[str, object] | None = None,
+    outcome: dict[str, object] | None = None,
+    before: dict[str, object] | None = None,
 ) -> uuid.UUID:
+    applied = status in {Status.APPLIED.value, Status.REVERTED.value}
     with db() as session:
         row = OptimizationAction(
             organization_id=place,
@@ -87,7 +92,7 @@ def a_change(
             target_kind="search_term",
             target_id="abc123",
             target_label="boiler repair jobs",
-            before={"excluded": False},
+            before=before if before is not None else {"excluded": False},
             after={"excluded": True},
             reason="Nobody who searched that got in touch.",
             evidence={
@@ -111,10 +116,28 @@ def a_change(
             decided_because="You asked to be asked.",
             created_at=NOW - timedelta(days=1),
             expires_at=NOW + timedelta(days=expires_in_days),
+            # What a real one carries: what was sent, and, once it was made,
+            # what Google said it created -- which is what an undo removes.
+            payload=payload if payload is not None else dict(EXCLUSION),
+            applied_at=NOW - timedelta(days=applied_days_ago) if applied else None,
+            outcome=(outcome if outcome is not None else dict(CREATED)) if applied else None,
         )
         session.add(row)
         session.commit()
         return row.id
+
+
+#: What R1 writes for one search answered from one ad group.
+EXCLUSION: dict[str, object] = {
+    "change": "exclude_search",
+    "text": "boiler repair jobs",
+    "match_type": "EXACT",
+    "ad_groups": ["customers/2580586343/adGroups/21"],
+    "resources": ["customers/2580586343/adGroups/21"],
+}
+
+#: And what Google answered when it was made.
+CREATED: dict[str, object] = {"landed": ["customers/2580586343/adGroupCriteria/21~900"]}
 
 
 def test_a_yes_is_recorded_with_who_said_it(
@@ -458,3 +481,89 @@ def test_asking_twice_does_not_queue_two_undos(
                 role=Role.OWNER,
                 now=NOW,
             )
+
+
+def test_an_undo_removes_exactly_what_google_created(
+    world: tuple[sessionmaker[Session], uuid.UUID, uuid.UUID, AdsConnection],
+) -> None:
+    """By the id Google gave it, which only Google's answer holds."""
+    db, place, person, _connection = world
+    action = a_change(db, place, status=Status.APPLIED.value)
+    with db() as session:
+        said = undo(
+            session, action, organization_id=place, account_id=person, role=Role.OWNER, now=NOW
+        )
+    assert said.action.payload == {
+        "change": "remove_exclusions",
+        "criteria": ["customers/2580586343/adGroupCriteria/21~900"],
+    }
+    assert said.action.status == Status.APPROVED.value
+
+
+def test_an_undo_of_a_pause_puts_back_the_status_it_had(
+    world: tuple[sessionmaker[Session], uuid.UUID, uuid.UUID, AdsConnection],
+) -> None:
+    db, place, person, _connection = world
+    ad = "customers/2580586343/adGroupAds/21~77"
+    paused = a_change(
+        db,
+        place,
+        status=Status.APPLIED.value,
+        kind="pause_ad",
+        before={"status": "ENABLED"},
+        payload={"change": "set_ad_status", "ad": ad, "status": "PAUSED", "resources": [ad]},
+    )
+    with db() as session:
+        said = undo(
+            session, paused, organization_id=place, account_id=person, role=Role.OWNER, now=NOW
+        )
+    assert said.action.payload == {"change": "set_ad_status", "ad": ad, "status": "ENABLED"}
+
+
+def test_past_thirty_days_an_undo_is_not_offered(
+    world: tuple[sessionmaker[Session], uuid.UUID, uuid.UUID, AdsConnection],
+) -> None:
+    """The brief's thirty-day undo. It was checked by nothing until now."""
+    db, place, person, _connection = world
+    action = a_change(db, place, status=Status.APPLIED.value, applied_days_ago=31)
+    with db() as session, pytest.raises(NotAnswerable, match="more than 30 days ago"):
+        undo(session, action, organization_id=place, account_id=person, role=Role.OWNER, now=NOW)
+
+
+def test_without_google_s_answer_an_exclusion_cannot_be_put_back_from_here(
+    world: tuple[sessionmaker[Session], uuid.UUID, uuid.UUID, AdsConnection],
+) -> None:
+    """A guess at which negative keyword to remove is worse than saying so."""
+    db, place, person, _connection = world
+    action = a_change(db, place, status=Status.APPLIED.value, outcome={"landed": [None]})
+    with db() as session, pytest.raises(NotAnswerable, match="no record of what Google created"):
+        undo(session, action, organization_id=place, account_id=person, role=Role.OWNER, now=NOW)
+
+
+def test_a_change_logged_before_payloads_is_put_back_in_google_ads_itself(
+    world: tuple[sessionmaker[Session], uuid.UUID, uuid.UUID, AdsConnection],
+) -> None:
+    db, place, person, _connection = world
+    action = a_change(db, place, status=Status.APPLIED.value, payload={})
+    with db() as session, pytest.raises(NotAnswerable, match="in Google Ads itself"):
+        undo(session, action, organization_id=place, account_id=person, role=Role.OWNER, now=NOW)
+
+
+def test_a_yes_no_longer_promises_what_nothing_could_keep(
+    world: tuple[sessionmaker[Session], uuid.UUID, uuid.UUID, AdsConnection],
+) -> None:
+    """It said "Otto will make the change and tell you when it is done" while
+    nothing sent anything. What happens next is the gateway's to say."""
+    db, place, person, connection = world
+    action = a_change(db, place)
+    with db() as session:
+        said = approve(
+            session,
+            action,
+            organization_id=place,
+            account_id=person,
+            role=Role.OWNER,
+            connection=session.get(AdsConnection, connection.id),  # type: ignore[arg-type]
+            now=NOW,
+        )
+    assert said.words == "Approved."

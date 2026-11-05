@@ -26,9 +26,9 @@ trace breaks the property the log exists to provide.
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from enum import Enum
-from typing import Any
+from typing import Any, Final
 
 from sqlalchemy import (
     JSON,
@@ -48,6 +48,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ppcway.db.base import Base
+from ppcway.metric.figures import FRESH_HOURS
 
 
 def _pk() -> Mapped[uuid.UUID]:
@@ -179,6 +180,14 @@ class Risk(str, Enum):
 #: and the brief: "Expires at | Created + 7 days".
 APPROVAL_EXPIRES_DAYS = 7
 
+#: How long an applied change may be put back. The client's brief: 30-day undo.
+#: Past it the structure can still be changed by hand, but PPCWay stops
+#: offering to do it: an undo built from a month-old `before` is a change to an
+#: account that has moved on. Here rather than in the gateway, because asking
+#: for an undo is decided in `opt.answer` and the inbox has to say whether the
+#: button is there, and neither may reach into the gateway to find out.
+UNDO_FOR: Final = timedelta(days=30)
+
 
 class GuardrailConfig(Base):
     """The limits in force, versioned, so an old action can be explained.
@@ -229,8 +238,11 @@ class GuardrailConfig(Base):
     max_pause_pct: Mapped[float] = mapped_column(Float, default=10.0)
 
     #: How old the numbers behind a decision may be. A spend decision made on
-    #: stale data is worse than no decision.
-    staleness_minutes: Mapped[int] = mapped_column(Integer, default=180)
+    #: stale data is worse than no decision. The client's brief sets it: "No
+    #: decision on data older than 36 hours". It was three hours until 5
+    #: November, which no search-term figure could meet after breakfast:
+    #: Google settles those a day behind and they are read once a night.
+    staleness_minutes: Mapped[int] = mapped_column(Integer, default=FRESH_HOURS * 60)
 
     #: Campaigns, budgets or keywords the merchant has pinned as hands-off,
     #: by resource name. Full-auto with exclusions is often the difference
@@ -345,6 +357,19 @@ class OptimizationAction(Base):
     )
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reverted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: When one sender took this change to make it. Set once, by an update
+    #: only one sender can win, and never cleared: this is what makes a change
+    #: reach Google at most once however many senders, retries and scheduler
+    #: runs arrive at it. A change taken and never answered stays taken, and
+    #: says so, rather than being sent a second time on a guess -- a second
+    #: exclusion is harmless, a second budget rise is not.
+    taken_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: What happened at the door, written once: what each operation created,
+    #: what Google refused and in what words, or the ruling that stopped it
+    #: before it was sent. Undoing an exclusion is built from this, because
+    #: only Google knows the id of the thing it created, and a failed change
+    #: is explained from it rather than left as a bare status.
+    outcome: Mapped[dict[str, Any] | None] = _json()
 
     @property
     def expired_by(self) -> bool:
@@ -355,3 +380,21 @@ class OptimizationAction(Base):
             Status.PROPOSED.value,
             Status.AWAITING_APPROVAL.value,
         }
+
+
+def may_undo(action: OptimizationAction, *, now: datetime | None = None) -> bool:
+    """Whether this is still inside the thirty-day window.
+
+    Read from `applied_at` rather than `created_at`: the window the brief means
+    is thirty days since the change was made, not since it was suggested, and a
+    proposal that waited six days for a yes would otherwise lose six days of
+    its undo.
+    """
+    if action.status != Status.APPLIED.value or not action.reversible:
+        return False
+    if action.applied_at is None:
+        return False
+    at = now or datetime.now(UTC)
+    made = action.applied_at
+    made = made if made.tzinfo else made.replace(tzinfo=UTC)
+    return (at - made) <= UNDO_FOR

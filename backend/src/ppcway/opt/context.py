@@ -28,10 +28,10 @@ from ppcway.opt.guardrails import Limits, Standing
 from ppcway.opt.models import COUNTS_TOWARD_CAP, GuardrailConfig, OptimizationAction
 
 #: Google's daily allowance of mutating operations for a Basic-access account.
-#: A ceiling we have not yet started spending: nothing in this codebase mutates
-#: anything, so the day's quota is untouched and saying so is accurate rather
-#: than optimistic. Phase 2.3's gateway is what will count against it, and the
-#: brief's 80% alert is that phase's job.
+#: The guardrails' tenth check reads this whole allowance as left, because the
+#: day's real count lives in the gateway and this package may not reach it. The
+#: count is read where it matters: `gateway.apply.apply_now` checks the day's
+#: room before it takes a change, and refuses one that would not fit.
 DAILY_OPERATIONS = 15_000
 
 #: The states in which Google will actually serve an account's ads.
@@ -118,8 +118,9 @@ def standing_for(
         changes_today=_changes_today(session, connection, at),
         moved_pct_today=_moved_today(session, connection, at),
         active_entities=_active(session, connection.customer_id),
-        # Nothing has mutated anything yet, so none of the day's allowance has
-        # been spent. True today, and 2.3's job to make it stay true.
+        # The whole allowance, as far as this package can see. The real count
+        # is checked at the door, before a change is taken -- see the note on
+        # `DAILY_OPERATIONS`.
         quota_left=DAILY_OPERATIONS,
     )
 

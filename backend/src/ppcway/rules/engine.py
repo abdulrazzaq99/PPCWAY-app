@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 
 from ppcway.ads.mirror import SyncRun
 from ppcway.metric.figures import FRESH_HOURS
-from ppcway.opt.models import COUNTS_TOWARD_CAP, OptimizationAction
+from ppcway.opt.models import COUNTS_TOWARD_CAP, UNDO_FOR, OptimizationAction, Status
 from ppcway.rules import library
 from ppcway.rules.catalogue import Rule, live, waiting
 from ppcway.rules.recommend import Recommendation, in_order
@@ -44,6 +44,14 @@ MOST_A_WEEK: Final = 10
 
 #: The window that cap is measured over.
 A_WEEK: Final = 7
+
+#: Rows that mean a target is still being dealt with, at any age: offered and
+#: waiting for an answer, or approved and waiting to be sent. Offering the same
+#: change again beside one of these is two cards for one decision -- and, once
+#: changes are sent, two attempts at one change.
+STILL_OPEN: Final = frozenset(
+    {Status.PROPOSED.value, Status.AWAITING_APPROVAL.value, Status.APPROVED.value}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +116,12 @@ def run(
             )
         )
 
+    # What the log already has an answer for is not found again. Without this
+    # every night re-offered the same search until Google's own report caught
+    # up, and "Otto will not propose that one again this week" was not true.
+    taken = spoken_for(session, customer_id, at)
+    found = [one for one in found if (one.rule.kind, one.target_id) not in taken]
+
     used = _used_this_week(session, customer_id, at)
     room = max(0, MOST_A_WEEK - used)
     ranked = in_order(found)
@@ -153,6 +167,68 @@ def _for(
     # says so. Here rather than an assert because a rule marked implemented
     # with nothing behind it should produce nothing, not a crash in a job.
     return []
+
+
+def spoken_for(session: Session, customer_id: str, at: datetime) -> dict[tuple[str, str], str]:
+    """The changes, by kind and target, that are not to be offered again yet,
+    each with the status that holds it -- so a caller can say why, as the chat
+    does when somebody asks it to propose one of these.
+
+    - still open, at any age: waiting for an answer, or approved and not sent;
+    - made in the last thirty days, which is how long Google's own reports can
+      take to show it and how long it can be undone;
+    - put back in the last thirty days: the merchant undid it, and offering it
+      again the next morning would be arguing with them;
+    - declined by a person, or refused by Google, in the last week. What the
+      inbox tells a merchant who says no is "Otto will not propose that one
+      again this week", and this is what makes it true.
+
+    Not an offer that expired -- nobody said no to it, and the inbox says "Otto
+    will propose it again if it is still worth doing" -- and not one a
+    guardrail refused, which may pass tomorrow on fresher figures.
+    """
+    rows = session.execute(
+        select(
+            OptimizationAction.kind,
+            OptimizationAction.target_id,
+            OptimizationAction.status,
+            OptimizationAction.rechecked,
+            OptimizationAction.created_at,
+            OptimizationAction.applied_at,
+            OptimizationAction.reverted_at,
+        ).where(
+            OptimizationAction.customer_id == customer_id,
+            # An undo carries its original's kind and target, and the original's
+            # own status already says where that change stands.
+            OptimizationAction.undo_of.is_(None),
+        )
+    ).all()
+    week = timedelta(days=A_WEEK)
+    taken: dict[tuple[str, str], str] = {}
+    for kind, target, status, rechecked, created, applied, reverted in rows:
+        recent = _since(at, created)
+        if status in STILL_OPEN:
+            keep = True
+        elif status == Status.APPLIED.value:
+            keep = _since(at, applied or created) <= UNDO_FOR
+        elif status == Status.REVERTED.value:
+            keep = _since(at, reverted or created) <= UNDO_FOR
+        elif status == Status.FAILED.value:
+            keep = recent <= week
+        elif status == Status.REJECTED.value:
+            by_a_person = isinstance(rechecked, dict) and rechecked.get("check") == "person"
+            keep = by_a_person and recent <= week
+        else:
+            keep = False
+        # A row still open says more than an older answer beside it.
+        if keep and taken.get((kind, target)) not in STILL_OPEN:
+            taken[(kind, target)] = status
+    return taken
+
+
+def _since(at: datetime, when: datetime) -> timedelta:
+    """How long ago, with SQLite's naive timestamps read as the UTC they are."""
+    return at - (when if when.tzinfo else when.replace(tzinfo=UTC))
 
 
 def _used_this_week(session: Session, customer_id: str, at: datetime) -> int:

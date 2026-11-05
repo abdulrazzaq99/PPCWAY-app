@@ -38,7 +38,7 @@ import {
   type Room,
   type Whoami,
 } from "@/lib/admin";
-import { GrantAccess, StopWrites } from "./actions";
+import { GrantAccess, StopWrites, SwitchWrites } from "./actions";
 import { FateLegend, ProposalColumns, RunStrip, totalsOf } from "./charts";
 import { Shell } from "./shell";
 import {
@@ -1534,7 +1534,7 @@ export function AdminPlatform({
             </Pill>
           ) : null
         }
-        lead="What governs the platform, read from the deployment itself. Nothing here is a toggle that could quietly turn on live writing."
+        lead="What governs the platform. Writes to Google Ads switch on and off here, with your reason kept; everything else is read from the deployment."
       />
 
       <div className="mt-8 grid gap-6">
@@ -1543,7 +1543,7 @@ export function AdminPlatform({
           <div>
             <Setting
               title="Writes to Google Ads"
-              words="The one door. Every change Otto sends to a merchant's account goes through it, and stopping it is recorded with your reason."
+              words="The one door. Every change Otto sends to a merchant's account goes through it. Switch it on and off here; a stop still wins over the switch."
             >
               <div className="border-ad-border bg-ad-surface rounded-[6px] border p-5">
                 <p className="text-[15px] leading-[22px] font-semibold">
@@ -1551,10 +1551,30 @@ export function AdminPlatform({
                     ? "PPCWay can write to Google Ads"
                     : platformStop && door?.state === "stopped"
                       ? "Stopped across the whole platform"
-                      : "Off, by this deployment’s setting"}
+                      : view.writes?.source === "panel"
+                        ? "Off, switched off here"
+                        : "Off"}
                 </p>
                 <p className="text-ad-muted mt-1 text-[13px] leading-[20px]">{view.words}</p>
-                <div className="mt-4">
+                {view.writes ? (
+                  <div className="border-ad-rule mt-4 border-t pt-4">
+                    <SwitchWrites on={view.writes.on} may={Boolean(view.may_switch_writes)} />
+                    {view.writes.source === "panel" && view.writes.set_at ? (
+                      <p className="text-ad-faint mt-2 text-[12px] leading-[18px]">
+                        Last switched {view.writes.on ? "on" : "off"}
+                        {view.writes.set_by ? ` by ${view.writes.set_by}` : ""},{" "}
+                        <span className="ad-num">{stamp(view.writes.set_at)}</span>
+                        {/* Off, the sentence above already says why. */}
+                        {view.writes.on && view.writes.because ? `: ${view.writes.because}` : ""}
+                      </p>
+                    ) : (
+                      <p className="text-ad-faint mt-2 text-[12px] leading-[18px]">
+                        Nobody has switched it here yet, so the deployment’s setting stands.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+                <div className="border-ad-rule mt-4 border-t pt-4">
                   {view.may_stop_writes ? (
                     <StopWrites stopped={Boolean(platformStop)} label="Stop writes everywhere" />
                   ) : (
@@ -1613,7 +1633,7 @@ export function AdminPlatform({
 
             <Setting
               title="How this deployment is set"
-              words="Read from the environment. Each one takes a deploy to change, which is deliberate: a button that could switch on live writing would be the most dangerous control in the product."
+              words="Writing to Google Ads is the switch above. The rest are read from the environment and take a deploy to change, on purpose: applying without asking is the client's decision, not something to flip while testing."
             >
               <ul className="border-ad-border bg-ad-surface rounded-[6px] border">
                 {view.flags.map((one) => (

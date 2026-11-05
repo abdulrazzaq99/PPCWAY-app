@@ -37,12 +37,14 @@ from __future__ import annotations
 import logging
 import secrets
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, Final
 
 from ppcway.opt.context import limits_for, standing_for
 from ppcway.opt.guardrails import judge
 from ppcway.opt.models import ProposedBy, Status
 from ppcway.opt.record import write_proposal
+from ppcway.rules.engine import spoken_for
 from ppcway.rules.library import wasteful_terms
 
 log = logging.getLogger(__name__)
@@ -50,6 +52,18 @@ log = logging.getLogger(__name__)
 #: How long a handle is. Short enough to sit in a prompt without costing
 #: anything, long enough that guessing one is not a strategy.
 LENGTH: Final = 10
+
+#: Why a change cannot be proposed again, by the status of the row that holds
+#: it -- said to the merchant through the model, so in words they can act on.
+ALREADY: Final[dict[str, str]] = {
+    "proposed": "That search is already in your Otto inbox, waiting for your answer.",
+    "awaiting_approval": "That search is already in your Otto inbox, waiting for your answer.",
+    "approved": "You have already approved excluding that search.",
+    "applied": "That search was excluded recently. It can be put back from the Otto inbox.",
+    "reverted": "That exclusion was put back recently, so I will not propose it again yet.",
+    "rejected": "You declined excluding that search this week, so I will not propose it again.",
+    "failed": "Google refused that exclusion this week, so I will not try it again yet.",
+}
 
 #: What a handle may be used to propose, by the kind of thing it points at.
 #: A handle for a search term cannot be used to pause an ad, which is the
@@ -199,6 +213,13 @@ def _negative_keyword(asked: Any, found: Handle) -> dict[str, Any]:
             "That search has not cost enough to be worth excluding yet, or it has"
             " already brought somebody in. I would rather not propose it."
         )
+    # The same check the nightly pass makes, so asking in the chat cannot put a
+    # second card beside one already waiting, approved or just answered.
+    held = spoken_for(asked.session, asked.customer_id, datetime.now(UTC)).get(
+        (mine.rule.kind, mine.target_id)
+    )
+    if held is not None:
+        raise CannotPropose(ALREADY.get(held, ALREADY["applied"]))
 
     said = judge(
         mine.to_proposal(),

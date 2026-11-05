@@ -47,9 +47,28 @@ export type Card = {
   as_of: string | null;
 };
 
+/** A change somebody said yes to, and where it has got to. */
+export type Change = {
+  id: string;
+  status: "approved" | "applied" | "failed" | "reverted" | "rejected";
+  rule_id: string;
+  title: string;
+  target: { kind: string; id: string; label: string };
+  /** One sentence on where it stands, written by the server. */
+  words: string;
+  /** True while it was made in the last thirty days and nothing is putting it back. */
+  may_undo: boolean;
+  undo: string;
+  approved_at: string | null;
+  applied_at: string | null;
+  reverted_at: string | null;
+};
+
 export type Inbox = {
   connected: boolean;
   cards: Card[];
+  /** What became of the changes already said yes to. Absent from older servers. */
+  changes?: Change[];
   held_back: number;
   used_this_week: number;
   room_left: number;

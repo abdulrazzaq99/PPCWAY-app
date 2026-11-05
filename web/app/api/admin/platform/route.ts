@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { SESSION_COOKIE } from "@/lib/session";
 
 /*
-  Stopping and releasing writes from the panel.
+  Stopping and releasing writes from the panel, and switching them on and off.
 
   The backend checks the caller's level again; this route does not decide
   anything. It exists because the browser holds no session token -- the cookie
@@ -19,16 +19,18 @@ export async function POST(request: Request) {
     doing?: string;
     customer_id?: string;
     because?: string;
+    on?: boolean;
   };
-  const where = body.doing === "release" ? "release" : "stop";
+  const where = body.doing === "writes" ? "writes" : body.doing === "release" ? "release" : "stop";
+  const sent =
+    where === "writes"
+      ? { on: body.on, because: body.because ?? "" }
+      : { customer_id: body.customer_id ?? "", because: body.because ?? "" };
   try {
     const res = await fetch(`${BACKEND}/v1/admin/platform/${where}`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-session-token": token },
-      body: JSON.stringify({
-        customer_id: body.customer_id ?? "",
-        because: body.because ?? "",
-      }),
+      body: JSON.stringify(sent),
       cache: "no-store",
     });
     const said = (await res.json().catch(() => ({}))) as { detail?: string };

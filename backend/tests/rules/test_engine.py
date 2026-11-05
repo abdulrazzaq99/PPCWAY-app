@@ -292,3 +292,117 @@ def test_risk_only_breaks_ties_and_does_not_reorder_the_list() -> None:
 
     big_risky, small_safe = made_up(500.0, "R1"), made_up(10.0, "R1")
     assert in_order([small_safe, big_risky])[0] is big_risky
+
+
+def an_answer(
+    db: DbSession,
+    term: str,
+    status: str,
+    *,
+    days_ago: float = 1,
+    by_a_person: bool = False,
+    applied_days_ago: float | None = None,
+    reverted_days_ago: float | None = None,
+) -> None:
+    """A row in the log for one search, in whatever state a test needs."""
+    place = Organization(name=f"Alpha Plumbing {uuid.uuid4().hex[:6]}")
+    db.add(place)
+    db.flush()
+    db.add(
+        OptimizationAction(
+            organization_id=place.id,
+            customer_id="1",
+            kind="add_negative_keyword",
+            target_kind="search_term",
+            target_id=term_key(term),
+            target_label=term,
+            status=status,
+            rule_id="R1",
+            created_at=NOW - timedelta(days=days_ago),
+            rechecked={"verdict": "rejected", "check": "person"} if by_a_person else None,
+            applied_at=(
+                NOW - timedelta(days=applied_days_ago) if applied_days_ago is not None else None
+            ),
+            reverted_at=(
+                NOW - timedelta(days=reverted_days_ago) if reverted_days_ago is not None else None
+            ),
+        )
+    )
+    db.commit()
+
+
+def _terms(said: Pass) -> list[str]:
+    return [one.target_label for one in said.offered]
+
+
+@pytest.mark.parametrize(
+    "status",
+    [Status.PROPOSED.value, Status.AWAITING_APPROVAL.value, Status.APPROVED.value],
+)
+def test_a_change_already_offered_or_approved_is_not_offered_again(
+    db: DbSession, status: str
+) -> None:
+    """Until 5 November every night offered the same search again beside the
+    card already waiting -- and, once changes are sent, beside the approved
+    one, which would be two attempts at one exclusion."""
+    a_good_sync(db)
+    wasteful(db, "boiler repair jobs")
+    an_answer(db, "boiler repair jobs", status, days_ago=20)
+    assert _terms(_run(db)) == []
+
+
+def test_a_change_declined_this_week_is_not_offered_again(db: DbSession) -> None:
+    """The inbox tells somebody who says no: "Otto will not propose that one
+    again this week." Nothing made that true."""
+    a_good_sync(db)
+    wasteful(db, "boiler repair jobs")
+    an_answer(db, "boiler repair jobs", Status.REJECTED.value, days_ago=2, by_a_person=True)
+    assert _terms(_run(db)) == []
+
+
+def test_a_change_declined_more_than_a_week_ago_may_be_offered_again(db: DbSession) -> None:
+    a_good_sync(db)
+    wasteful(db, "boiler repair jobs")
+    an_answer(db, "boiler repair jobs", Status.REJECTED.value, days_ago=8, by_a_person=True)
+    assert _terms(_run(db)) == ["boiler repair jobs"]
+
+
+def test_a_change_a_guardrail_refused_may_be_offered_again(db: DbSession) -> None:
+    """Refused on yesterday's figures, it may pass on today's."""
+    a_good_sync(db)
+    wasteful(db, "boiler repair jobs")
+    an_answer(db, "boiler repair jobs", Status.REJECTED.value, days_ago=1)
+    assert _terms(_run(db)) == ["boiler repair jobs"]
+
+
+def test_an_offer_nobody_answered_is_offered_again(db: DbSession) -> None:
+    """Expired is not declined: "Otto will propose it again if it is still worth doing"."""
+    a_good_sync(db)
+    wasteful(db, "boiler repair jobs")
+    an_answer(db, "boiler repair jobs", Status.EXPIRED.value, days_ago=8)
+    assert _terms(_run(db)) == ["boiler repair jobs"]
+
+
+def test_a_change_just_made_or_just_put_back_is_left_alone(db: DbSession) -> None:
+    """Made: Google's report can take days to show the search as excluded.
+    Put back: the merchant undid it, and offering it again would be arguing."""
+    a_good_sync(db)
+    wasteful(db, "boiler repair jobs")
+    wasteful(db, "free plumbing course")
+    an_answer(db, "boiler repair jobs", Status.APPLIED.value, days_ago=3, applied_days_ago=2)
+    an_answer(
+        db,
+        "free plumbing course",
+        Status.REVERTED.value,
+        days_ago=9,
+        applied_days_ago=8,
+        reverted_days_ago=4,
+    )
+    assert _terms(_run(db)) == []
+
+
+def test_a_change_google_refused_is_not_retried_every_night(db: DbSession) -> None:
+    a_good_sync(db)
+    wasteful(db, "boiler repair jobs")
+    an_answer(db, "boiler repair jobs", Status.FAILED.value, days_ago=2)
+    assert _terms(_run(db)) == []
