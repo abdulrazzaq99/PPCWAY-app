@@ -63,9 +63,15 @@ def world(
         *,
         history: Any = (),
         spent: Any = None,
+        turn: Any = None,
         **_: Any,
     ) -> Iterator[Said]:
         seen.append({"question": question, "history": list(history)})
+        if turn is not None and "invent" in question:
+            # What the real loop leaves behind when the check refuses twice.
+            turn.source, turn.invented = "template", [0.8, 4200.0]
+            yield Said(kind="answer", words=asking.FALLBACK)
+            return
         if spent is not None:
             # What one real call reports, in OpenRouter's spelling. A question
             # can ask for a costlier one by saying "expensive".
@@ -227,3 +233,25 @@ def test_the_ceiling_refuses_the_next_question_once_it_is_reached(
     with factory() as session:
         place = session.query(Organization).one()
         assert this_month(session, place.id).spent_out
+
+
+def test_a_fallback_is_written_down_as_one_with_the_numbers_refused(
+    world: tuple[FastAPI, sessionmaker[Session], list[dict[str, Any]]],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Found on the live chat: three questions got the fallback, and the
+    transcript called each an answer from the model with nothing refused, so
+    nobody could say why. Now it says, and a warning names the conversation."""
+    app, factory, _seen = world
+    token = a_merchant(factory, "dana@alphaplumbing.ie")
+    with TestClient(app) as client, caplog.at_level("WARNING"):
+        ask(client, token, question="Please invent a cost per click")
+        ask(client, token, question="How did last week go?")
+    with factory() as session:
+        fell_back, answered = sorted(session.query(Turn).all(), key=lambda one: one.question)[::-1]
+        assert fell_back.answer_from == "template"
+        assert fell_back.invented == {"numbers": [0.8, 4200.0]}
+        assert answered.answer_from == "model"
+        assert answered.invented is None
+    logged = [one.getMessage() for one in caplog.records]
+    assert any("fixed fallback" in one and "refused 2 numbers" in one for one in logged)

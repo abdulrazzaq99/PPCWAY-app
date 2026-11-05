@@ -26,6 +26,7 @@ from ppcway.chat.ask import (
     MOST_ROUNDS,
     NotAllowed,
     Spent,
+    Turn,
     answer,
     may_chat,
 )
@@ -565,3 +566,141 @@ def test_the_prompt_tells_the_model_proposing_is_not_changing(db: DbSession) -> 
     assert "cannot change anything in Google Ads" in HOW_TO_ANSWER
     assert "not the same as making it" in HOW_TO_ANSWER
     assert "Do not propose to be helpful" in HOW_TO_ANSWER
+
+
+# --- what the merchant said, and what the check refused ----------------------
+
+
+def _asking(
+    db: DbSession,
+    models: Any,
+    question: str,
+    *,
+    history: tuple[dict[str, Any], ...] = (),
+    turn: Turn | None = None,
+) -> list[Any]:
+    return list(
+        answer(
+            models,
+            db,
+            question,
+            organization_id=uuid.uuid4(),
+            customer_id=CUSTOMER,
+            currency="CAD",
+            role=Role.OWNER,
+            today=TODAY,
+            history=history,
+            turn=turn,
+        )
+    )
+
+
+def test_a_year_the_merchant_asked_about_may_be_said_back(db: DbSession) -> None:
+    """Found on the live chat: "what was my cost per lead in 2019?" got the
+    fallback, because the answer said 2019 and no lookup had. The rewrite then
+    wrote the window as "2025-11-05", the check read each hyphen as a minus
+    sign, and the second try failed too. Saying the question back is not
+    inventing a figure, and a date is not three negative numbers."""
+    an_account(db)
+    looked = toolbox.run(
+        "get_metrics",
+        toolbox.Asked(
+            session=db,
+            organization_id=uuid.uuid4(),
+            customer_id=CUSTOMER,
+            currency="CAD",
+            args={"days": 365},
+            today=TODAY,
+        ),
+    ).data
+    models = Saying(
+        _wants("get_metrics", days=365),
+        _words(
+            f"I cannot see 2019. The figures I hold run from {looked['from']} to"
+            f" {looked['to']}, and over that time a lead cost CAD"
+            f" {looked['cost_per_lead']:,.2f}."
+        ),
+    )
+    said = _asking(db, models, "What was my cost per lead in 2019?")
+    assert said[-1].words.startswith("I cannot see 2019")
+    assert len(models.asked) == 2, "no rewrite was needed"
+
+
+def test_a_number_asked_in_words_may_be_said_in_digits(db: DbSession) -> None:
+    """ "The last twelve months" in the question; "12 months" in the answer."""
+    an_account(db)
+    models = Saying(_words("I can only show you the last 30 days, not 12 months."))
+    said = _asking(db, models, "Compare each of the last twelve months, in thirty-day blocks")
+    assert said[-1].words == "I can only show you the last 30 days, not 12 months."
+
+
+def test_a_number_from_an_earlier_question_may_be_said_back(db: DbSession) -> None:
+    an_account(db)
+    models = Saying(_words("I cannot see 2019 or 2020 either."))
+    said = _asking(
+        db,
+        models,
+        "And 2020?",
+        history=(
+            {"role": "user", "content": "What was my cost per lead in 2019?"},
+            {"role": "assistant", "content": "I cannot see that year."},
+        ),
+    )
+    assert said[-1].words == "I cannot see 2019 or 2020 either."
+
+
+def test_a_year_worked_out_from_the_question_is_still_caught(db: DbSession) -> None:
+    """ "The year after" is not 2020 until the model works it out, and a number
+    the model worked out is exactly what the check is for."""
+    an_account(db)
+    models = Saying(_words("Nor 2020."), _words("Nor 2020."))
+    said = _asking(
+        db,
+        models,
+        "And the year after?",
+        history=({"role": "user", "content": "What was my cost per lead in 2019?"},),
+    )
+    assert said[-1].words == FALLBACK
+
+
+def test_a_figure_from_ottos_own_earlier_answer_is_looked_up_again(db: DbSession) -> None:
+    """The system prompt has a figure looked up again rather than carried
+    over, and the check holds to it: only the merchant's own numbers come
+    from the conversation, not Otto's."""
+    an_account(db)
+    models = Saying(_words("As I said, you spent CAD 777.77."), _words("CAD 777.77, as I said."))
+    said = _asking(
+        db,
+        models,
+        "What did I spend again?",
+        history=(
+            {"role": "user", "content": "What did I spend?"},
+            {"role": "assistant", "content": "You spent CAD 777.77."},
+        ),
+    )
+    assert said[-1].words == FALLBACK
+
+
+def test_the_turn_says_where_the_words_came_from_and_what_was_refused(db: DbSession) -> None:
+    """A transcript that called the fallback an answer from the model, with no
+    numbers refused, could not say why a merchant was given it."""
+    an_account(db)
+    turn = Turn()
+    models = Saying(
+        _wants("get_metrics", days=7),
+        _words("You paid CAD 0.80 a click."),
+        _words("You paid CAD 0.85 a click."),
+    )
+    _asking(db, models, "how are my ads doing?", turn=turn)
+    assert turn.source == "template"
+    assert turn.invented == [0.8, 0.85]
+
+    rewritten = Turn()
+    models = Saying(
+        _wants("get_metrics", days=7),
+        _words("You paid CAD 0.80 a click."),
+        _words("I do not have a cost per click."),
+    )
+    _asking(db, models, "how are my ads doing?", turn=rewritten)
+    assert rewritten.source == "rewrite"
+    assert rewritten.invented == [0.8], "what the first try invented is still worth keeping"

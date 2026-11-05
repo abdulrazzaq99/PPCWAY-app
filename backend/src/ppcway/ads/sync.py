@@ -129,9 +129,10 @@ def _ask(
 def _share(value: Any) -> float | None:
     """One impression-share figure, or None where Google did not report one.
 
-    Google sends these as a fraction between 0 and 1, and caps anything above
-    0.9 at 0.9 for competitive reasons -- so a 0.9 here means "90% or better"
-    and nothing may present it as exact. See `CampaignDay.share_is_capped`.
+    Google sends these as a fraction between 0 and 1, kept as sent. Two of the
+    values are not figures but limits: a share of 0.0999 means "under 10%", and
+    a share lost to budget or rank of 0.9001 means "over 90%". Nothing may
+    present either as exact. See `SHARE_FLOOR` and `LOST_CEILING` in the mirror.
     """
     if value is None or value == "":
         return None

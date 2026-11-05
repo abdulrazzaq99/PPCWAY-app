@@ -198,16 +198,22 @@ def answer(
     history: Sequence[dict[str, Any]] = (),
     today: date | None = None,
     spent: Spent | None = None,
+    turn: Turn | None = None,
 ) -> Iterator[Said]:
     """Answer one question, yielding status lines and then the answer.
 
     A generator because the brief asks for streamed status lines: "reading what
     people searched for" while a lookup runs is the difference between a
     four-second wait and a four-second wait that looks broken.
+
+    `turn`, where given, is filled in as the answer is made: where the words
+    came from and any numbers the check refused. The endpoint writes those to
+    the transcript, which is the only way to tell afterwards why a merchant
+    was given the fixed line.
     """
     may_chat(role)
     at = today or datetime.now(UTC).date()
-    turn = Turn()
+    turn = turn if turn is not None else Turn()
 
     # Offered only where the role allows it and there is a connection to judge
     # a proposal against. A turn without both gets a tool list that does not
@@ -219,8 +225,14 @@ def answer(
     messages: list[dict[str, Any]] = [*history, {"role": "user", "content": question}]
     figures: list[Figure] = []
     #: Every number this turn's lookups put in front of the model, figures or
-    #: not. The answer may say any of them; see `numbers_given`.
-    given: set[float] = set()
+    #: not, and every number the merchant typed in this conversation: "in
+    #: 2019", "the last twelve months". Repeating the question back is not
+    #: inventing a figure, and refusing it gave "what was my cost per lead in
+    #: 2019?" the fallback. Otto's own earlier answers are not included: the
+    #: system prompt has a figure looked up again rather than carried over.
+    given: set[float] = numbers_given(
+        [question, *(one.get("content") for one in history if one.get("role") == "user")]
+    )
 
     for round_number in range(MOST_ROUNDS):
         turn.rounds = round_number + 1
@@ -251,8 +263,10 @@ def answer(
 
         wanted = said.tool_calls
         if not wanted:
-            text, source = _checked(models, said.text, figures, messages, spent=spent, given=given)
-            turn.text, turn.source = text, source
+            text, source, refused = _checked(
+                models, said.text, figures, messages, spent=spent, given=given
+            )
+            turn.text, turn.source, turn.invented = text, source, refused
             turn.figures = figures
             yield Said(kind="answer", words=text)
             return
@@ -339,20 +353,21 @@ def _checked(
     *,
     spent: Spent | None = None,
     given: set[float] | None = None,
-) -> tuple[str, str]:
+) -> tuple[str, str, list[float]]:
     """Every number in the answer, matched against what the tools returned.
 
     One rewrite naming the offending figures, then a fixed line. Same as the
-    inbox cards, and for the same reason.
+    inbox cards, and for the same reason. Returns the words, where they came
+    from, and every number the check refused on the way, for the transcript.
     """
     said = (text or "").strip()
     if not said:
-        return FALLBACK, "template"
+        return FALLBACK, "template", []
 
     also = given or set()
     wrong = unmatched(said, list(figures), also=also)
     if not wrong:
-        return said, "model"
+        return said, "model", []
 
     log.info("chat answer used %d numbers no tool returned", len(wrong))
     try:
@@ -366,10 +381,10 @@ def _checked(
                     "role": "user",
                     "content": (
                         "That answer used "
-                        + ", ".join(f"{n:,.10g}" for n in wrong)
-                        + ", which no tool returned this turn. Write it again using"
-                        " only the numbers your tools gave you, or say you do not"
-                        " have that figure."
+                        + ", ".join(f"{n:.10g}" for n in wrong)
+                        + ", which none of your lookups returned this turn and"
+                        " they did not write themselves. Write it again using"
+                        " only those numbers, or say you do not have that figure."
                     ),
                 },
             ],
@@ -377,9 +392,10 @@ def _checked(
         if spent is not None:
             spent.add(again)
     except ModelUnavailable:
-        return FALLBACK, "template"
+        return FALLBACK, "template", wrong
 
     second = (again.text or "").strip()
-    if second and not unmatched(second, list(figures), also=also):
-        return second, "rewrite"
-    return FALLBACK, "template"
+    still = unmatched(second, list(figures), also=also) if second else []
+    if second and not still:
+        return second, "rewrite", wrong
+    return FALLBACK, "template", [*wrong, *(n for n in still if n not in wrong)]

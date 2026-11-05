@@ -27,7 +27,7 @@ import hashlib
 import json
 import uuid
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Final
 
 from sqlalchemy import (
     JSON,
@@ -48,6 +48,15 @@ from ppcway.db.base import Base
 
 #: Micros are Google's unit: a millionth of the account's currency.
 MICRO = 1_000_000
+
+#: Google reports any search impression share under 10% as 0.0999, and will
+#: not say how far under. Its own words, from the v25 field reference: "Search
+#: impression share is reported in the range of 0.1 to 1. Any value below 0.1
+#: is reported as 0.0999." There is no cap at the top.
+SHARE_FLOOR: Final = 0.0999
+#: And any share lost to budget, or to rank, above 90% as 0.9001: "reported in
+#: the range of 0 to 0.9. Any value above 0.9 is reported as 0.9001."
+LOST_CEILING: Final = 0.9001
 
 
 def fingerprint(fields: dict[str, Any]) -> str:
@@ -205,14 +214,17 @@ class CampaignDay(Base):
         return round(self.cost_micros / MICRO, 2)
 
     @property
-    def share_is_capped(self) -> bool:
-        """Google reported 90% or better and will not say which.
+    def share_is_under_ten_percent(self) -> bool:
+        """Google said "under 10%" and will not say how far under.
 
-        A screen that prints "90%" from a capped figure is stating something
-        Google refused to state. Anything reading `search_share` for a
-        merchant has to check this first.
+        A screen that prints 9.99% from this states a figure Google refused to
+        give, and Otto once did: "appeared in 9.99% of the auctions, missed
+        51.07% to budget and 43.48% to rank", which is more than all of them.
+        Anything reading `search_share` for a merchant has to check this
+        first. This used to be a check for 90% or better, which had Google's
+        rule the wrong way up: the share has a floor, not a ceiling.
         """
-        return self.search_share is not None and self.search_share >= 0.9
+        return self.search_share is not None and self.search_share <= SHARE_FLOOR
 
 
 class SyncRun(Base):

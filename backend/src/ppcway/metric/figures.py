@@ -221,8 +221,74 @@ class Figure:
 PLAIN_WORDS: Final = frozenset({0.0, 1.0, 2.0, 3.0})
 
 #: A number in a sentence, with or without a currency symbol, thousands
-#: separators or a trailing per cent.
-_NUMBER = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
+#: separators or a trailing per cent. A hyphen is a minus sign only where it
+#: does not follow a letter or a digit: in "2025-11-05" and "5-11 November" it
+#: joins numbers, and reading it as a minus once turned a date the lookup had
+#: given into three negative numbers nothing had, and the answer into the
+#: fallback.
+_NUMBER = re.compile(r"(?:(?<!\w)-)?\d[\d,]*(?:\.\d+)?")
+
+#: Numbers written as words, the way our own help text and a merchant's
+#: question often put them: "for thirty days", "the last twelve months". These
+#: only ever license a number. The check reads digits, so a number the model
+#: spells out is not checked at all, but one it writes as digits after reading
+#: it as a word has to be allowed.
+_UNITS: Final = {
+    "zero": 0,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+}
+_TENS: Final = {
+    "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "fifty": 50,
+    "sixty": 60,
+    "seventy": 70,
+    "eighty": 80,
+    "ninety": 90,
+}
+_SPELLED = re.compile(
+    r"\b(?:(?P<tens>"
+    + "|".join(_TENS)
+    + r")(?:[- ](?P<and>"
+    + "|".join(word for word, n in _UNITS.items() if 0 < n < 10)
+    + r"))?|(?P<units>"
+    + "|".join(_UNITS)
+    + r")|(?P<hundred>hundred))\b",
+    re.IGNORECASE,
+)
+
+
+def spelled_in(text: str) -> list[float]:
+    """Every number a sentence writes as a word, "twenty-one" as one number."""
+    out: list[float] = []
+    for found in _SPELLED.finditer(text):
+        if found["tens"]:
+            tens = _TENS[found["tens"].lower()]
+            out.append(float(tens + (_UNITS[found["and"].lower()] if found["and"] else 0)))
+        elif found["units"]:
+            out.append(float(_UNITS[found["units"].lower()]))
+        else:
+            out.append(100.0)
+    return out
 
 
 def numbers_in(text: str) -> list[float]:
@@ -259,13 +325,8 @@ def _allowed(figures: Iterable[Figure]) -> set[float]:
     return ok
 
 
-#: An ISO date as a lookup returns it. A sentence says "28 October", so the
-#: day, the month and the year are each a number it may use.
-_ISO_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
-
-
 def numbers_given(data: Any) -> set[float]:
-    """Every number a lookup put in front of the model, as a sentence would say it.
+    """Every number put in front of the model, as a sentence would say it.
 
     The rule the tools were written to: a number the model was given is a
     number it may say. A lookup returns its figures and also the rest of what
@@ -275,19 +336,22 @@ def numbers_given(data: Any) -> set[float]:
     lookup had supplied exactly 150.45, and the rewrite could not fix what was
     not wrong.
 
-    Each value counts with the forms a sentence would use: rounded, and a share
-    as a percentage. Numbers inside text count too (a campaign called "Boiler
-    24/7", our own verdict sentences), because the model saw them. What is
-    still not licensed is anything the model works out for itself.
+    Each value counts with the forms a sentence would use: rounded, a share as
+    a percentage, and either sign. Numbers inside text count too, in digits or
+    in words (a campaign called "Boiler 24/7", "put back for thirty days"), and
+    a date gives its day, month and year. What is still not licensed is
+    anything the model works out for itself.
     """
     out: set[float] = set()
 
     def plain(value: float) -> None:
-        number = abs(float(value))
-        out.update({number, round(number, 2), round(number, 1), float(round(number))})
-        if 0 < number < 1:
-            percent = number * 100
-            out.update({percent, round(percent, 2), round(percent, 1), float(round(percent))})
+        size = abs(float(value))
+        forms = {size, round(size, 2), round(size, 1), float(round(size))}
+        if 0 < size < 1:
+            percent = size * 100
+            forms |= {percent, round(percent, 2), round(percent, 1), float(round(percent))}
+        # "Fell by 27.87" and "a change of -27.87" are the same number.
+        out.update(forms | {-form for form in forms})
 
     def walk(value: Any) -> None:
         if isinstance(value, bool) or value is None:
@@ -295,13 +359,8 @@ def numbers_given(data: Any) -> set[float]:
         if isinstance(value, (int, float)):
             plain(value)
         elif isinstance(value, str):
-            dated = _ISO_DATE.match(value)
-            if dated:
-                for part in dated.groups():
-                    plain(float(part))
-            else:
-                for number in numbers_in(value):
-                    plain(number)
+            for number in (*numbers_in(value), *spelled_in(value)):
+                plain(number)
         elif isinstance(value, dict):
             for one in value.values():
                 walk(one)

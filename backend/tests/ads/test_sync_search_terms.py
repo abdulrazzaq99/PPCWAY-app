@@ -257,7 +257,7 @@ def test_how_much_of_the_auction_we_were_in_is_read(db: DbSession) -> None:
         0.27,
         0.12,
     )
-    assert not row.share_is_capped
+    assert not row.share_is_under_ten_percent
 
 
 def test_a_share_google_did_not_report_is_unknown_and_not_zero(db: DbSession) -> None:
@@ -267,13 +267,23 @@ def test_a_share_google_did_not_report_is_unknown_and_not_zero(db: DbSession) ->
     assert row.search_share is None
     assert row.lost_to_budget is None
     assert row.lost_to_rank is None
-    assert not row.share_is_capped, "unknown is not capped either"
+    assert not row.share_is_under_ten_percent, "unknown is not under anything either"
 
 
-def test_ninety_percent_means_ninety_or_better_and_says_so(db: DbSession) -> None:
-    """Google caps the figure. A screen printing 90% states what Google refused to."""
+def test_a_share_google_reports_as_its_floor_means_under_ten_percent(db: DbSession) -> None:
+    """Google's words: "Any value below 0.1 is reported as 0.0999." A screen
+    printing 9.99% states a figure Google refused to give."""
+    _days(db, [a_campaign_day(searchImpressionShare=0.0999)])
+    assert db.scalars(sa.select(CampaignDay)).one().share_is_under_ten_percent
+
+
+def test_ninety_percent_is_exact_because_the_share_has_no_ceiling(db: DbSession) -> None:
+    """This used to read 90% as "90% or better", which had Google's rule the
+    wrong way up: the share has a floor, and the lost shares have the ceiling."""
     _days(db, [a_campaign_day(searchImpressionShare=0.9)])
-    assert db.scalars(sa.select(CampaignDay)).one().share_is_capped
+    row = db.scalars(sa.select(CampaignDay)).one()
+    assert row.search_share == 0.9
+    assert not row.share_is_under_ten_percent
 
 
 def test_losing_to_budget_and_losing_to_rank_are_kept_apart(db: DbSession) -> None:

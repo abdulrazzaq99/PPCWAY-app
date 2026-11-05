@@ -202,3 +202,29 @@ def test_a_share_may_be_said_as_a_percentage_and_text_counts_too() -> None:
 
     given = numbers_given({"impression_share": 0.634, "campaign": "Boiler repair 24/7"})
     assert {63.4, 63.0, 24.0, 7.0} <= given
+
+
+def test_a_hyphen_between_numbers_is_not_a_minus_sign() -> None:
+    """ "2025-11-05" was read as 2025, -11 and -5."""
+    from ppcway.metric.figures import numbers_in
+
+    assert numbers_in("from 2025-11-05 to 2026-11-04") == [2025, 11, 5, 2026, 11, 4]
+    assert numbers_in("on 5-11 November") == [5, 11]
+    assert numbers_in("a change of -12%, or (-3.5)") == [-12, -3.5]
+    assert numbers_in("CAD180.45") == [180.45], "a number stuck to a word is still checked"
+
+
+def test_a_number_written_as_a_word_licenses_its_digits() -> None:
+    """Our own help text says "for thirty days"; the model writes "30 days"."""
+    from ppcway.metric.figures import numbers_given, spelled_in
+
+    assert {30.0, 10.0, 21.0, 12.0, 100.0} <= numbers_given(
+        "put back for thirty days, ten a week, twenty-one days, twelve months, a hundred"
+    )
+    assert spelled_in("often, attention, someone, tenth") == [], "only whole words"
+
+
+def test_either_sign_of_a_given_number_may_be_said() -> None:
+    from ppcway.metric.figures import numbers_given
+
+    assert {27.87, -27.87} <= numbers_given({"change": -27.87})

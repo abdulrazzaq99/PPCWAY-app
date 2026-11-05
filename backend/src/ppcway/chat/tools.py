@@ -35,14 +35,23 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Final
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ppcway.ads.mirror import MICRO, CampaignDay, ExternalChange, MirrorCampaign, SearchTermDay
+from ppcway.ads.mirror import (
+    LOST_CEILING,
+    MICRO,
+    SHARE_FLOOR,
+    CampaignDay,
+    ExternalChange,
+    MirrorCampaign,
+    SearchTermDay,
+    SyncRun,
+)
 from ppcway.ads.numbers import account_numbers
 from ppcway.chat.untrusted import mark_all
 from ppcway.metric.figures import Figure, Period, Scope, Unit
@@ -98,7 +107,16 @@ class Asked:
         return max(1, min(MOST_DAYS, days))
 
     def window(self, *, default: int = 30) -> Period:
-        return Period.last(self.days(default=default), until=self.today)
+        """The days asked for, ending yesterday.
+
+        Yesterday, as every screen does and as Google's own LAST_30_DAYS does
+        (see the decision of 20 October): today is still being counted. It
+        also has to match what `account_numbers` adds up, because these dates
+        are what the model tells the merchant the figures cover. They ended
+        today for a while, and "29 October to 4 November" was said of numbers
+        that ran 28 October to 3 November.
+        """
+        return Period.last(self.days(default=default), until=self.today - timedelta(days=1))
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,6 +230,11 @@ def _metrics(asked: Asked) -> Answer:
             "days": window.days,
             "from": window.start.isoformat(),
             "to": window.end.isoformat(),
+            # The period the "_before" figures cover. Without it, "and the week
+            # before?" had the model work out "21 to 27 October" for itself,
+            # and the check rightly refused a 27 no lookup had given.
+            "before_from": window.before().start.isoformat(),
+            "before_to": window.before().end.isoformat(),
             "currency": asked.currency,
             "spend": held.cost,
             "leads": held.leads,
@@ -222,6 +245,9 @@ def _metrics(asked: Asked) -> Answer:
             "cost_per_lead": held.cost_per_lead,
             "leads_before": held.leads_before,
             "spend_before": held.cost_before,
+            # Asked for in the follow-up "and the week before?", and Otto had
+            # to say the lookup did not give it.
+            "cost_per_lead_before": held.cost_per_lead_before,
             "leads_verdict": verdict,
             "leads_verdict_words": words,
             "leads_test": test,
@@ -299,6 +325,36 @@ def _search_terms(asked: Asked) -> Answer:
 # --- 3. how much of the auction we were in -----------------------------------
 
 
+def _as_google_allows(
+    name: str,
+    mean: float | None,
+    low: float | None,
+    high: float | None,
+    *,
+    floor: float | None = None,
+    ceiling: float | None = None,
+) -> dict[str, Any]:
+    """One impression-share figure, in only the terms Google will state it.
+
+    Every day at Google's limit: no number at all, only the words. Some days
+    at it: the average, marked as no more than the truth for the floor or no
+    less for the ceiling, since each of those days counted as the limit while
+    the real figure was past it. Otherwise the average as it is.
+    """
+    if mean is None or low is None or high is None:
+        return {name: None}
+    if floor is not None and high <= floor:
+        return {name: None, f"{name}_in_words": "under 10%"}
+    if ceiling is not None and low >= ceiling:
+        return {name: None, f"{name}_in_words": "over 90%"}
+    out: dict[str, Any] = {name: round(float(mean), 4)}
+    if floor is not None and low <= floor:
+        out[f"{name}_is_at_most"] = True
+    if ceiling is not None and high >= ceiling:
+        out[f"{name}_is_at_least"] = True
+    return out
+
+
 def _auction_insights(asked: Asked) -> Answer:
     """Impression share, which is not Auction Insights. See the module note."""
     window = asked.window()
@@ -306,8 +362,14 @@ def _auction_insights(asked: Asked) -> Answer:
         select(
             CampaignDay.campaign_id,
             func.avg(CampaignDay.search_share).label("share"),
+            func.min(CampaignDay.search_share).label("share_low"),
+            func.max(CampaignDay.search_share).label("share_high"),
             func.avg(CampaignDay.lost_to_budget).label("budget"),
+            func.min(CampaignDay.lost_to_budget).label("budget_low"),
+            func.max(CampaignDay.lost_to_budget).label("budget_high"),
             func.avg(CampaignDay.lost_to_rank).label("rank"),
+            func.min(CampaignDay.lost_to_rank).label("rank_low"),
+            func.max(CampaignDay.lost_to_rank).label("rank_high"),
         )
         .where(
             CampaignDay.customer_id == asked.customer_id,
@@ -325,12 +387,15 @@ def _auction_insights(asked: Asked) -> Answer:
     campaigns = [
         {
             "campaign": names.get(row.campaign_id, row.campaign_id),
-            "share_of_auction": None if row.share is None else round(float(row.share), 4),
-            "lost_to_budget": None if row.budget is None else round(float(row.budget), 4),
-            "lost_to_rank": None if row.rank is None else round(float(row.rank), 4),
-            # Google caps anything above 90% and will not say what it really
-            # was, so a figure at the cap means "90% or better".
-            "capped": row.share is not None and float(row.share) >= 0.9,
+            **_as_google_allows(
+                "share_of_auction", row.share, row.share_low, row.share_high, floor=SHARE_FLOOR
+            ),
+            **_as_google_allows(
+                "lost_to_budget", row.budget, row.budget_low, row.budget_high, ceiling=LOST_CEILING
+            ),
+            **_as_google_allows(
+                "lost_to_rank", row.rank, row.rank_low, row.rank_high, ceiling=LOST_CEILING
+            ),
         }
         for row in rows
     ]
@@ -338,6 +403,15 @@ def _auction_insights(asked: Asked) -> Answer:
         data={
             "days": window.days,
             "campaigns": campaigns,
+            # In words, not digits: a note that said "9.99%" would license
+            # the very number it is warning about.
+            "how_google_reports_these": (
+                "Google will not report a share of the auction under ten per cent,"
+                " or a share lost to budget or to rank over ninety per cent. Where a"
+                " figure is null with words beside it, say the words and not a"
+                " number. Where a figure is marked at most or at least, say so,"
+                " because on some days the truth was beyond what Google would report."
+            ),
             "what_this_is_not": (
                 "This is impression share, not Auction Insights. The Google Ads API"
                 " does not expose Auction Insights, so PPCWay cannot see which named"
@@ -374,9 +448,27 @@ def _change_history(asked: Asked) -> Answer:
         .order_by(OptimizationAction.created_at.desc())
         .limit(MOST_ROWS)
     ).all()
+    # Changes in Google Ads are noticed by comparing one read of the account
+    # with the next, so nothing before the first read can have been noticed.
+    # Without this, "nothing has changed in 30 days" was said of an account
+    # PPCWay might have been watching for one.
+    first_read = asked.session.scalar(
+        select(func.min(SyncRun.started_at)).where(
+            SyncRun.customer_id == asked.customer_id, SyncRun.status == "done"
+        )
+    )
     return Answer(
         data={
             "days": window.days,
+            "watching_since": first_read.date().isoformat() if first_read else None,
+            "what_is_noticed": (
+                "Edits made in Google Ads to campaigns, ad groups, keywords and ads"
+                " that already existed, and anything removed, noticed by PPCWay's"
+                " read of the account every fifteen minutes since watching_since."
+                " Things newly added in Google Ads are not listed, and nothing"
+                " before watching_since could have been noticed. Say which period"
+                " this covers rather than claiming more."
+            ),
             "changed_in_google_ads": [
                 {
                     "what": change.label,

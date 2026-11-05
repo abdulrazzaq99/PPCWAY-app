@@ -11,6 +11,14 @@ Four kinds, which are the cadence the requirements set:
   today      this day's numbers, hourly
   backfill   the previous three days, nightly, because conversions arrive late
   manual     structure and the last three days, when somebody presses refresh
+
+The passes that reach back -- first, backfill and manual -- also read the two
+mirrors the rules and Otto read: the words people actually typed, and what each
+keyword did each day. They were built on 30 October and never read: nothing
+called them, so every account's search terms were empty, Otto could not name a
+single one, and the one rule the client lets run unattended had nothing to look
+at. Not hourly: Google settles them a day behind, and every window that reads
+them ends yesterday.
 """
 
 from __future__ import annotations
@@ -22,7 +30,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from ppcway.ads.mirror import SyncRun
+from ppcway.ads.mirror import KeywordDay, SearchTermDay, SyncRun
 from ppcway.ads.models import AdsConnection
 from ppcway.ads.oauth import (
     AdsConnectionRefused,
@@ -30,7 +38,16 @@ from ppcway.ads.oauth import (
     VaultUnavailable,
     fresh_access_token,
 )
-from ppcway.ads.sync import Report, backfill_since, finish, record, sync_days, sync_structure
+from ppcway.ads.sync import (
+    Report,
+    backfill_since,
+    finish,
+    record,
+    sync_days,
+    sync_keyword_days,
+    sync_search_terms,
+    sync_structure,
+)
 from ppcway.config import Settings
 
 log = logging.getLogger(__name__)
@@ -38,6 +55,18 @@ log = logging.getLogger(__name__)
 #: What a new account gets: enough history for "against the previous period" and
 #: the year-on-year column, without asking Google for years nobody will look at.
 FIRST_DAYS = 90
+
+#: The passes that also read search terms and keyword days.
+REACHING_BACK = ("first", "backfill", "manual")
+
+#: What those two reads are called in a run's counts. Each read counts its own
+#: "rows", and the keyword read its "keywords", which is also what the
+#: structure read calls the keywords in the account; kept under their own
+#: names so one does not quietly overwrite another on the jobs screen.
+_COUNTED_AS = {
+    "search_terms": {"search_terms": "search_terms", "rows": "search_term_rows"},
+    "keyword_days": {"keywords": "keywords_with_days", "rows": "keyword_day_rows"},
+}
 
 #: What each kind is called while it runs, in the words the waiting screen shows.
 STAGES = {
@@ -128,6 +157,35 @@ def sync_connection(
                 changes=report.changes,
                 account_status=report.account_status,
             )
+            if kind in REACHING_BACK and report.ok:
+                for name, read, held_as in (
+                    ("search_terms", sync_search_terms, SearchTermDay),
+                    ("keyword_days", sync_keyword_days, KeywordDay),
+                ):
+                    # An account holding none yet -- every account connected
+                    # before these were read at all -- gets the whole first
+                    # window, so a 30-day question has 30 days to answer from.
+                    holds = (
+                        session.scalar(
+                            select(held_as.id)
+                            .where(held_as.customer_id == connection.customer_id)
+                            .limit(1)
+                        )
+                        is not None
+                    )
+                    reach = since if holds else at.date() - timedelta(days=FIRST_DAYS)
+                    got = read(session, connection.customer_id, since=reach, now=at, **keys)  # type: ignore[arg-type]
+                    renamed = _COUNTED_AS[name]
+                    report = Report(
+                        ok=report.ok and got.ok,
+                        trouble=report.trouble or got.trouble,
+                        counts={
+                            **report.counts,
+                            **{renamed.get(key, key): n for key, n in got.counts.items()},
+                        },
+                        changes=report.changes,
+                        account_status=report.account_status,
+                    )
     except AdsConnectionRefused as exc:
         log.warning("sync refused for %s: %s", connection.customer_id, exc)
         report = Report(ok=False, trouble=str(exc))

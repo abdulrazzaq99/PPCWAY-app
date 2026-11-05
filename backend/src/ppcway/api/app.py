@@ -1655,6 +1655,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # Every model call this question takes, so the monthly ceiling
             # counts what it costs. It used to be recorded as nothing.
             spent = asking.Spent()
+            # Where the answer's words came from, and any numbers the check
+            # refused. Without these a fallback in the transcript reads as an
+            # answer the model chose to give, and nobody can say why.
+            turn = asking.Turn()
             # First, which conversation this is, so the screen can carry it on.
             yield f"data: {json_dumps({'kind': 'conversation', 'id': str(held.id)})}\n\n"
             for step in asking.answer(
@@ -1668,11 +1672,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 connection=connection,
                 history=history,
                 spent=spent,
+                turn=turn,
             ):
                 if step.kind in {"looking", "writing"}:
                     looked.append(step.words)
                 if step.kind == "answer":
-                    said, source = step.words, "model"
+                    said, source = step.words, turn.source or "model"
                 if step.kind == "trouble":
                     said, source = step.words, "refused"
                 yield f"data: {json_dumps({'kind': step.kind, 'words': step.words})}\n\n"
@@ -1689,13 +1694,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     answer_from=source,
                     tools_used=looked,
                     figure_ids=[],
-                    invented=[],
+                    invented=list(turn.invented),
                     model=spent.model,
                     input_tokens=spent.input_tokens,
                     output_tokens=spent.output_tokens,
                     cached_tokens=spent.cached_tokens,
                     took_ms=spent.took_ms,
                 )
+                if source == "template":
+                    # Warned, not noted: these are the answers a merchant
+                    # reports as broken, and the transcript says which numbers.
+                    log.warning(
+                        "Otto gave the fixed fallback in conversation %s;"
+                        " the check refused %d numbers",
+                        held.id,
+                        len(turn.invented),
+                    )
                 # Half and four fifths of PPCWay's own ceiling, once each as
                 # the month crosses them. The internal console's overview lists
                 # the businesses past four fifths for whoever is on call.
