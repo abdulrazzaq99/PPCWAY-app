@@ -30,6 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ppcway.ads.accounts import API, _headers, _plain, _why
+from ppcway.ads.leads import category_of, conversions_in, is_call, is_lead, leads_by
 from ppcway.ads.mirror import (
     MICRO,
     CampaignDay,
@@ -47,7 +48,6 @@ from ppcway.ads.mirror import (
 
 log = logging.getLogger(__name__)
 
-CALL_KINDS = {"PHONE_CALL_LEAD", "CALL"}
 
 #: How a changed field reads to somebody who did not change it. The second item
 #: says how to show the value: money, or just itself.
@@ -570,6 +570,7 @@ def sync_days(
                 ),
                 "calls": 0.0,
                 "forms": 0.0,
+                "not_leads": 0.0,
                 # None rather than 0.0 where Google did not report it. A
                 # campaign that is not a Search campaign has no search
                 # impression share at all, and zero would read as "you were in
@@ -592,18 +593,25 @@ def sync_days(
         )
         if trouble:
             report.trouble = trouble
+            # Without the split nothing here is known to be a lead or not, so
+            # the rows stay "not split yet" and the next backfill tries again.
+            for unsplit in facts.values():
+                unsplit["not_leads"] = None
         for row in split:
             campaign_id = str(row.get("campaign", {}).get("id", ""))
             day = str(row.get("segments", {}).get("date", ""))
             fact = facts.get((campaign_id, day))
             if fact is None:
                 continue
-            kind = str(row.get("segments", {}).get("conversionActionCategory", ""))
-            amount = float(row.get("metrics", {}).get("conversions", 0) or 0)
-            if kind in CALL_KINDS:
+            kind = category_of(row)
+            amount = conversions_in(row)
+            if is_call(kind):
                 fact["calls"] += amount
-            else:
+            elif is_lead(kind):
                 fact["forms"] += amount
+            else:
+                # A page view and the like: counted by Google, not a lead.
+                fact["not_leads"] += amount
 
         held = {
             (kept.campaign_id, kept.day.isoformat()): kept
@@ -664,6 +672,11 @@ def sync_search_terms(
     Rows with no impressions are skipped rather than stored. Google reports a
     row for a term that merely matched, and a table of nothing-happened is most
     of the storage and none of the signal.
+
+    And a second query for which of each term's conversions were leads, because
+    Google will not report the conversion category beside clicks or cost. If
+    Google refuses it, `leads` stays empty and R1 reads `conversions` instead,
+    which can only make it propose less.
     """
     own = client is None
     c = client or httpx.Client(timeout=httpx.Timeout(90))
@@ -690,6 +703,30 @@ def sync_search_terms(
         if trouble:
             return Report(ok=False, trouble=trouble)
 
+        split, split_trouble = _ask(
+            customer_id,
+            f"""
+            SELECT search_term_view.search_term, segments.date, ad_group.id,
+                   segments.conversion_action_category, metrics.conversions
+            FROM search_term_view WHERE {window} AND metrics.conversions > 0
+            """,
+            access_token=access_token,
+            developer_token=developer_token,
+            login_customer_id=login_customer_id,
+            api_version=api_version,
+            client=c,
+        )
+        if split_trouble:
+            log.warning("search terms for %s not split into leads: %s", customer_id, split_trouble)
+        lead_in = leads_by(
+            split,
+            lambda row: (
+                str(row.get("adGroup", {}).get("id", "") or ""),
+                term_key(str(row.get("searchTermView", {}).get("searchTerm", "") or "")),
+                str(row.get("segments", {}).get("date", "")),
+            ),
+        )
+
         facts: dict[tuple[str, str, str], dict[str, Any]] = {}
         for row in rows:
             view = row.get("searchTermView", {})
@@ -703,7 +740,9 @@ def sync_search_terms(
             if impressions <= 0:
                 continue
             keyword = row.get("segments", {}).get("keyword", {}).get("info", {})
-            facts[(ad_group_id, term_key(term), day)] = {
+            at_key = (ad_group_id, term_key(term), day)
+            conversions = float(metrics.get("conversions", 0) or 0)
+            facts[at_key] = {
                 "campaign_id": str(row.get("campaign", {}).get("id", "") or ""),
                 "ad_group_id": ad_group_id,
                 "term": term[:1000],
@@ -712,9 +751,16 @@ def sync_search_terms(
                 "impressions": impressions,
                 "clicks": int(metrics.get("clicks", 0) or 0),
                 "cost_micros": int(metrics.get("costMicros", 0) or 0),
-                "conversions": float(metrics.get("conversions", 0) or 0),
+                "conversions": conversions,
                 "conversion_value_micros": round(
                     float(metrics.get("conversionsValue", 0) or 0) * MICRO
+                ),
+                # No conversions means no leads. With conversions, the split's
+                # figure -- or unknown, if the split failed or did not mention
+                # this row, so R1 falls back to `conversions` rather than
+                # reading a gap as "no leads".
+                "leads": (
+                    0.0 if conversions <= 0 else None if split_trouble else lead_in.get(at_key)
                 ),
             }
 

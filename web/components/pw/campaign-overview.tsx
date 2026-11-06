@@ -378,6 +378,25 @@ export function LeadsByDay({ series }: { series: AdsDay[] }) {
   );
 }
 
+/* ---------- what Google counted that is not a lead ---------- */
+
+/*
+  Said whenever Google counted conversions that PPCWay does not call leads, so
+  a merchant comparing this screen with Google Ads is not left wondering why
+  the numbers differ.
+*/
+export function SetAside({ summary }: { summary: AdsSummary }) {
+  const set = Math.round(summary.not_leads ?? 0);
+  if (set <= 0) return null;
+  return (
+    <p className="text-pw-ink-700 max-w-[820px] text-[14px] leading-[21px]">
+      Google Ads also counted {set} page {set === 1 ? "view" : "views"} and similar as conversions.
+      PPCWay doesn&rsquo;t count those as leads, so they&rsquo;re left out of the figures above.
+      Calls, forms, sign-ups and sales still count.
+    </p>
+  );
+}
+
 /* ---------- what needs the merchant ---------- */
 
 export function NeedsLine({ needs }: { needs: AdsNeed[] | undefined }) {

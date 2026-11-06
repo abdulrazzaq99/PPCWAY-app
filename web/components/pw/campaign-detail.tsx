@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Cards, Changes } from "@/components/otto/inbox";
+import { CannotCheck, Cards, Changes } from "@/components/otto/inbox";
 import { money } from "@/components/pw/campaigns";
 import { Chip, PwCard, Tile, Tiles } from "@/components/pw/shell";
 import type { AdsDay } from "@/lib/ads";
@@ -427,6 +427,7 @@ function ForThisCampaign({
         Otto reads this campaign every night and suggests a change only when its own figures support
         it. Nothing changes in Google Ads until you say yes.
       </p>
+      <CannotCheck inbox={inbox} />
       {inbox.cards.length === 0 ? (
         <div className="bg-pw-muted rounded-[14px] p-4">
           <p className="text-[15px] leading-[22px]">{inbox.nothing_because}</p>

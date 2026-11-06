@@ -24,14 +24,14 @@ them ends yesterday.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from ppcway.ads.clock import local_today
-from ppcway.ads.mirror import KeywordDay, SearchTermDay, SyncRun
+from ppcway.ads.mirror import CampaignDay, KeywordDay, SearchTermDay, SyncRun
 from ppcway.ads.models import AdsConnection
 from ppcway.ads.oauth import (
     AdsConnectionRefused,
@@ -56,6 +56,23 @@ log = logging.getLogger(__name__)
 #: What a new account gets: enough history for "against the previous period" and
 #: the year-on-year column, without asking Google for years nobody will look at.
 FIRST_DAYS = 90
+
+
+def _read_before_the_split(session: Session, customer_id: str, day: date) -> bool:
+    """Whether a day in the first window still holds page views among its leads."""
+    return (
+        session.scalar(
+            select(CampaignDay.id)
+            .where(
+                CampaignDay.customer_id == customer_id,
+                CampaignDay.day >= day - timedelta(days=FIRST_DAYS),
+                CampaignDay.not_leads.is_(None),
+            )
+            .limit(1)
+        )
+        is not None
+    )
+
 
 #: The passes that also read search terms and keyword days.
 REACHING_BACK = ("first", "backfill", "manual")
@@ -157,6 +174,15 @@ def sync_connection(
                 # land on the days behind it, so those are re-read too.
                 "manual": backfill_since(day),
             }[kind]
+            # Days read before page views were told apart from leads are
+            # re-read, the whole first window at once, by the next pass that
+            # reaches back. Otherwise a month's figures would carry page views
+            # as leads for a month. See `ads.leads`.
+            healing = kind in REACHING_BACK and _read_before_the_split(
+                session, connection.customer_id, day
+            )
+            if healing:
+                since = day - timedelta(days=FIRST_DAYS)
             days = sync_days(
                 session,
                 connection.customer_id,
@@ -165,6 +191,19 @@ def sync_connection(
                 now=at,
                 **keys,  # type: ignore[arg-type]
             )
+            if healing and days.ok and not days.trouble:
+                # A stored day Google no longer reports has nothing left to
+                # split. Marked, so the window is not re-read every night for it.
+                session.execute(
+                    update(CampaignDay)
+                    .where(
+                        CampaignDay.customer_id == connection.customer_id,
+                        CampaignDay.day >= since,
+                        CampaignDay.not_leads.is_(None),
+                    )
+                    .values(not_leads=0.0)
+                )
+                session.commit()
             report = Report(
                 ok=report.ok and days.ok,
                 trouble=report.trouble or days.trouble,

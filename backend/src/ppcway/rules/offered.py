@@ -61,6 +61,8 @@ class Offered:
     #: What became of the changes already said yes to: waiting, made, refused
     #: by Google, or put back. Without it an approved card simply vanished.
     changes: tuple[dict[str, Any], ...] = ()
+    #: Why the checks that rest on leads did not run, when they did not.
+    cannot_check: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -75,6 +77,7 @@ class Offered:
             "not_specified": list(self.not_specified),
             "ran_at": self.ran_at,
             "target_cost_per_lead": self.target_cost_per_lead,
+            "cannot_check": self.cannot_check,
         }
 
 
@@ -280,6 +283,7 @@ def inbox_for(
         not_specified=found.not_specified,
         ran_at=found.ran_at.isoformat(),
         target_cost_per_lead=target_cost_per_lead,
+        cannot_check=found.cannot_check,
         changes=tuple(
             recent_changes(
                 session,

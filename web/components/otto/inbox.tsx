@@ -169,6 +169,20 @@ function OneChange({ change }: { change: Change }) {
   );
 }
 
+/*
+  Why the wasted-search check stood down on this account: it counts no
+  enquiries, so every search would look wasted. Shown beside any cards there
+  are; with none, the empty inbox already says it.
+*/
+export function CannotCheck({ inbox }: { inbox: Inbox }) {
+  if (!inbox.cannot_check || inbox.cards.length === 0) return null;
+  return (
+    <div className="border-pw-warn-border bg-pw-warn-bg text-pw-warn-ink rounded-[14px] border px-4 py-3 text-[14px] leading-[20px]">
+      {inbox.cannot_check}
+    </div>
+  );
+}
+
 export function Changes({ changes }: { changes: Change[] }) {
   if (changes.length === 0) return null;
   return (
@@ -252,6 +266,7 @@ export function OttoInbox({ inbox, trouble }: { inbox: Inbox | null; trouble: st
       {inbox.cards.length === 0 ? (
         <p className="text-pw-ink-700 text-[16px] leading-[22px]">{inbox.nothing_because}</p>
       ) : null}
+      <CannotCheck inbox={inbox} />
 
       <Cards cards={inbox.cards} onAnswered={() => router.refresh()} />
 

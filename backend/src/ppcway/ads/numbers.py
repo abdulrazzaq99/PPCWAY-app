@@ -182,6 +182,9 @@ class Held:
     leads: float = 0.0
     calls: float = 0.0
     forms: float = 0.0
+    #: What Google counted as conversions that is not a lead -- page views and
+    #: the like (`ads.leads`) -- so a screen can say they were set aside.
+    not_leads: float = 0.0
     cost: float = 0.0
     clicks: int = 0
     impressions: int = 0
@@ -224,6 +227,7 @@ class Held:
             "leads": round(self.leads, 2),
             "calls": round(self.calls, 2),
             "forms": round(self.forms, 2),
+            "not_leads": round(self.not_leads, 2),
             "cost": round(self.cost, 2),
             "clicks": self.clicks,
             "impressions": self.impressions,
@@ -335,6 +339,7 @@ def account_numbers(
         day = whole.setdefault(stamp, Day(date=stamp))
         day.calls += row.calls
         day.forms += row.forms
+        held.not_leads += row.not_leads or 0.0
         day.cost += row.cost
         day.clicks += row.clicks
         day.impressions += row.impressions

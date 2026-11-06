@@ -809,6 +809,7 @@ const CAMPAIGNS: AdsSummary = {
   ends_on: OLD_DAYS[29].date,
   cost: 174.24,
   leads: 64,
+  not_leads: 37,
   clicks: 312,
   impressions: 6970,
   cost_per_lead: 2.72,

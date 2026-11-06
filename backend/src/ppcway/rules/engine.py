@@ -29,11 +29,11 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Final
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ppcway.ads.clock import account_today
-from ppcway.ads.mirror import SyncRun
+from ppcway.ads.mirror import MICRO, CampaignDay, SyncRun
 from ppcway.metric.figures import FRESH_HOURS
 from ppcway.opt.models import COUNTS_TOWARD_CAP, UNDO_FOR, OptimizationAction, Status
 from ppcway.rules import library
@@ -72,6 +72,9 @@ class Pass:
     #: The rules that ran, and the ones the client has not specified yet.
     ran: tuple[str, ...] = ()
     not_specified: tuple[str, ...] = field(default_factory=tuple)
+    #: Why the rules that rest on leads did not run, in the merchant's words:
+    #: the account counts no enquiries, so nothing can be called wasted.
+    cannot_check: str = ""
 
     @property
     def room_left(self) -> int:
@@ -107,9 +110,12 @@ def run(
             not_specified=unspecified,
         )
 
+    blind = _cannot_tell_leads(session, customer_id, day)
     found: list[Recommendation] = []
     ran: list[str] = []
     for spec in live():
+        if blind and spec.id in RESTS_ON_LEADS:
+            continue
         ran.append(spec.id)
         found.extend(
             _for(
@@ -134,6 +140,7 @@ def run(
         used_this_week=used,
         ran=tuple(ran),
         not_specified=unspecified,
+        cannot_check=blind,
     )
 
 
@@ -249,6 +256,51 @@ def _used_this_week(session: Session, customer_id: str, at: datetime) -> int:
         )
     ).all()
     return len(rows)
+
+
+#: The rules that call something wasted because it brought no leads. On an
+#: account that counts no leads at all, every search looks wasted -- including
+#: the ones the business lives on -- so these do not run there.
+RESTS_ON_LEADS: Final = frozenset({"R1"})
+
+#: The window that question is asked over, which is R1's own.
+LEADS_WINDOW_DAYS: Final = 30
+
+
+def _cannot_tell_leads(session: Session, customer_id: str, day: date) -> str:
+    """Why nothing here can be called wasted, or empty if it can.
+
+    An account that spent money and counted not one call, form, sign-up or
+    sale has no conversion tracking that means anything. Excluding searches
+    there would be guessing, and the first guess would be its busiest search.
+    """
+    since = day - timedelta(days=LEADS_WINDOW_DAYS)
+    spent, leads, not_leads = session.execute(
+        select(
+            func.coalesce(func.sum(CampaignDay.cost_micros), 0),
+            func.coalesce(func.sum(CampaignDay.calls + CampaignDay.forms), 0.0),
+            func.coalesce(func.sum(CampaignDay.not_leads), 0.0),
+        ).where(
+            CampaignDay.customer_id == customer_id,
+            CampaignDay.day >= since,
+            CampaignDay.day <= day,
+        )
+    ).one()
+    if spent <= 0 or leads > 0:
+        return ""
+    counted = round(float(not_leads or 0.0))
+    seen = (
+        f" It counted {counted} page {'view' if counted == 1 else 'views'} and the like,"
+        " which are not enquiries."
+        if counted > 0
+        else ""
+    )
+    return (
+        f"Google Ads counted no enquiries on this account in the last {LEADS_WINDOW_DAYS}"
+        f" days, after spending {spent / MICRO:,.2f}: no calls, forms, sign-ups or sales.{seen}"
+        " Otto cannot tell a wasted search from a working one until enquiries are tracked,"
+        " so it is not suggesting any exclusions."
+    )
 
 
 def _sync_trouble(session: Session, customer_id: str, at: datetime) -> str:

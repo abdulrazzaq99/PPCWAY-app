@@ -7,6 +7,7 @@ import {
   LeadsByDay,
   MoneyAndLeads,
   NeedsLine,
+  SetAside,
   findingOf,
 } from "@/components/pw/campaign-overview";
 import { Chip, Pill, PillGroup, PwCard } from "@/components/pw/shell";
@@ -133,6 +134,7 @@ export function CampaignList({ initial, days: initialDays }: { initial: Summary;
         <>
           <NeedsLine needs={summary.needs} />
           <Figures summary={summary} />
+          <SetAside summary={summary} />
           <div className="grid items-stretch gap-4 lg:grid-cols-12">
             <div className="lg:col-span-7">
               <MoneyAndLeads summary={summary} />

@@ -99,7 +99,13 @@ def wasteful_terms(
             func.max(SearchTermDay.ad_group_id).label("ad_group_id"),
             func.sum(SearchTermDay.clicks).label("clicks"),
             func.sum(SearchTermDay.cost_micros).label("cost_micros"),
-            func.sum(SearchTermDay.conversions).label("conversions"),
+            # Leads, not every conversion: on an account that counts page
+            # views, every search with a click "converted" and none was ever
+            # wasted. A day not split into leads falls back to all its
+            # conversions, which can only make this propose less.
+            func.sum(func.coalesce(SearchTermDay.leads, SearchTermDay.conversions)).label(
+                "conversions"
+            ),
             func.max(SearchTermDay.refreshed_at).label("as_of"),
         )
         .where(

@@ -267,7 +267,11 @@ def _search_terms(asked: Asked) -> Answer:
             func.max(SearchTermDay.term).label("term"),
             func.sum(SearchTermDay.clicks).label("clicks"),
             func.sum(SearchTermDay.cost_micros).label("cost_micros"),
-            func.sum(SearchTermDay.conversions).label("conversions"),
+            # Leads, as R1 counts them, so Otto and the inbox agree on which
+            # searches brought nobody.
+            func.sum(func.coalesce(SearchTermDay.leads, SearchTermDay.conversions)).label(
+                "conversions"
+            ),
             func.max(SearchTermDay.status).label("status"),
             SearchTermDay.term_hash.label("term_hash"),
             func.max(SearchTermDay.ad_group_id).label("ad_group_id"),

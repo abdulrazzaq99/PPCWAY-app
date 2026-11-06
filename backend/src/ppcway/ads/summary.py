@@ -23,6 +23,7 @@ import httpx
 
 from ppcway.ads.accounts import API, _headers, _plain, _why
 from ppcway.ads.clock import local_today
+from ppcway.ads.leads import category_of, conversions_in, is_call, is_lead, leads_by
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +31,6 @@ MICRO = 1_000_000
 
 #: Google's categories for a conversion that is a phone call. Everything else
 #: that counts as a lead is treated as a form.
-CALL_KINDS = {"PHONE_CALL_LEAD", "CALL"}
 
 
 @dataclass
@@ -73,6 +73,8 @@ class Summary:
     leads: float = 0.0
     calls: float = 0.0
     forms: float = 0.0
+    #: What Google counted that is not a lead: page views and the like.
+    not_leads: float = 0.0
     cost: float = 0.0
     clicks: int = 0
     impressions: int = 0
@@ -101,6 +103,7 @@ class Summary:
             "leads": round(self.leads, 2),
             "calls": round(self.calls, 2),
             "forms": round(self.forms, 2),
+            "not_leads": round(self.not_leads, 2),
             "cost": round(self.cost, 2),
             "clicks": self.clicks,
             "impressions": self.impressions,
@@ -236,18 +239,33 @@ def account_summary(
         )
         for row in leads:
             day = str(row.get("segments", {}).get("date", ""))
-            kind = str(row.get("segments", {}).get("conversionActionCategory", ""))
-            conversions = float(row.get("metrics", {}).get("conversions", 0) or 0)
+            kind = category_of(row)
+            conversions = conversions_in(row)
             entry = by_day.setdefault(day, Day(date=day))
-            if kind in CALL_KINDS:
+            if is_call(kind):
                 entry.calls += conversions
-            else:
+            elif is_lead(kind):
                 entry.forms += conversions
+            else:
+                found.not_leads += conversions
 
         found.series = [by_day[k] for k in sorted(by_day)]
         found.calls = round(sum(d.calls for d in found.series), 2)
         found.forms = round(sum(d.forms for d in found.series), 2)
         found.leads = round(found.calls + found.forms, 2)
+        found.not_leads = round(found.not_leads, 2)
+
+        # Each campaign's leads, which Google will only split from page views
+        # in a question of its own.
+        split, split_trouble = _ask(
+            customer_id,
+            f"""
+            SELECT campaign.id, segments.conversion_action_category, metrics.conversions
+            FROM campaign WHERE segments.date {window} AND metrics.conversions > 0
+            """,
+            **ask,  # type: ignore[arg-type]
+        )
+        campaign_leads = leads_by(split, lambda row: str(row.get("campaign", {}).get("id", "")))
 
         # Campaigns, with what each one brought and what it is allowed to spend.
         campaigns, trouble = _ask(
@@ -265,13 +283,19 @@ def account_summary(
             campaign = row.get("campaign", {})
             metrics = row.get("metrics", {})
             daily = _micros(row.get("campaignBudget", {}).get("amountMicros"))
+            converted = float(metrics.get("conversions", 0) or 0)
             found.campaigns.append(
                 CampaignRow(
                     campaign_id=str(campaign.get("id", "")),
                     name=str(campaign.get("name", "")),
                     status=str(campaign.get("status", "")),
                     serving=str(campaign.get("status", "")),
-                    leads=round(float(metrics.get("conversions", 0) or 0), 2),
+                    leads=round(
+                        converted
+                        if split_trouble or not converted
+                        else campaign_leads.get(str(campaign.get("id", "")), converted),
+                        2,
+                    ),
                     cost=_micros(metrics.get("costMicros")),
                     budget=daily,
                 )
@@ -428,10 +452,30 @@ def campaign_detail(
             found.impression_share = _share(metrics.get("searchImpressionShare"))
         found.cost = round(found.cost, 2)
 
+        # Which conversions were leads, for the campaign, its keywords and its
+        # searches. Google will not report the category beside clicks or cost,
+        # so each gets a question of its own; a refusal leaves Google's total.
+        def split(view: str, fields: str) -> tuple[list[dict[str, Any]], bool]:
+            rows, trouble = _ask(
+                customer_id,
+                f"""
+                SELECT {fields}, segments.conversion_action_category, metrics.conversions
+                FROM {view} WHERE {where} AND segments.date {window}
+                  AND metrics.conversions > 0
+                """,
+                **ask,  # type: ignore[arg-type]
+            )
+            return rows, not trouble
+
+        mine, mine_split = split("campaign", "campaign.id")
+        if mine_split and found.leads:
+            found.leads = sum(leads_by(mine, lambda row: "all").values())
+
         keywords, _ = _ask(
             customer_id,
             f"""
-            SELECT ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type,
+            SELECT ad_group.id, ad_group_criterion.criterion_id,
+                   ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type,
                    ad_group_criterion.quality_info.quality_score,
                    metrics.clicks, metrics.conversions, metrics.cost_micros
             FROM keyword_view WHERE {where} AND segments.date {window}
@@ -439,10 +483,27 @@ def campaign_detail(
             """,
             **ask,  # type: ignore[arg-type]
         )
+
+        def criterion_key(row: dict[str, Any]) -> tuple[str, str]:
+            return (
+                str(row.get("adGroup", {}).get("id", "")),
+                str(row.get("adGroupCriterion", {}).get("criterionId", "")),
+            )
+
+        keyword_split, keywords_split = split(
+            "keyword_view", "ad_group.id, ad_group_criterion.criterion_id"
+        )
+        keyword_leads = leads_by(keyword_split, criterion_key)
         for row in keywords[:60]:
             criterion = row.get("adGroupCriterion", {})
             metrics = row.get("metrics", {})
-            leads = round(float(metrics.get("conversions", 0) or 0), 2)
+            converted = float(metrics.get("conversions", 0) or 0)
+            leads = round(
+                keyword_leads.get(criterion_key(row), converted)
+                if keywords_split and converted
+                else converted,
+                2,
+            )
             cost = _micros(metrics.get("costMicros"))
             found.keywords.append(
                 {
@@ -461,17 +522,32 @@ def campaign_detail(
         terms, _ = _ask(
             customer_id,
             f"""
-            SELECT search_term_view.search_term, metrics.clicks, metrics.conversions,
-                   metrics.cost_micros
+            SELECT ad_group.id, search_term_view.search_term, metrics.clicks,
+                   metrics.conversions, metrics.cost_micros
             FROM search_term_view WHERE {where} AND segments.date {window}
               AND metrics.cost_micros > 0
             ORDER BY metrics.cost_micros DESC
             """,
             **ask,  # type: ignore[arg-type]
         )
+
+        def term_at(row: dict[str, Any]) -> tuple[str, str]:
+            return (
+                str(row.get("adGroup", {}).get("id", "")),
+                str(row.get("searchTermView", {}).get("searchTerm", "")),
+            )
+
+        term_split, terms_split = split(
+            "search_term_view", "ad_group.id, search_term_view.search_term"
+        )
+        term_leads = leads_by(term_split, term_at)
         for row in terms[:60]:
             metrics = row.get("metrics", {})
-            leads = round(float(metrics.get("conversions", 0) or 0), 2)
+            converted = float(metrics.get("conversions", 0) or 0)
+            leads = round(
+                term_leads.get(term_at(row), converted) if terms_split and converted else converted,
+                2,
+            )
             found.terms.append(
                 {
                     "term": str(row.get("searchTermView", {}).get("searchTerm", "")),

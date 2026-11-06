@@ -81,6 +81,8 @@ export type Inbox = {
   not_specified: string[];
   ran_at: string;
   target_cost_per_lead?: number;
+  /** Why the checks that rest on leads did not run: the account counts no enquiries. */
+  cannot_check?: string;
 };
 
 export type Said = { kind: string; words: string };

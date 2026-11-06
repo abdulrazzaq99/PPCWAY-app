@@ -157,9 +157,10 @@ class CampaignDay(Base):
     the previous period" is sixty, and the sparkline on each row is this table
     and nothing else.
 
-    `conversions` is Google's own total; `calls` and `forms` are the split, which
-    has to be read by a second query because Google refuses to report the
-    conversion category beside clicks, cost or impressions.
+    `conversions` is Google's own total; `calls` and `forms` are the leads in
+    it, which have to be read by a second query because Google refuses to report
+    the conversion category beside clicks, cost or impressions. What is not a
+    lead -- a page view, say -- is `not_leads`. See `ads.leads`.
     """
 
     __tablename__ = "ads_campaign_day"
@@ -176,6 +177,11 @@ class CampaignDay(Base):
     conversion_value_micros: Mapped[int] = mapped_column(Integer, default=0)
     calls: Mapped[float] = mapped_column(Float, default=0.0)
     forms: Mapped[float] = mapped_column(Float, default=0.0)
+    #: Conversions Google counted that are not leads: page views, engagement,
+    #: basket steps. Null on a row read before 6 November 2026, when `forms`
+    #: still held them; the nightly backfill re-reads a window while any of
+    #: its rows is null, so the figures heal themselves.
+    not_leads: Mapped[float | None] = mapped_column(Float, nullable=True)
     #: How much of the available auction this campaign actually appeared in, and
     #: where the rest went. Google reports these as a share between 0 and 1, and
     #: caps anything above 0.9 at 0.9 for competitive reasons -- so "90%" here
@@ -331,6 +337,11 @@ class SearchTermDay(Base):
     cost_micros: Mapped[int] = mapped_column(Integer, default=0)
     conversions: Mapped[float] = mapped_column(Float, default=0.0)
     conversion_value_micros: Mapped[int] = mapped_column(Integer, default=0)
+    #: The conversions that were leads (`ads.leads`), which is what R1 asks
+    #: about. Null where it was not read -- rows from before 6 November 2026,
+    #: or a day Google would not split -- and then R1 falls back to
+    #: `conversions`, which can only make it propose less.
+    leads: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     refreshed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

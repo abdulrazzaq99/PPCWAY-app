@@ -25,6 +25,7 @@ from typing import Any
 import httpx
 
 from ppcway.ads.accounts import API, _headers, _plain, _why
+from ppcway.ads.leads import is_lead, leads_by
 
 log = logging.getLogger(__name__)
 
@@ -218,12 +219,35 @@ SPEND_QUERY = f"""
 """
 
 WASTED_QUERY = f"""
-    SELECT search_term_view.search_term, metrics.cost_micros, metrics.clicks,
+    SELECT ad_group.id, search_term_view.search_term, metrics.cost_micros, metrics.clicks,
            metrics.conversions
     FROM search_term_view
     WHERE segments.date DURING {WINDOW} AND metrics.cost_micros > 0
     ORDER BY metrics.cost_micros DESC
 """
+
+#: Which of those conversions were enquiries (`ads.leads`). Google will not
+#: report the category beside cost or clicks, so it is a question of its own.
+WASTED_SPLIT_QUERY = f"""
+    SELECT ad_group.id, search_term_view.search_term,
+           segments.conversion_action_category, metrics.conversions
+    FROM search_term_view
+    WHERE segments.date DURING {WINDOW} AND metrics.conversions > 0
+"""
+
+#: And for the whole account: whether it counts any enquiry at all.
+LEADS_QUERY = f"""
+    SELECT segments.conversion_action_category, metrics.conversions
+    FROM customer
+    WHERE segments.date DURING {WINDOW} AND metrics.conversions > 0
+"""
+
+#: Said instead of a list of "wasted" searches on an account that counts no
+#: enquiries, where every search would look wasted, the best ones first.
+NO_ENQUIRIES_COUNTED = (
+    "Google Ads counted no enquiries on this account, so no search can be called"
+    " wasted yet. Set up conversion tracking for calls and forms first."
+)
 
 KEYWORD_QUERY = f"""
     SELECT ad_group_criterion.keyword.text,
@@ -292,10 +316,38 @@ def read_account(
 
         rows, trouble = _search(customer_id, WASTED_QUERY, **ask)  # type: ignore[arg-type]
         reading.wasted = Finding(read=not trouble, trouble=trouble)
+        split, split_trouble = _search(customer_id, WASTED_SPLIT_QUERY, **ask)  # type: ignore[arg-type]
+        counted, counted_trouble = _search(customer_id, LEADS_QUERY, **ask)  # type: ignore[arg-type]
+        enquiries = sum(
+            float(row.get("metrics", {}).get("conversions", 0) or 0)
+            for row in counted
+            if is_lead(str(row.get("segments", {}).get("conversionActionCategory", "") or ""))
+        )
+        if (
+            not trouble
+            and not counted_trouble
+            and reading.spend.read
+            and reading.spend.cost > 0
+            and enquiries <= 0
+        ):
+            reading.wasted = Finding(read=False, trouble=NO_ENQUIRIES_COUNTED)
+            rows = []
+
+        def term_at(row: dict[str, Any]) -> tuple[str, str]:
+            return (
+                str(row.get("adGroup", {}).get("id", "")),
+                str(row.get("searchTermView", {}).get("searchTerm", "")),
+            )
+
+        term_leads = {} if split_trouble else leads_by(split, term_at)
         for row in rows:
             metrics = row.get("metrics", {})
-            if float(metrics.get("conversions", 0) or 0) > 0:
-                continue  # it paid for itself; not waste
+            converted = float(metrics.get("conversions", 0) or 0)
+            # An enquiry, not any conversion: on an account that counts page
+            # views, every search with a click would have "paid for itself".
+            leads = term_leads.get(term_at(row), converted) if converted else 0.0
+            if leads > 0:
+                continue  # it brought somebody; not waste
             reading.wasted.rows.append(
                 WastedTerm(
                     term=str(row.get("searchTermView", {}).get("searchTerm", "")),

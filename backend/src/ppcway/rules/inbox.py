@@ -66,6 +66,8 @@ class Inbox:
     ran: tuple[str, ...]
     not_specified: tuple[str, ...]
     ran_at: datetime
+    #: Why the rules resting on leads did not run. Empty when they did.
+    cannot_check: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -78,6 +80,7 @@ class Inbox:
             "ran": list(self.ran),
             "not_specified": list(self.not_specified),
             "ran_at": self.ran_at.isoformat(),
+            "cannot_check": self.cannot_check,
         }
 
 
@@ -134,6 +137,7 @@ def _inbox(said: Pass, models: Models | None) -> Inbox:
         ran=said.ran,
         not_specified=said.not_specified,
         ran_at=said.ran_at,
+        cannot_check=said.cannot_check,
     )
 
 
@@ -154,4 +158,6 @@ def _quiet(said: Pass) -> str:
         )
     if said.room_left == 0:
         return "This week's ten changes are already used, so nothing new is being offered."
+    if said.cannot_check:
+        return said.cannot_check
     return "We looked and found nothing worth changing."

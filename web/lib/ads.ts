@@ -65,6 +65,8 @@ export type AdsSummary = {
   leads?: number;
   calls?: number;
   forms?: number;
+  /** Conversions Google counted that are not leads: page views and the like. */
+  not_leads?: number;
   cost?: number;
   clicks?: number;
   impressions?: number;
