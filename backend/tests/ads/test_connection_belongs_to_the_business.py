@@ -32,6 +32,7 @@ from ppcway.db.base import Base
 from ppcway.db.session import get_session
 from ppcway.org.models import Role
 from ppcway.org.places import home_for, invite
+from ppcway.staff import models as _staff  # noqa: F401 - registers its table
 
 KEY = Fernet.generate_key()
 
@@ -175,3 +176,82 @@ def test_the_owner_still_sees_their_own_connection(
         status = client.get("/v1/ads/status", headers={"x-session-token": token}).json()
         assert status["connected"] is True
         assert status["customer_id"] == "2580586343"
+
+
+def test_an_invitee_whose_first_page_load_made_them_a_business_still_lands_in_ours(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    """What happened in production on 6 November. The invitee signed in, the
+    app loaded -- and that first load gave them an empty business of their own
+    -- and only then did they accept. The oldest membership won, so they kept
+    landing in the empty one, with no Google Ads, though they were an admin of
+    the business that has it."""
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        _owner_connects(client, factory)
+        with factory() as session:
+            dana = session.scalar(
+                sa.select(UserAccount).where(UserAccount.email == "dana@alphaplumbing.ca")
+            )
+            assert dana is not None
+            secret = invite(
+                session,
+                home_for(session, dana),
+                by=dana,
+                email="sam@alphaplumbing.ca",
+                role=Role.ADMIN,
+            )
+        token = _sign_in(client, "sam@alphaplumbing.ca")
+        head = {"x-session-token": token}
+        # The home screen loads before the invitation page accepts.
+        assert client.get("/v1/org", headers=head).status_code == 200
+        taken = client.post("/v1/org/accept", json={"token": secret}, headers=head)
+        assert taken.status_code == 200, taken.text
+
+        status = client.get("/v1/ads/status", headers=head).json()
+        assert status["connected"] is True, "landed in their own empty business"
+        assert status["customer_id"] == "2580586343"
+
+
+def test_somebody_with_a_real_business_of_their_own_keeps_it(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    """Only an empty business of one is passed over. Nina connected her own
+    Google Ads before Dana invited her, so hers is still the one she opens."""
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        _owner_connects(client, factory)
+        token = _sign_in(client, "nina@consultancy.example")
+        with factory() as session:
+            nina = session.scalar(
+                sa.select(UserAccount).where(UserAccount.email == "nina@consultancy.example")
+            )
+            assert nina is not None
+            session.add(
+                ads_models.AdsConnection(
+                    account_id=nina.id,
+                    organization_id=home_for(session, nina).id,
+                    ciphertext=Fernet(KEY).encrypt(b"her-own").decode(),
+                    customer_id="1112223334",
+                    customer_name="Consultancy",
+                    currency="CAD",
+                )
+            )
+            session.commit()
+            dana = session.scalar(
+                sa.select(UserAccount).where(UserAccount.email == "dana@alphaplumbing.ca")
+            )
+            assert dana is not None
+            secret = invite(
+                session,
+                home_for(session, dana),
+                by=dana,
+                email="nina@consultancy.example",
+                role=Role.EXPERT,
+            )
+        head = {"x-session-token": token}
+        assert (
+            client.post("/v1/org/accept", json={"token": secret}, headers=head).status_code == 200
+        )
+        status = client.get("/v1/ads/status", headers=head).json()
+        assert status["customer_id"] == "1112223334"

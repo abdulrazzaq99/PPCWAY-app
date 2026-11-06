@@ -73,14 +73,23 @@ def home_for(session: DbSession, account: UserAccount) -> Organization:
             select(UserAccount.id).where(UserAccount.id == account.id).with_for_update()
         )
 
-    place = session.scalar(
-        select(Organization)
-        .join(Membership, Membership.organization_id == Organization.id)
-        .where(Membership.account_id == account.id)
-        .order_by(Membership.created_at.asc())
+    held = list(
+        session.execute(
+            select(Organization, Membership.role)
+            .join(Membership, Membership.organization_id == Organization.id)
+            .where(Membership.account_id == account.id)
+            .order_by(Membership.created_at.asc())
+        ).all()
     )
-    if place is not None:
-        return place
+    if len(held) == 1:
+        return held[0][0]
+    if held:
+        # More than one: the first they joined, passing over an empty business
+        # of their own. See `_placeholder`.
+        for place, role in held:
+            if not _placeholder(session, place, role):
+                return place
+        return held[0][0]
 
     from ppcway.staff.guard import level_of
 
@@ -96,6 +105,36 @@ def home_for(session: DbSession, account: UserAccount) -> Organization:
     session.add(Membership(organization_id=place.id, account_id=account.id, role=Role.OWNER.value))
     session.commit()
     return place
+
+
+def _placeholder(session: DbSession, place: Organization, role: str) -> bool:
+    """Whether this is the empty business a first page load made for somebody.
+
+    Everyone who signs in gets a business of one, made on the spot. An invited
+    person usually signs in, sees the app load, and only then accepts -- so
+    theirs is made first, and "the first business they joined" was their own
+    empty one, with no Google Ads, though they were an admin of the business
+    that has it. That happened in production on 6 November.
+
+    So a business they own alone and that has never had Google Ads connected
+    is passed over when they belong to another. A business of their own that
+    is real -- connected, or with anybody else in it -- is never passed over.
+    """
+    from ppcway.ads.models import AdsConnection
+
+    if role != Role.OWNER.value:
+        return False
+    members = session.scalars(
+        select(Membership.id).where(Membership.organization_id == place.id).limit(2)
+    ).all()
+    if len(members) > 1:
+        return False
+    return (
+        session.scalar(
+            select(AdsConnection.id).where(AdsConnection.organization_id == place.id).limit(1)
+        )
+        is None
+    )
 
 
 def role_of(session: DbSession, account: UserAccount, place: Organization) -> Role | None:
