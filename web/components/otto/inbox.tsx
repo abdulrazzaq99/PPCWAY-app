@@ -169,7 +169,7 @@ function OneChange({ change }: { change: Change }) {
   );
 }
 
-function Changes({ changes }: { changes: Change[] }) {
+export function Changes({ changes }: { changes: Change[] }) {
   if (changes.length === 0) return null;
   return (
     <section className="border-pw-border bg-pw-card rounded-[var(--pw-r-card)] border p-5 sm:p-6">
@@ -186,31 +186,18 @@ function Changes({ changes }: { changes: Change[] }) {
   );
 }
 
-export function OttoInbox({ inbox, trouble }: { inbox: Inbox | null; trouble: string }) {
+/*
+  The cards themselves, answered or not. Shared by the inbox and by a
+  campaign's own panel, so a suggestion reads and answers the same wherever
+  it is met. `onAnswered` is how the page around it reads itself again: the
+  counts change with every answer, and an approval can be overturned by the
+  second guardrail run, so the page is re-read rather than patched locally.
+*/
+export function Cards({ cards, onAnswered }: { cards: Card[]; onAnswered: () => void }) {
   const [answered, setAnswered] = useState<Record<string, Answered>>({});
-  const router = useRouter();
-
-  if (trouble) {
-    return <p className="text-[16px] leading-[22px] font-semibold text-red-700">{trouble}</p>;
-  }
-  if (!inbox) {
-    return <p className="text-pw-ink-700 text-[16px] leading-[22px]">Nothing to show yet.</p>;
-  }
-  if (!inbox.connected) {
-    return (
-      <p className="text-pw-ink-700 text-[16px] leading-[22px]">
-        {inbox.nothing_because || "Connect your Google Ads account and Otto can start looking."}
-      </p>
-    );
-  }
-
   return (
-    <div className="grid gap-4">
-      {inbox.cards.length === 0 ? (
-        <p className="text-pw-ink-700 text-[16px] leading-[22px]">{inbox.nothing_because}</p>
-      ) : null}
-
-      {inbox.cards.map((card, n) => {
+    <>
+      {cards.map((card, n) => {
         const key = card.id || `found-${n}`;
         const said = answered[card.id];
         if (said) {
@@ -234,14 +221,39 @@ export function OttoInbox({ inbox, trouble }: { inbox: Inbox | null; trouble: st
             card={card}
             onAnswered={(it) => {
               setAnswered((was) => ({ ...was, [card.id]: it }));
-              // The counts at the foot change with every answer, and an
-              // approval can be overturned by the second guardrail run, so
-              // the page is re-read rather than patched locally.
-              router.refresh();
+              onAnswered();
             }}
           />
         );
       })}
+    </>
+  );
+}
+
+export function OttoInbox({ inbox, trouble }: { inbox: Inbox | null; trouble: string }) {
+  const router = useRouter();
+
+  if (trouble) {
+    return <p className="text-[16px] leading-[22px] font-semibold text-red-700">{trouble}</p>;
+  }
+  if (!inbox) {
+    return <p className="text-pw-ink-700 text-[16px] leading-[22px]">Nothing to show yet.</p>;
+  }
+  if (!inbox.connected) {
+    return (
+      <p className="text-pw-ink-700 text-[16px] leading-[22px]">
+        {inbox.nothing_because || "Connect your Google Ads account and Otto can start looking."}
+      </p>
+    );
+  }
+
+  return (
+    <div className="grid gap-4">
+      {inbox.cards.length === 0 ? (
+        <p className="text-pw-ink-700 text-[16px] leading-[22px]">{inbox.nothing_because}</p>
+      ) : null}
+
+      <Cards cards={inbox.cards} onAnswered={() => router.refresh()} />
 
       <Changes changes={inbox.changes ?? []} />
 

@@ -45,6 +45,8 @@ export type Card = {
   route: "owner" | "expert";
   priority: number;
   as_of: string | null;
+  /** The campaigns it acts in, by Google's id. Absent from older servers. */
+  campaigns?: string[];
 };
 
 /** A change somebody said yes to, and where it has got to. */
@@ -62,6 +64,7 @@ export type Change = {
   approved_at: string | null;
   applied_at: string | null;
   reverted_at: string | null;
+  campaigns?: string[];
 };
 
 export type Inbox = {

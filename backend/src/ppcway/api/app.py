@@ -1230,8 +1230,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def otto_inbox(
         session: Annotated[Session, Depends(get_session)],
         x_session_token: Annotated[str | None, Header()] = None,
+        campaign: Annotated[str, Query(pattern=r"^\d{0,20}$")] = "",
     ) -> dict[str, Any]:
         """The cards Otto has for this business, best first.
+
+        `campaign` narrows the cards and changes to those acting in one
+        campaign, for that campaign's panel.
 
         Nothing here writes to Google and nothing writes the action log -- a
         card is a thing to read, and the decision it invites has not been made.
@@ -1286,6 +1290,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             target_cost_per_lead=held.cost_per_lead,
             protected=_brand_words(place, connection),
             waiting_because="" if writes.may_write else writes.because,
+            campaign_id=campaign,
         ).as_dict()
 
     def _brand_words(place: Organization, connection: AdsConnection) -> tuple[str, ...]:

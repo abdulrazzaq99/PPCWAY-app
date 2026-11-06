@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CampaignDetail, type Detail } from "@/components/pw/campaign-detail";
+import { CampaignDetail, type Detail, type Suggestions } from "@/components/pw/campaign-detail";
 import {
   Figures,
   LeadsByDay,
@@ -12,6 +12,7 @@ import {
 import { Chip, Pill, PillGroup, PwCard } from "@/components/pw/shell";
 import { Sparkline } from "@/components/pw/sparkline";
 import type { AdsSummary } from "@/lib/ads";
+import type { Inbox } from "@/lib/otto";
 import { cn } from "@/lib/cn";
 import { LEARNING_DAYS, learning } from "@/lib/when";
 
@@ -43,6 +44,10 @@ export function CampaignList({ initial, days: initialDays }: { initial: Summary;
   const [chosen, setChosen] = useState<string>("");
   const [detail, setDetail] = useState<Detail | null>(null);
   const [asks, setAsks] = useState(0);
+  // Otto's cards for the chosen campaign, with the campaign they were asked
+  // for, so a slow answer for the last row is never shown under the next.
+  const [otto, setOtto] = useState<(Suggestions & { campaign: string }) | null>(null);
+  const [ottoAsks, setOttoAsks] = useState(0);
 
   useEffect(() => {
     if (asks === 0) return;
@@ -69,6 +74,28 @@ export function CampaignList({ initial, days: initialDays }: { initial: Summary;
       stop = true;
     };
   }, [chosen, days]);
+
+  useEffect(() => {
+    if (!chosen) return;
+    let stop = false;
+    const missed = "Otto could not be reached just now.";
+    fetch(`/api/otto/inbox?campaign=${encodeURIComponent(chosen)}`, { cache: "no-store" })
+      .then(async (r) => {
+        const said = (await r.json().catch(() => ({}))) as Inbox & { error?: string };
+        if (stop) return;
+        setOtto(
+          r.ok
+            ? { campaign: chosen, inbox: said, trouble: "" }
+            : { campaign: chosen, inbox: null, trouble: said.error ?? missed },
+        );
+      })
+      .catch(() => {
+        if (!stop) setOtto({ campaign: chosen, inbox: null, trouble: missed });
+      });
+    return () => {
+      stop = true;
+    };
+  }, [chosen, ottoAsks]);
 
   const rows = (summary.campaigns ?? []).filter((row) => {
     const active = row.status === "ENABLED";
@@ -249,7 +276,12 @@ export function CampaignList({ initial, days: initialDays }: { initial: Summary;
       {chosen ? (
         // The answer arrives or it does not; either way the row stays chosen.
         detail && detail.campaign_id === chosen ? (
-          <CampaignDetail detail={detail} onClose={() => setChosen("")} />
+          <CampaignDetail
+            detail={detail}
+            onClose={() => setChosen("")}
+            suggestions={otto && otto.campaign === chosen ? otto : undefined}
+            onAnswered={() => setOttoAsks((n) => n + 1)}
+          />
         ) : (
           <PwCard className="p-6">
             <p className="text-pw-ink-500 text-[15px]">Reading that campaign…</p>

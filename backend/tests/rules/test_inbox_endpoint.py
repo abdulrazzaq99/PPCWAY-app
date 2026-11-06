@@ -593,3 +593,60 @@ def test_writes_switched_on_in_the_panel_need_no_deploy(
         ).json()
     assert answered["status"] == "applied", answered
     assert len(google_.sent) == 1
+
+
+def test_a_card_says_which_campaign_it_sits_in(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    """The search was answered in ad group 21, which sits in campaign 11."""
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        mirror(factory)
+        said = client.get("/v1/otto/inbox", headers={"x-session-token": token}).json()
+    (card,) = said["cards"]
+    assert card["campaigns"] == ["11"]
+
+
+def test_one_campaign_s_panel_sees_only_what_touches_it(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        mirror(factory)
+        mine = client.get("/v1/otto/inbox?campaign=11", headers={"x-session-token": token}).json()
+        other = client.get("/v1/otto/inbox?campaign=99", headers={"x-session-token": token}).json()
+    assert len(mine["cards"]) == 1
+    assert other["cards"] == []
+    assert other["nothing_because"].startswith("Nothing for this campaign"), (
+        "not 'nothing worth changing': there is something, just not here"
+    )
+
+
+def test_a_campaign_filter_that_is_not_an_id_is_refused(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        said = client.get("/v1/otto/inbox?campaign=11%20or%201", headers={"x-session-token": token})
+    assert said.status_code == 422
+
+
+def test_a_campaign_s_changes_follow_it_after_the_yes(
+    writing_app: tuple[FastAPI, sessionmaker[Session], Recorder],
+) -> None:
+    """Made in campaign 11, so listed in 11's panel and nowhere else's."""
+    app, factory, _google = writing_app
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        mirror(factory)
+        card = _offered(client, factory, token)
+        client.post(f"/v1/otto/actions/{card['id']}/approve", headers={"x-session-token": token})
+        mine = client.get("/v1/otto/inbox?campaign=11", headers={"x-session-token": token}).json()
+        other = client.get("/v1/otto/inbox?campaign=99", headers={"x-session-token": token}).json()
+    (change,) = mine["changes"]
+    assert change["campaigns"] == ["11"]
+    assert change["status"] == "applied"
+    assert other["changes"] == []

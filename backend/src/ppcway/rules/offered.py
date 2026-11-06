@@ -16,18 +16,27 @@ pass runs, and an empty inbox saying "nothing worth changing" would be a lie
 about an account nobody has looked at. So anything the rules find that has no
 row yet is included as a preview: visible, explained, and with no buttons,
 because there is nothing to answer.
+
+**And every card and change says which campaigns it sits in**, so one
+campaign's panel can show the suggestions that touch it. A change does not name
+its campaign -- it names the ad groups or the ad it acts on, as Google does --
+so the campaign is read from the account's own structure. Asked for one
+campaign, the inbox keeps only what touches it.
 """
 
 from __future__ import annotations
 
+import re
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Final
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from ppcway.ads.mirror import MirrorAd, MirrorAdGroup, SearchTermDay
 from ppcway.model.service import Models
 from ppcway.opt.models import UNDO_FOR, OptimizationAction, Status, may_undo
 from ppcway.rules.catalogue import CATALOGUE
@@ -67,6 +76,67 @@ class Offered:
             "ran_at": self.ran_at,
             "target_cost_per_lead": self.target_cost_per_lead,
         }
+
+
+#: Where an ad group shows in Google's names for the things in it: the ad group
+#: itself, one of its ads, or one of its keywords and exclusions.
+IN_AD_GROUP: Final = re.compile(r"/(?:adGroups|adGroupAds|adGroupCriteria)/(\d+)")
+IN_CAMPAIGN: Final = re.compile(r"/campaigns/(\d+)")
+
+
+def _names(sent: object) -> Iterator[str]:
+    """Every string in a payload, however deep."""
+    if isinstance(sent, str):
+        yield sent
+    elif isinstance(sent, Mapping):
+        for value in sent.values():
+            yield from _names(value)
+    elif isinstance(sent, list | tuple):
+        for value in sent:
+            yield from _names(value)
+
+
+def campaigns_of(
+    session: Session, payloads: Sequence[Mapping[str, Any] | None]
+) -> list[tuple[str, ...]]:
+    """The campaigns each payload acts in, in the order given.
+
+    Read once for the lot, because an inbox has a dozen cards and a query each
+    would be a dozen queries. An ad group's campaign comes from the mirrored
+    ad groups, then from its ads, then from the searches it answered, which is
+    where R1 found it in the first place. Ad group ids are unique across Google
+    Ads, so no account is needed to look one up.
+    """
+    groups_in: list[set[str]] = []
+    campaigns_in: list[set[str]] = []
+    for payload in payloads:
+        names = list(_names(payload or {}))
+        groups_in.append({m for name in names for m in IN_AD_GROUP.findall(name)})
+        campaigns_in.append({m for name in names for m in IN_CAMPAIGN.findall(name)})
+
+    wanted = set().union(*groups_in) if groups_in else set()
+    campaign_of: dict[str, str] = {}
+    for source, group, campaign in (
+        (MirrorAdGroup, MirrorAdGroup.ad_group_id, MirrorAdGroup.campaign_id),
+        (MirrorAd, MirrorAd.ad_group_id, MirrorAd.campaign_id),
+        (SearchTermDay, SearchTermDay.ad_group_id, SearchTermDay.campaign_id),
+    ):
+        missing = wanted - campaign_of.keys()
+        if not missing:
+            break
+        for group_id, campaign_id in session.execute(
+            select(group, func.max(campaign))
+            .select_from(source)
+            .where(group.in_(missing))
+            .group_by(group)
+        ).all():
+            if campaign_id:
+                campaign_of[str(group_id)] = str(campaign_id)
+
+    return [
+        tuple(sorted(campaigns | {campaign_of[g] for g in groups if g in campaign_of}))
+        for groups, campaigns in zip(groups_in, campaigns_in, strict=True)
+    ]
 
 
 def _from_row(row: OptimizationAction) -> dict[str, Any]:
@@ -136,12 +206,17 @@ def inbox_for(
     today: date | None = None,
     now: datetime | None = None,
     waiting_because: str = "",
+    campaign_id: str = "",
 ) -> Offered:
     """The written proposals, plus anything found that is not written yet.
 
     `waiting_because` is why every approved change on this account is still
     waiting, when something holds them all -- the write gate, or a kill switch.
     The caller reads it from the gateway, which this package may not reach.
+
+    `campaign_id` keeps only the cards and changes that act in that campaign,
+    for its own panel. The counts stay the account's: the week's ten changes
+    are shared by every campaign in it.
     """
     waiting = list(
         session.scalars(
@@ -155,7 +230,12 @@ def inbox_for(
             .order_by(OptimizationAction.created_at.desc())
         )
     )
-    answerable = [_from_row(row) for row in waiting]
+    answerable = [
+        {**_from_row(row), "campaigns": list(where)}
+        for row, where in zip(
+            waiting, campaigns_of(session, [row.payload for row in waiting]), strict=True
+        )
+    ]
     already = {row.target_id for row in waiting}
 
     # What the rules would find now. Used for the preview and for the counts,
@@ -171,19 +251,31 @@ def inbox_for(
         now=now,
         protected=protected,
     )
-    previews = [_as_preview(card) for card in found.cards if card.found.target_id not in already]
+    unwritten = [card for card in found.cards if card.found.target_id not in already]
+    previews = [
+        {**_as_preview(card), "campaigns": list(where)}
+        for card, where in zip(
+            unwritten,
+            campaigns_of(session, [card.found.payload for card in unwritten]),
+            strict=True,
+        )
+    ]
+    everything = [*answerable, *previews]
+    cards = [one for one in everything if not campaign_id or campaign_id in one["campaigns"]]
+    if cards:
+        quiet = ""
+    elif campaign_id and everything:
+        quiet = "Nothing for this campaign. Otto's other suggestions are in your inbox."
+    else:
+        quiet = found.nothing_because or "We looked and found nothing worth changing."
 
     return Offered(
         connected=True,
-        cards=(*answerable, *previews),
+        cards=tuple(cards),
         held_back=found.held_back,
         used_this_week=found.used_this_week,
         room_left=max(0, MOST_A_WEEK - found.used_this_week),
-        nothing_because=(
-            ""
-            if (answerable or previews)
-            else found.nothing_because or "We looked and found nothing worth changing."
-        ),
+        nothing_because=quiet,
         ran=found.ran,
         not_specified=found.not_specified,
         ran_at=found.ran_at.isoformat(),
@@ -194,6 +286,7 @@ def inbox_for(
                 organization_id=organization_id,
                 now=now,
                 waiting_because=waiting_because,
+                campaign_id=campaign_id,
             )
         ),
     )
@@ -223,10 +316,16 @@ def recent_changes(
     organization_id: UUID,
     now: datetime | None = None,
     waiting_because: str = "",
+    campaign_id: str = "",
 ) -> list[dict[str, Any]]:
-    """The changes this business said yes to, newest first, and where each is."""
+    """The changes this business said yes to, newest first, and where each is.
+
+    With `campaign_id`, only those acting in that campaign -- chosen before the
+    list is cut to length, so a busy account's older changes to a quiet
+    campaign are not cut off by its newer ones elsewhere.
+    """
     at = now or datetime.now(UTC)
-    rows = [
+    candidates = [
         row
         for row in session.scalars(
             select(OptimizationAction)
@@ -245,7 +344,14 @@ def recent_changes(
             .order_by(OptimizationAction.created_at.desc())
         )
         if row.status != Status.REJECTED.value or _stopped_after_yes(row)
+    ]
+    where = campaigns_of(session, [row.payload for row in candidates])
+    kept = [
+        (row, campaigns)
+        for row, campaigns in zip(candidates, where, strict=True)
+        if not campaign_id or campaign_id in campaigns
     ][:MOST_CHANGES]
+    rows = [row for row, _ in kept]
     if not rows:
         return []
 
@@ -259,7 +365,13 @@ def recent_changes(
         if undo.undo_of is not None:
             putting_back[undo.undo_of] = undo
 
-    return [_as_change(row, putting_back.get(row.id), at, waiting_because) for row in rows]
+    return [
+        {
+            **_as_change(row, putting_back.get(row.id), at, waiting_because),
+            "campaigns": list(campaigns),
+        }
+        for row, campaigns in kept
+    ]
 
 
 def _stopped_after_yes(row: OptimizationAction) -> bool:

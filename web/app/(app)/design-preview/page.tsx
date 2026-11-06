@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { DraftReview, NewCampaignForm } from "@/components/pw/campaign-builder";
+import { CampaignDetail, type Detail, type Suggestions } from "@/components/pw/campaign-detail";
 import { CampaignList } from "@/components/pw/campaigns";
 import { Header, HeaderLink, PwPage } from "@/components/pw/shell";
 import type { AdsDay, AdsSummary } from "@/lib/ads";
@@ -667,6 +668,139 @@ const NEW_SPEND = [...Array(28).fill(0), 0.0, 20.48];
 const NEW_LEADS = [...Array(29).fill(0), 38];
 const OLD_DAYS = campaignDays(OLD_SPEND, OLD_LEADS);
 const NEW_DAYS = campaignDays(NEW_SPEND, NEW_LEADS);
+/* One campaign opened, with what Otto has for it: a search to exclude that is
+   on offer, a refused ad found since the last nightly pass, and a change
+   already made. Figures as the rules would write them. */
+const PANEL: Detail = {
+  read: true,
+  campaign_id: "23251884470",
+  name: "pdfezy",
+  status: "ENABLED",
+  currency: "USD",
+  days: 30,
+  leads: 26,
+  cost: 153.76,
+  clicks: 412,
+  impressions: 9120,
+  budget: 5,
+  cost_per_lead: 5.91,
+  lead_rate: 6.3,
+  leads_before: 19,
+  cost_before: 141.3,
+  cost_per_lead_before: 7.44,
+  lost_to_budget: 2,
+  lost_to_rank: 31,
+  impression_share: 54,
+  series: campaignDays(
+    [4, 5, 5, 4, 6, 5, 5, 4, 5, 6, 5, 5, 4, 5, 5, 6, 5, 4, 5, 5, 6, 5, 5, 5, 4, 6, 5, 5, 6, 5],
+    [0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 2, 1, 1, 2, 1, 2, 3],
+  ),
+  keywords: [],
+  terms: [],
+  ads: [],
+};
+
+const ASOF = "2026-11-05T09:12:00+00:00";
+
+const PANEL_OTTO: Suggestions = {
+  trouble: "",
+  inbox: {
+    connected: true,
+    cards: [
+      {
+        id: "6b1f0c2e-1d4a-4e8b-9a51-6f2b7c9d0e11",
+        status: "awaiting_approval",
+        answerable: true,
+        expires_at: "2026-11-12T04:07:00+00:00",
+        rule_id: "R1",
+        rule_version: 1,
+        kind: "add_negative_keyword",
+        title: "Money going on the wrong searches",
+        about: "",
+        target: { kind: "search_term", id: "a1", label: "pdf editor jobs" },
+        reason:
+          'People searching for "pdf editor jobs" clicked 104 times in the last 30 days and cost you 38.20 USD. None of them got in touch.',
+        reason_from: "template",
+        reason_is_ours: true,
+        impact: {
+          money_a_month: 38.2,
+          currency: "USD",
+          confidence: 0.62,
+          words:
+            "Excluding it stops about 38.20 USD a month going on this search. Some of that spend may move to better searches rather than disappear.",
+          blocking: false,
+        },
+        evidence: [
+          { id: "search_term_spend:a1", value: 38.2, unit: "money", as_of: ASOF, verdict: "real" },
+          { id: "search_term_clicks:a1", value: 104, unit: "count", as_of: ASOF, verdict: "real" },
+          { id: "search_term_leads:a1", value: 0, unit: "count", as_of: ASOF, verdict: "real" },
+        ],
+        undo: "Remove the negative keyword and this search can match your ads again from that moment. The clicks you did not pay for in between do not come back.",
+        reversible: true,
+        risk: "low",
+        route: "owner",
+        priority: 38.2,
+        as_of: "2026-11-05",
+        campaigns: ["23251884470"],
+      },
+      {
+        id: "",
+        status: "found",
+        answerable: false,
+        rule_id: "R4",
+        rule_version: 1,
+        kind: "pause_ad",
+        title: "Ads Google has refused",
+        about: "",
+        target: { kind: "ad", id: "7", label: "Free PDF to Word converter" },
+        reason:
+          "Google has refused this ad, so it is not being shown to anybody. Your other ads in the group are still running.",
+        reason_from: "template",
+        reason_is_ours: true,
+        impact: {
+          money_a_month: 0,
+          currency: "USD",
+          confidence: 1,
+          words:
+            "Nothing is being lost. Pausing it keeps the account tidy and stops it looking live.",
+          blocking: false,
+        },
+        evidence: [],
+        undo: "Turn the ad back on. It stays refused until its wording is changed, so it still will not be shown.",
+        reversible: true,
+        risk: "low",
+        route: "owner",
+        priority: 0,
+        as_of: "2026-11-05",
+        campaigns: ["23251884470"],
+      },
+    ],
+    changes: [
+      {
+        id: "0d9e8f7a-6b5c-4d3e-8f21-0a9b8c7d6e5f",
+        status: "applied",
+        rule_id: "R1",
+        title: "Money going on the wrong searches",
+        target: { kind: "search_term", id: "b2", label: "ilovepdf login" },
+        words: "Made on 2 November. You can undo it until 2 December.",
+        may_undo: true,
+        undo: "",
+        approved_at: "2026-11-02T10:00:00+00:00",
+        applied_at: "2026-11-02T10:00:04+00:00",
+        reverted_at: null,
+        campaigns: ["23251884470"],
+      },
+    ],
+    held_back: 0,
+    used_this_week: 1,
+    room_left: 9,
+    nothing_because: "",
+    ran: ["R1", "R4"],
+    not_specified: ["R2", "R3", "R5"],
+    ran_at: ASOF,
+  },
+};
+
 const CAMPAIGNS: AdsSummary = {
   read: true,
   currency: "USD",
@@ -883,6 +1017,28 @@ export default async function Preview({
           </div>
         </div>
       );
+    case "campaign-suggestions":
+    case "campaign-panel": {
+      // The chosen campaign's panel, as it opens under the list.
+      return (
+        <div className="bg-pw-ground text-pw-ink flex min-h-dvh">
+          <div
+            aria-hidden
+            className="border-pw-border bg-pw-card hidden w-[252px] shrink-0 border-r lg:block"
+          />
+          <div className="min-w-0 flex-1">
+            <Header eyebrow="Last 30 days · Oct 7 to Nov 5" title="Campaigns" />
+            <PwPage>
+              <CampaignDetail
+                detail={PANEL}
+                suggestions={PANEL_OTTO}
+                startOn={screen === "campaign-suggestions" ? "Suggestions" : "Overview"}
+              />
+            </PwPage>
+          </div>
+        </div>
+      );
+    }
     case "built-campaign":
       return (
         <div className="bg-pw-ground text-pw-ink min-h-dvh">

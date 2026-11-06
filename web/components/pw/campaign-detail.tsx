@@ -1,21 +1,28 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
+import { Cards, Changes } from "@/components/otto/inbox";
 import { money } from "@/components/pw/campaigns";
 import { Chip, PwCard, Tile, Tiles } from "@/components/pw/shell";
 import type { AdsDay } from "@/lib/ads";
 import { cn } from "@/lib/cn";
+import type { Inbox } from "@/lib/otto";
 import { LEARNING_DAYS, ago, learning } from "@/lib/when";
 
 /*
   One campaign, opening underneath the list rather than on a page of its own, as
-  the handoff draws it. Five tabs, and two sources behind them.
+  the handoff draws it. Six tabs, and three sources behind them.
 
   What the campaign is made of, what it did day by day and what somebody changed
   in it are ours, out of the mirror. What each keyword and each ad did is
   Google's own reporting, read live. Either half can be missing without taking
   the page with it, and when Google's half is missing the tabs that need it say
   so rather than showing a zero that reads as "nothing happened".
+
+  What Otto suggests for this campaign is the third: the inbox's own cards,
+  narrowed to the ones acting in it, answered and undone exactly as they are
+  in the inbox.
 */
 type Keyword = {
   keyword: string;
@@ -81,16 +88,41 @@ export type Detail = {
   metrics_read?: boolean;
 };
 
-const TABS = ["Overview", "Keywords", "Search terms", "Ads", "Change history"] as const;
+const TABS = [
+  "Overview",
+  "Suggestions",
+  "Keywords",
+  "Search terms",
+  "Ads",
+  "Change history",
+] as const;
+
+/** Otto's cards for this campaign, or why there are none to show. */
+export type Suggestions = { inbox: Inbox | null; trouble: string };
 
 /** "Against $42.10 in the 30 days before." Nothing, when there is no before. */
 function against(before: number | undefined, days: number, say: (n: number) => string): string {
   return before ? `Against ${say(before)} in the ${days} days before.` : "";
 }
 
-export function CampaignDetail({ detail, onClose }: { detail: Detail; onClose?: () => void }) {
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Overview");
+export function CampaignDetail({
+  detail,
+  onClose,
+  suggestions,
+  onAnswered,
+  startOn = "Overview",
+}: {
+  detail: Detail;
+  onClose?: () => void;
+  startOn?: (typeof TABS)[number];
+  /** Absent while Otto is still being asked. */
+  suggestions?: Suggestions;
+  onAnswered?: () => void;
+}) {
+  const [tab, setTab] = useState<(typeof TABS)[number]>(startOn);
   const c = detail.currency;
+  const cards = suggestions?.inbox?.cards ?? [];
+  const worth = cards.reduce((sum, card) => sum + (card.impact.money_a_month || 0), 0);
   const live = detail.metrics_read !== false;
   const day = learning(detail.starts_at);
 
@@ -155,7 +187,12 @@ export function CampaignDetail({ detail, onClose }: { detail: Detail; onClose?: 
           >
             {name}
             {name === "Change history" && (detail.history?.length ?? 0) > 0 ? (
-              <span className="text-pw-ink-400 ml-[6px] text-[13px]">{detail.history?.length}</span>
+              <span className="text-pw-ink-500 ml-[6px] text-[13px]">{detail.history?.length}</span>
+            ) : null}
+            {name === "Suggestions" && cards.length > 0 ? (
+              <span className="bg-pw-blue-tint text-pw-blue-ink ml-[6px] rounded-full px-[7px] py-[1px] text-[12px] tabular-nums">
+                {cards.length}
+              </span>
             ) : null}
           </button>
         ))}
@@ -164,6 +201,24 @@ export function CampaignDetail({ detail, onClose }: { detail: Detail; onClose?: 
       <div className="flex flex-col gap-4 p-5 sm:p-6">
         {tab === "Overview" ? (
           <>
+            {cards.length > 0 ? (
+              <div className="border-pw-blue-light bg-pw-blue-tint-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-[14px] border px-4 py-3">
+                <p className="text-[15px] leading-[22px]">
+                  <strong className="font-semibold">
+                    Otto has {cards.length === 1 ? "a suggestion" : `${cards.length} suggestions`}{" "}
+                    for this campaign
+                  </strong>
+                  {worth > 0 ? `, worth about ${money(worth, c)} a month.` : "."}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setTab("Suggestions")}
+                  className="text-pw-blue-ink text-[15px] font-semibold hover:underline"
+                >
+                  See {cards.length === 1 ? "it" : "them"}
+                </button>
+              </div>
+            ) : null}
             <Tiles>
               <Tile label="Leads" value={String(Math.round(detail.leads))} />
               <Tile
@@ -330,9 +385,65 @@ export function CampaignDetail({ detail, onClose }: { detail: Detail; onClose?: 
           )
         ) : null}
 
+        {tab === "Suggestions" ? (
+          <ForThisCampaign suggestions={suggestions} onAnswered={onAnswered} />
+        ) : null}
+
         {tab === "Change history" ? <History history={detail.history ?? []} /> : null}
       </div>
     </PwCard>
+  );
+}
+
+/*
+  Otto's suggestions for this one campaign, and what became of the ones said
+  yes to. The same cards as the inbox, so a yes here is the same yes: checked
+  again, sent through the one door, and undoable for thirty days.
+*/
+function ForThisCampaign({
+  suggestions,
+  onAnswered,
+}: {
+  suggestions?: Suggestions;
+  onAnswered?: () => void;
+}) {
+  if (!suggestions) {
+    return <p className="text-pw-ink-500 text-[15px]">Asking Otto about this campaign…</p>;
+  }
+  const { inbox, trouble } = suggestions;
+  if (trouble || !inbox) {
+    return (
+      <p className="text-[15px] leading-[22px] font-semibold text-red-700">
+        {trouble || "Otto could not be reached just now."}
+      </p>
+    );
+  }
+  if (!inbox.connected) {
+    return <p className="text-pw-ink-700 text-[15px] leading-[22px]">{inbox.nothing_because}</p>;
+  }
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-pw-ink-700 max-w-[720px] text-[15px] leading-[22px]">
+        Otto reads this campaign every night and suggests a change only when its own figures support
+        it. Nothing changes in Google Ads until you say yes.
+      </p>
+      {inbox.cards.length === 0 ? (
+        <div className="bg-pw-muted rounded-[14px] p-4">
+          <p className="text-[15px] leading-[22px]">{inbox.nothing_because}</p>
+        </div>
+      ) : (
+        <div className="grid gap-4">
+          <Cards cards={inbox.cards} onAnswered={() => onAnswered?.()} />
+        </div>
+      )}
+      <Changes changes={inbox.changes ?? []} />
+      <p className="text-pw-ink-500 text-[13px] leading-[18px]">
+        {inbox.used_this_week} of 10 changes used this week, across all your campaigns.{" "}
+        <Link href="/otto" className="text-pw-blue-ink font-semibold hover:underline">
+          Open Otto&rsquo;s inbox
+        </Link>
+      </p>
+    </div>
   );
 }
 
@@ -349,7 +460,7 @@ function ByDay({ series, currency }: { series: AdsDay[] | undefined; currency: s
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-[15px] font-semibold">Day by day</h3>
-        <p className="text-pw-ink-400 text-[12px]">
+        <p className="text-pw-ink-500 text-[12px]">
           Bar height is the day&rsquo;s spend; a dot marks a day that brought a lead.
         </p>
       </div>
@@ -374,7 +485,7 @@ function ByDay({ series, currency }: { series: AdsDay[] | undefined; currency: s
           </span>
         ))}
       </div>
-      <div className="text-pw-ink-400 mt-2 flex justify-between text-[12px]">
+      <div className="text-pw-ink-500 mt-2 flex justify-between text-[12px]">
         <span>{days[0]?.date}</span>
         <span>
           {money(
