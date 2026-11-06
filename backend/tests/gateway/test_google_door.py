@@ -151,3 +151,112 @@ def test_a_whole_refusal_says_google_s_own_reason() -> None:
         door.mutate(_exclusions("21"))
     assert "The developer token is not approved." in str(refused.value)
     assert "authorizationError.DEVELOPER_TOKEN_NOT_APPROVED" in str(refused.value)
+
+
+def _together(validate_only: bool = False) -> Any:
+    from ppcway.gateway.port import Together
+
+    budget = f"customers/{CUSTOMER}/campaignBudgets/-1"
+    return Together(
+        customer_id=CUSTOMER,
+        validate_only=validate_only,
+        operations=(
+            Operation(
+                resource_type="campaign_budget",
+                doing=Doing.CREATE,
+                resource_name=budget,
+                fields={"name": "PDF tools · abc", "amountMicros": "20000000"},
+            ),
+            Operation(
+                resource_type="ad_group_criterion",
+                doing=Doing.CREATE,
+                fields={"keyword": {"text": "pdf to word", "matchType": "PHRASE"}},
+            ),
+        ),
+    )
+
+
+def test_a_new_campaign_goes_to_the_account_wide_mutate_all_or_nothing() -> None:
+    door, seen = _door(
+        {
+            "mutateOperationResponses": [
+                {
+                    "campaignBudgetResult": {
+                        "resourceName": f"customers/{CUSTOMER}/campaignBudgets/9"
+                    }
+                },
+                {
+                    "adGroupCriterionResult": {
+                        "resourceName": f"customers/{CUSTOMER}/adGroupCriteria/3~4"
+                    }
+                },
+            ]
+        }
+    )
+    made = door.mutate_together(_together())
+    (request,) = seen
+    assert str(request.url).endswith(f"/v25/customers/{CUSTOMER}/googleAds:mutate")
+    body = json.loads(request.content)
+    assert body["partialFailure"] is False, "half a campaign is worse than none"
+    assert body["mutateOperations"][0] == {
+        "campaignBudgetOperation": {
+            "create": {
+                "name": "PDF tools · abc",
+                "amountMicros": "20000000",
+                "resourceName": f"customers/{CUSTOMER}/campaignBudgets/-1",
+            }
+        }
+    }
+    assert "adGroupCriterionOperation" in body["mutateOperations"][1]
+    assert made.names == (
+        f"customers/{CUSTOMER}/campaignBudgets/9",
+        f"customers/{CUSTOMER}/adGroupCriteria/3~4",
+    )
+
+
+def test_a_check_only_request_creates_nothing_and_says_so() -> None:
+    door, seen = _door({})
+    made = door.mutate_together(_together(validate_only=True))
+    assert json.loads(seen[0].content)["validateOnly"] is True
+    assert made.checked_only and made.names == ()
+
+
+def test_a_refusal_names_the_part_of_the_campaign_it_was_about() -> None:
+    door, _seen = _door(
+        {
+            "error": {
+                "code": 400,
+                "message": "Request contains an invalid argument.",
+                "details": [
+                    {
+                        "errors": [
+                            {
+                                "errorCode": {"criterionError": "KEYWORD_HAS_INVALID_CHARS"},
+                                "message": "The keyword contains invalid characters.",
+                                "location": {
+                                    "fieldPathElements": [
+                                        {"fieldName": "mutate_operations", "index": 1}
+                                    ]
+                                },
+                            }
+                        ]
+                    }
+                ],
+            }
+        },
+        status=400,
+    )
+    with pytest.raises(GoogleRefused) as refused:
+        door.mutate_together(_together())
+    said = str(refused.value)
+    assert 'Google refused a keyword "pdf to word"' in said
+    assert "The keyword contains invalid characters." in said
+
+
+def test_only_a_temporary_name_may_ride_on_a_create() -> None:
+    with pytest.raises(ValueError, match="temporary"):
+        Operation(
+            resource_type="campaign",
+            doing=Doing.CREATE,
+            resource_name=f"customers/{CUSTOMER}/campaigns/123",
+        )

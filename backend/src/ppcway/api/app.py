@@ -91,13 +91,14 @@ from ppcway.auth.sessions import (
     sign_out_everywhere,
     whoever_holds,
 )
+
+# Tables ordinary requests read -- the campaign drafts, the write gate, the
+# kill switches, the day's quota -- are registered with the metadata whenever
+# the app is, rather than only once some endpoint has happened to import the
+# module that defines them.
+from ppcway.builder import models as _builder_models  # noqa: F401
 from ppcway.config import Settings, load_settings
 from ppcway.db.session import get_session, session_factory
-
-# The gateway's tables -- the write gate, the kill switches, the day's quota --
-# are read on ordinary requests such as opening the inbox, so they are
-# registered with the metadata whenever the app is, rather than only once some
-# endpoint has happened to import the module that defines them.
 from ppcway.gateway import quota as _quota  # noqa: F401
 from ppcway.gateway import switch as _switch  # noqa: F401
 from ppcway.mail.alerts import post_alerts
@@ -120,6 +121,7 @@ from ppcway.org.places import (
     home_for,
     insist,
     invite,
+    may,
     people_in,
     remove,
     role_of,
@@ -2103,6 +2105,371 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             customer_name=picked.name,
             trouble=picked.trouble,
         )
+
+    # --- the campaign builder ---------------------------------------------
+    #
+    # "Start a new campaign" (Figma 87:10926) and "Here's the campaign we built
+    # for you" (17:2048). Building reads Google -- Keyword Planner and the
+    # place names -- and writes nothing; only the launch creates anything, and
+    # it goes through the gateway's one door. See `ppcway.builder`.
+
+    def _read_keys(connection: AdsConnection) -> dict[str, Any]:
+        """What a read of this merchant's account needs, or a 409 saying why not."""
+        if settings.google_ads_developer_token is None or not (
+            settings.google_oauth_client_id and settings.google_oauth_client_secret
+        ):
+            raise HTTPException(503, "Reading Google Ads is not set up on this deployment.")
+        try:
+            vault = TokenVault(
+                settings.google_oauth_token_key.get_secret_value()
+                if settings.google_oauth_token_key
+                else None
+            )
+            access = fresh_access_token(
+                vault.unlock(connection.ciphertext),
+                client_id=settings.google_oauth_client_id,
+                client_secret=settings.google_oauth_client_secret.get_secret_value(),
+            )
+        except (AdsConnectionRefused, VaultUnavailable) as exc:
+            raise HTTPException(409, f"We could not reach your Google Ads account: {exc}") from None
+        return {
+            "access_token": access,
+            "developer_token": settings.google_ads_developer_token.get_secret_value(),
+            "api_version": settings.google_ads_api_version,
+        }
+
+    def _builder_connection(
+        session: Session, x_session_token: str | None, needs: str
+    ) -> tuple[UserAccount, Organization, AdsConnection]:
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, needs)
+        connection = _connection(session, account)
+        if connection is None or not connection.customer_id:
+            raise HTTPException(409, "Connect a Google Ads account first.")
+        return account, place, connection
+
+    def _draft_view(draft: Any) -> dict[str, Any]:
+        from ppcway.builder.campaign import CampaignPlan, in_one_sentence, missing
+
+        plan = CampaignPlan.from_dict(draft.plan or {})
+        return {
+            "id": str(draft.id),
+            "status": draft.status,
+            "plan": plan.as_dict(),
+            "sentence": in_one_sentence(plan),
+            "missing": missing(plan),
+            "outcome": draft.outcome,
+            "campaign": draft.campaign_resource,
+            "created_at": draft.created_at.isoformat() if draft.created_at else None,
+        }
+
+    def _their_draft(session: Session, draft_id: UUID, organization_id: UUID) -> Any:
+        from ppcway.builder.models import CampaignDraft
+
+        draft = session.get(CampaignDraft, draft_id)
+        if draft is None or draft.organization_id != organization_id:
+            raise HTTPException(404, "There is no such campaign draft.")
+        return draft
+
+    @app.get("/v1/campaigns/start")
+    def builder_prefill(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """What the new-campaign form can fill in before anybody types."""
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        connection = _connection(session, account)
+        if connection is None or not connection.customer_id:
+            return {"connected": False}
+        return {
+            "connected": True,
+            "currency": connection.currency,
+            "account_name": connection.customer_name,
+            "business_name": place.name,
+            "may_launch": may(session, account, place, "approve"),
+        }
+
+    @app.get("/v1/campaigns/places")
+    def builder_places(
+        session: Annotated[Session, Depends(get_session)],
+        q: str = "",
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Places Google can show ads in, matching what was typed."""
+        from ppcway.ads.planner import places_called
+
+        _account, _place, connection = _builder_connection(session, x_session_token, "propose")
+        if len(q.strip()) < 2:
+            return {"places": []}
+        keys = _read_keys(connection)
+        return {
+            "places": places_called(
+                q,
+                access_token=keys["access_token"],
+                developer_token=keys["developer_token"],
+                api_version=keys["api_version"],
+            )
+        }
+
+    @app.get("/v1/campaigns/languages")
+    def builder_languages(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """The languages Google can target, by its own names and ids."""
+        import httpx as _httpx
+
+        from ppcway.ads.sync import _ask
+
+        _account, _place, connection = _builder_connection(session, x_session_token, "propose")
+        keys = _read_keys(connection)
+        with _httpx.Client(timeout=_httpx.Timeout(30)) as client:
+            rows, trouble = _ask(
+                connection.customer_id,
+                "SELECT language_constant.resource_name, language_constant.name,"
+                " language_constant.code FROM language_constant"
+                " WHERE language_constant.targetable = TRUE",
+                access_token=keys["access_token"],
+                developer_token=keys["developer_token"],
+                login_customer_id=settings.google_ads_login_customer_id,
+                api_version=keys["api_version"],
+                client=client,
+            )
+        if trouble:
+            raise HTTPException(502, trouble)
+        found = [
+            {
+                "resource": str((row.get("languageConstant") or {}).get("resourceName", "")),
+                "name": str((row.get("languageConstant") or {}).get("name", "")),
+                "code": str((row.get("languageConstant") or {}).get("code", "")),
+            }
+            for row in rows
+        ]
+        return {"languages": sorted((f for f in found if f["resource"]), key=lambda f: f["name"])}
+
+    @app.post("/v1/campaigns/drafts", status_code=201)
+    def builder_start(
+        body: dict[str, Any],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Write a new campaign: real searches, then ad text, then checks.
+
+        Writes nothing to Google. Takes up to a minute -- a Keyword Planner
+        call and a model call per theme, side by side -- and answers with the
+        draft for the merchant to read.
+        """
+        from ppcway.ads.planner import ideas_for
+        from ppcway.builder.build import build_plan
+        from ppcway.builder.campaign import BIDDING, MOST_THEMES, Place
+        from ppcway.builder.models import CampaignDraft
+        from ppcway.builder.validate import Business
+
+        account, place, connection = _builder_connection(session, x_session_token, "propose")
+        themes = [str(t).strip() for t in body.get("themes") or [] if str(t).strip()]
+        if not themes:
+            raise HTTPException(422, "Say what the campaign is about: at least one service.")
+        if len(themes) > MOST_THEMES:
+            raise HTTPException(422, f"A campaign takes at most {MOST_THEMES} services.")
+        try:
+            budget = float(body.get("daily_budget") or 0)
+        except (TypeError, ValueError):
+            budget = 0.0
+        if budget <= 0:
+            raise HTTPException(422, "Set a daily budget above zero.")
+        places = [
+            Place(
+                resource=str(p.get("resource", "")),
+                name=str(p.get("name", "")),
+                kind=str(p.get("kind", "")),
+            )
+            for p in body.get("places") or []
+            if isinstance(p, dict) and str(p.get("resource", "")).startswith("geoTargetConstants/")
+        ][:10]
+        if not places:
+            raise HTTPException(422, "Choose at least one place for the ads to show.")
+        language = body.get("language") or {}
+        if not str(language.get("resource", "")).startswith("languageConstants/"):
+            raise HTTPException(422, "Choose the language your customers search in.")
+        bidding = str(body.get("bidding") or "clicks")
+        if bidding not in BIDDING:
+            raise HTTPException(422, "Choose how Google should bid.")
+        final_url = str(body.get("final_url") or "").strip()
+        if not final_url.startswith(("http://", "https://")):
+            raise HTTPException(422, "Give the page people land on, starting with https://.")
+
+        claims = body.get("claims") or {}
+        years = claims.get("years_trading")
+        name = place.name or connection.customer_name
+        business = Business(
+            name=name,
+            services=tuple(themes),
+            places=tuple(p.name for p in places),
+            open_all_hours=bool(claims.get("open_all_hours")),
+            free_quotes=bool(claims.get("free_quotes")),
+            emergency_callout=bool(claims.get("emergency_callout")),
+            years_trading=int(years) if isinstance(years, int) and years > 0 else None,
+            brand_words=tuple(w for w in (place.name, connection.customer_name) if w),
+        )
+        keys = _read_keys(connection)
+
+        def ask_planner(theme: str) -> Any:
+            return ideas_for(
+                [theme],
+                places=[p.resource for p in places],
+                language=str(language["resource"]),
+                customer_id=connection.customer_id,
+                access_token=keys["access_token"],
+                developer_token=keys["developer_token"],
+                api_version=keys["api_version"],
+                login_customer_id=settings.google_ads_login_customer_id,
+            )
+
+        plan = build_plan(
+            themes=themes,
+            name=str(body.get("name") or ""),
+            daily_budget=budget,
+            currency=connection.currency,
+            final_url=final_url,
+            places=places,
+            language=Place(resource=str(language["resource"]), name=str(language.get("name", ""))),
+            bidding=bidding,
+            negatives=[str(n) for n in body.get("negatives") or []],
+            business=business,
+            ask_planner=ask_planner,
+            models=_models(),
+        )
+        draft = CampaignDraft(
+            organization_id=place.id,
+            customer_id=connection.customer_id,
+            created_by=account.id,
+            plan=plan.as_dict(),
+        )
+        session.add(draft)
+        session.commit()
+        return _draft_view(draft)
+
+    @app.get("/v1/campaigns/drafts/{draft_id}")
+    def builder_read(
+        draft_id: UUID,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        _account, place, _held = _builder_connection(session, x_session_token, "view")
+        return _draft_view(_their_draft(session, draft_id, place.id))
+
+    @app.post("/v1/campaigns/drafts/{draft_id}")
+    def builder_edit(
+        draft_id: UUID,
+        body: dict[str, Any],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Change a draft before launch. Ad text goes through the same checks
+        the drafts did; keywords can be taken out, never typed in, because
+        only Keyword Planner may put a keyword into a campaign."""
+        from ppcway.builder.campaign import BIDDING, CampaignPlan
+        from ppcway.builder.validate import Kind, check
+
+        _account, place, _held = _builder_connection(session, x_session_token, "propose")
+        draft = _their_draft(session, draft_id, place.id)
+        if draft.status != "draft":
+            raise HTTPException(409, "That campaign is already live; change it in Google Ads.")
+        plan = CampaignPlan.from_dict(draft.plan or {})
+        refused: list[dict[str, str]] = []
+
+        if "name" in body:
+            plan.name = str(body["name"] or "").strip()[:200]
+        if "daily_budget" in body:
+            try:
+                plan.daily_budget = max(0.0, float(body["daily_budget"] or 0))
+            except (TypeError, ValueError):
+                raise HTTPException(422, "The daily budget has to be a number.") from None
+        if "final_url" in body:
+            plan.final_url = str(body["final_url"] or "").strip()
+        if "bidding" in body and str(body["bidding"]) in BIDDING:
+            plan.bidding = str(body["bidding"])
+        if "negatives" in body:
+            plan.negatives = [str(n).strip() for n in body["negatives"] or [] if str(n).strip()]
+        if "not_political" in body:
+            plan.not_political = bool(body["not_political"])
+        for at, edit in enumerate(body.get("themes") or []):
+            if at >= len(plan.themes) or not isinstance(edit, dict):
+                continue
+            theme = plan.themes[at]
+            if "keywords" in edit:
+                keep = {str(k).strip().lower() for k in edit["keywords"] or []}
+                theme.keywords = [k for k in theme.keywords if str(k["text"]).lower() in keep]
+            for field_name, kind in (
+                ("headlines", Kind.HEADLINE),
+                ("descriptions", Kind.DESCRIPTION),
+            ):
+                if field_name not in edit:
+                    continue
+                said = check(
+                    [str(t) for t in edit[field_name] or [] if str(t).strip()],
+                    kind=kind,
+                    business=plan.business,
+                )
+                setattr(theme, field_name, list(said.kept))
+                refused.extend(
+                    {"theme": theme.name, "text": r.text, "because": r.because}
+                    for r in said.refused
+                )
+        draft.plan = plan.as_dict()
+        session.commit()
+        return {**_draft_view(draft), "refused": refused}
+
+    @app.post("/v1/campaigns/drafts/{draft_id}/launch")
+    def builder_launch(
+        draft_id: UUID,
+        tasks: BackgroundTasks,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Create the campaign in Google Ads, whole or not at all.
+
+        Needs somebody who may approve changes. Goes through the gateway: the
+        write switch and the stops are read now, Google checks the whole
+        campaign first, and only then is it created.
+        """
+        from ppcway.builder.launch import launch_draft
+        from ppcway.gateway import send as sending
+        from ppcway.gateway import switch
+
+        account, place, connection = _builder_connection(session, x_session_token, "approve")
+        draft = _their_draft(session, draft_id, place.id)
+        try:
+            door = sending.doors(settings)(connection)
+        except sending.NoDoor as exc:
+            raise HTTPException(409, str(exc)) from None
+        said = launch_draft(
+            session,
+            draft,
+            door=door,  # type: ignore[arg-type]
+            gate_open=switch.gate(session, default=settings.ads_writes_enabled).is_open,
+            account_id=account.id,
+        )
+        if said.live:
+            # Read the account again now, so the new campaign is on the
+            # Campaigns page in a minute rather than at the next quarter hour.
+            opened = SyncRun(
+                customer_id=connection.customer_id,
+                kind="structure",
+                status="running",
+                stage="Asking Google for your account",
+            )
+            session.add(opened)
+            session.commit()
+            tasks.add_task(_sync, opened.id, connection.id, settings, "structure")
+        return {
+            "live": said.live,
+            "words": said.words,
+            "campaign": said.campaign,
+            **_draft_view(draft),
+        }
 
     @app.post("/v1/ads/sync", response_model=SyncOut, status_code=202)
     def refresh_now(

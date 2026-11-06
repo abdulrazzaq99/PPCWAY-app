@@ -190,3 +190,108 @@ def demand_for(
     finally:
         if own:
             c.close()
+
+
+def ideas_for(
+    seeds: list[str],
+    *,
+    places: list[str],
+    language: str,
+    customer_id: str,
+    access_token: str,
+    developer_token: str,
+    api_version: str = "v25",
+    login_customer_id: str | None = None,
+    client: httpx.Client | None = None,
+) -> Demand:
+    """What people search for around one theme, in the places and language a
+    new campaign will run in.
+
+    The campaign builder's half of the planner. `demand_for` answers "what is
+    this trade worth in this town" for an audit; this answers "which of these
+    phrasings do people actually type where the ads will show", for the
+    keywords gate: only a phrase with volume here may go into the campaign.
+    """
+    own = client is None
+    c = client or httpx.Client(timeout=httpx.Timeout(45))
+    found = Demand(town=", ".join(places))
+    try:
+        wanted = [s.strip() for s in seeds if s.strip()][:10]
+        if not wanted:
+            found.trouble = "We had nothing to look up."
+            return found
+        reply = c.post(
+            f"{API}/{api_version}/customers/{customer_id}:generateKeywordIdeas",
+            headers=_headers(access_token, developer_token, login_customer_id),
+            json={
+                "language": language or ENGLISH,
+                "geoTargetConstants": places[:10] or [CANADA],
+                "keywordPlanNetwork": "GOOGLE_SEARCH",
+                "includeAdultKeywords": False,
+                "keywordSeed": {"keywords": wanted},
+            },
+        )
+        if reply.status_code != 200:
+            log.warning("Google would not suggest keywords for %r: %s", wanted[:1], _why(reply))
+            found.trouble = _plain(reply)
+            return found
+        for row in reply.json().get("results", []):
+            metrics = row.get("keywordIdeaMetrics") or {}
+            monthly = int(metrics.get("avgMonthlySearches", 0) or 0)
+            if monthly <= 0:
+                continue
+            found.searches.append(
+                Search(
+                    term=str(row.get("text", "")),
+                    monthly=monthly,
+                    competition=str(metrics.get("competition", "")),
+                    top_of_page_low=_money(metrics.get("lowTopOfPageBidMicros")),
+                    top_of_page_high=_money(metrics.get("highTopOfPageBidMicros")),
+                )
+            )
+        found.searches.sort(key=lambda row: row.monthly, reverse=True)
+        found.town_matched = bool(places)
+        found.read = True
+        return found
+    finally:
+        if own:
+            c.close()
+
+
+def places_called(
+    name: str,
+    *,
+    access_token: str,
+    developer_token: str,
+    api_version: str = "v25",
+    client: httpx.Client | None = None,
+) -> list[dict[str, str]]:
+    """Places Google can target that match what somebody typed: countries,
+    regions and cities, as Google names them. For the builder's place picker."""
+    own = client is None
+    c = client or httpx.Client(timeout=httpx.Timeout(20))
+    try:
+        reply = c.post(
+            f"{API}/{api_version}/geoTargetConstants:suggest",
+            headers=_headers(access_token, developer_token, None),
+            json={"locale": "en", "locationNames": {"names": [name.strip()]}},
+        )
+        if reply.status_code != 200:
+            log.warning("Google would not suggest places for %r: %s", name, _why(reply))
+            return []
+        out: list[dict[str, str]] = []
+        for row in reply.json().get("geoTargetConstantSuggestions", []):
+            constant = row.get("geoTargetConstant") or {}
+            if constant.get("status") != "ENABLED" or not constant.get("resourceName"):
+                continue
+            out.append(
+                {
+                    "resource": str(constant["resourceName"]),
+                    "name": str(constant.get("canonicalName") or constant.get("name") or ""),
+                    "kind": str(constant.get("targetType", "")),
+                }
+            )
+        return out[:10]
+    finally:
+        if own:
+            c.close()

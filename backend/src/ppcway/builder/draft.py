@@ -97,11 +97,13 @@ class Written:
 
     @property
     def declared_as_ai(self) -> bool:
-        """Whether this copy must be declared AI-drafted when it is launched.
+        """Whether this copy is AI-drafted, for the merchant to be told so.
 
-        True whenever a model wrote any of it. The brief requires
-        `synthetic_content_info` on AI-drafted ads, and the honest reading is
-        that one model-written headline makes the ad model-written.
+        True whenever a model wrote any of it: one model-written headline makes
+        the ad model-written. The brief asked for `synthetic_content_info` on
+        such ads, and Google accepts that only on image and HTML5 ads -- a
+        search ad carrying it is refused -- so the disclosure is PPCWay's own,
+        on the review screen and in the record of the launch.
         """
         return self.asked > 0 and bool(self.headlines or self.descriptions)
 

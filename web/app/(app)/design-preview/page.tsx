@@ -1,4 +1,7 @@
 import { notFound } from "next/navigation";
+import { DraftReview, NewCampaignForm } from "@/components/pw/campaign-builder";
+import { Header, PwPage } from "@/components/pw/shell";
+import type { Draft } from "@/lib/builder";
 import {
   AdminErrors,
   AdminJobs,
@@ -635,6 +638,116 @@ const LOOKS: Look[] = [
   },
 ];
 
+/* A drafted campaign, as the builder writes one. */
+const BUILT: Draft = {
+  id: "00000000-0000-4000-8000-000000000001",
+  status: "draft",
+  sentence:
+    "We'll show your ads to people in Poland and Romania who search for things like pdf to word and compress pdf. You'll spend up to 20.00 USD a day, and every click goes to https://pdfezy.com/.",
+  missing: ["Google needs you to confirm the campaign is not political advertising in the EU."],
+  outcome: null,
+  campaign: "",
+  created_at: null,
+  plan: {
+    name: "PDF tools",
+    daily_budget: 20,
+    currency: "USD",
+    final_url: "https://pdfezy.com/",
+    places: [
+      { resource: "geoTargetConstants/2616", name: "Poland", kind: "Country" },
+      { resource: "geoTargetConstants/2642", name: "Romania", kind: "Country" },
+    ],
+    language: { resource: "languageConstants/1000", name: "English" },
+    bidding: "clicks",
+    negatives: ["jobs", "careers", "salary"],
+    ai_written: true,
+    not_political: false,
+    themes: [
+      {
+        name: "pdf to word",
+        short: "",
+        dropped: [],
+        keywords: [
+          {
+            text: "pdf to word",
+            monthly: 90500,
+            competition: "LOW",
+            top_of_page_low: 0.12,
+            top_of_page_high: 0.61,
+          },
+          {
+            text: "pdf to word converter",
+            monthly: 33100,
+            competition: "LOW",
+            top_of_page_low: 0.1,
+            top_of_page_high: 0.55,
+          },
+          {
+            text: "convert pdf to word",
+            monthly: 27100,
+            competition: "LOW",
+            top_of_page_low: 0.1,
+            top_of_page_high: 0.5,
+          },
+          {
+            text: "pdf to word online",
+            monthly: 8100,
+            competition: "LOW",
+            top_of_page_low: 0.08,
+            top_of_page_high: 0.42,
+          },
+        ],
+        headlines: [
+          "PDF to Word in Seconds",
+          "Convert PDF Files Online",
+          "Keep Your Layout Intact",
+          "No Software to Install",
+          "Works in Your Browser",
+          "Edit PDFs as Word Files",
+          "Fast and Simple PDF Tools",
+          "Turn PDFs Into Documents",
+          "Convert on Any Device",
+          "PDFezy PDF Converter",
+        ],
+        descriptions: [
+          "Turn any PDF into an editable Word file in your browser. Nothing to install.",
+          "Upload, convert and download. Your formatting stays where it was.",
+        ],
+      },
+      {
+        name: "compress pdf",
+        short: "",
+        dropped: [],
+        keywords: [
+          {
+            text: "compress pdf",
+            monthly: 74000,
+            competition: "LOW",
+            top_of_page_low: 0.1,
+            top_of_page_high: 0.48,
+          },
+          {
+            text: "compress pdf file",
+            monthly: 12100,
+            competition: "LOW",
+            top_of_page_low: 0.09,
+            top_of_page_high: 0.4,
+          },
+        ],
+        headlines: [
+          "Compress PDF Files Online",
+          "Smaller PDFs in Seconds",
+          "Shrink a PDF for Email",
+        ],
+        descriptions: [
+          "Make large PDFs small enough to email, in your browser.",
+          "Pick a file, choose a size, download.",
+        ],
+      },
+    ],
+  },
+};
+
 export default async function Preview({
   searchParams,
 }: {
@@ -646,6 +759,29 @@ export default async function Preview({
   const chrome: Chrome = { door: doorOf(PLATFORM), failures: empty ? 0 : FAULTS.length };
 
   switch (screen) {
+    // The campaign builder, in the merchant portal's own skin.
+    case "new-campaign":
+      return (
+        <div className="bg-pw-ground text-pw-ink min-h-dvh">
+          <Header eyebrow="Campaigns" title="Start a new campaign." />
+          <PwPage>
+            <NewCampaignForm
+              prefill={{ connected: true, currency: "USD", may_launch: true }}
+              site="pdfezy.com"
+              trade="pdf to word"
+            />
+          </PwPage>
+        </div>
+      );
+    case "built-campaign":
+      return (
+        <div className="bg-pw-ground text-pw-ink min-h-dvh">
+          <Header eyebrow="New campaign" title="Here's the campaign we built for you." />
+          <PwPage>
+            <DraftReview initial={BUILT} mayLaunch />
+          </PwPage>
+        </div>
+      );
     case "overview":
       return (
         <AdminOverview

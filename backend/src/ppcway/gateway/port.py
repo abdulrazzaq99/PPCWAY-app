@@ -33,6 +33,7 @@ MOST_OPERATIONS = 10_000
 _PATHS = {
     "campaign": "campaigns",
     "campaign_budget": "campaignBudgets",
+    "campaign_criterion": "campaignCriteria",
     "ad_group": "adGroups",
     "ad_group_criterion": "adGroupCriteria",
     "ad_group_ad": "adGroupAds",
@@ -43,6 +44,12 @@ _PATHS = {
 
 def resource_name(customer_id: str, resource_type: str, entity_id: str) -> str:
     return f"customers/{customer_id}/{_PATHS[resource_type]}/{entity_id}"
+
+
+def is_temporary(name: str) -> bool:
+    """Whether a resource name is a placeholder for something created in the
+    same request: Google's temporary ids are negative numbers."""
+    return entity_id_of(name).startswith("-")
 
 
 def entity_id_of(name: str) -> str:
@@ -78,8 +85,16 @@ class Operation:
                 f" address. Adding one means adding its URL path, because a wrong"
                 f" path is a request Google answers about a different thing."
             )
-        if self.doing is Doing.CREATE and self.resource_name:
-            raise ValueError("a create names nothing: Google assigns the resource name")
+        if (
+            self.doing is Doing.CREATE
+            and self.resource_name
+            and not is_temporary(self.resource_name)
+        ):
+            raise ValueError(
+                "a create names nothing: Google assigns the resource name. The one"
+                " exception is a temporary name, a negative id, which lets the other"
+                " operations in the same request point at a thing not yet created."
+            )
         if self.doing is not Doing.CREATE and not self.resource_name:
             raise ValueError(f"a {self.doing.value} has to say what it is changing")
         if self.doing is Doing.UPDATE and not self.update_mask:
@@ -122,6 +137,50 @@ class Batch:
     @property
     def how_many(self) -> int:
         return len(self.operations)
+
+
+@dataclass(frozen=True, slots=True)
+class Together:
+    """Several kinds of change sent as one request that lands whole or not at all.
+
+    A new campaign is a budget, a campaign, its places and language, ad groups,
+    keywords and ads, and each points at something the request itself creates.
+    Google's account-wide mutate takes them in one request, refers between them
+    by temporary ids, and applies all of them or none -- so a campaign can never
+    be left half built, and there is nothing to roll back.
+
+    Partial failure is off on purpose, the opposite of `Batch`: here one refused
+    ad is a reason to create nothing, because half a campaign is worse than no
+    campaign.
+    """
+
+    customer_id: str
+    operations: tuple[Operation, ...]
+    #: True runs it through Google's checks and creates nothing. Every launch
+    #: does this first, so a refusal is found before anything exists.
+    validate_only: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.operations:
+            raise ValueError("a request with no operations is one nobody meant to send")
+        if len(self.operations) > MOST_OPERATIONS:
+            raise ValueError(
+                f"{len(self.operations)} operations is past Google's ceiling of"
+                f" {MOST_OPERATIONS:,} for one request."
+            )
+
+    @property
+    def how_many(self) -> int:
+        return len(self.operations)
+
+
+@dataclass(frozen=True, slots=True)
+class Created:
+    """What a `Together` request made: one resource name per operation, in order."""
+
+    names: tuple[str, ...]
+    #: True when Google only checked it.
+    checked_only: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,3 +254,10 @@ class Door(Protocol):
     """The one door to Google. Only `ppcway.gateway` may hold one of these."""
 
     def mutate(self, batch: Batch) -> Applied: ...
+
+
+@runtime_checkable
+class Builds(Protocol):
+    """The same door, for a request that creates several kinds of thing at once."""
+
+    def mutate_together(self, together: Together) -> Created: ...

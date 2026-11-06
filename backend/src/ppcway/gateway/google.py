@@ -24,7 +24,16 @@ from typing import Any
 
 import httpx
 
-from ppcway.gateway.port import Applied, Batch, Doing, GoogleRefused, Refused
+from ppcway.gateway.port import (
+    Applied,
+    Batch,
+    Created,
+    Doing,
+    GoogleRefused,
+    Operation,
+    Refused,
+    Together,
+)
 
 # Re-exported: this module raises it, and the seam defines it.
 __all__ = ["API", "GoogleDoor", "GoogleRefused", "Keys"]
@@ -42,6 +51,7 @@ _UNDER = {Doing.CREATE: "create", Doing.UPDATE: "update", Doing.REMOVE: "remove"
 _SERVICE = {
     "campaign": ("campaigns", "campaignOperation"),
     "campaign_budget": ("campaignBudgets", "campaignBudgetOperation"),
+    "campaign_criterion": ("campaignCriteria", "campaignCriterionOperation"),
     "ad_group": ("adGroups", "adGroupOperation"),
     "ad_group_criterion": ("adGroupCriteria", "adGroupCriterionOperation"),
     "ad_group_ad": ("adGroupAds", "adGroupAdOperation"),
@@ -76,6 +86,16 @@ class GoogleDoor:
             if own:
                 c.close()
 
+    def mutate_together(self, together: Together) -> Created:
+        """Several kinds of change in one request, applied whole or not at all."""
+        own = self.client is None
+        c = self.client or httpx.Client(timeout=httpx.Timeout(120))
+        try:
+            return _together(self, c, together)
+        finally:
+            if own:
+                c.close()
+
     def _send(self, c: httpx.Client, batch: Batch) -> Applied:
         service, _key = _SERVICE[batch.operations[0].resource_type]
         url = f"{API}/{self.keys.api_version}/customers/{batch.customer_id}/{service}:mutate"
@@ -104,6 +124,93 @@ class GoogleDoor:
             raise GoogleRefused(_why(reply))
 
         return _read(reply.json(), batch.how_many)
+
+
+#: What each kind of thing is called, for a refusal a merchant reads.
+_CALLED: dict[str, str] = {
+    "campaign_budget": "the budget",
+    "campaign": "the campaign",
+    "campaign_criterion": "a place, language or excluded search",
+    "ad_group": "an ad group",
+    "ad_group_criterion": "a keyword",
+    "ad_group_ad": "an ad",
+}
+
+
+def _together(door: GoogleDoor, c: httpx.Client, together: Together) -> Created:
+    """Send a `Together` to the account-wide mutate, all or nothing."""
+    url = f"{API}/{door.keys.api_version}/customers/{together.customer_id}/googleAds:mutate"
+    body: dict[str, Any] = {
+        "mutateOperations": [
+            {_SERVICE[op.resource_type][1]: _operation(op)} for op in together.operations
+        ],
+        "partialFailure": False,
+        "validateOnly": together.validate_only,
+    }
+    headers = {
+        "Authorization": f"Bearer {door.keys.access_token}",
+        "developer-token": door.keys.developer_token,
+        "content-type": "application/json",
+    }
+    if door.keys.login_customer_id:
+        headers["login-customer-id"] = door.keys.login_customer_id
+    try:
+        reply = c.post(url, json=body, headers=headers)
+    except httpx.HTTPError as exc:
+        raise GoogleRefused(f"Google could not be reached: {exc}") from None
+    if reply.status_code >= 400:
+        raise GoogleRefused(_why_together(reply, together))
+    if together.validate_only:
+        return Created(names=(), checked_only=True)
+
+    names: list[str] = []
+    for answer in (reply.json() or {}).get("mutateOperationResponses") or []:
+        result = next(
+            (v for k, v in answer.items() if k.endswith("Result") and isinstance(v, dict)), {}
+        )
+        names.append(str(result.get("resourceName", "")))
+    if len(names) != together.how_many or not all(names):
+        # All or nothing means Google applied it, so the names are owed. A
+        # short answer is recorded as what it is rather than guessed at.
+        log.warning("Google created %d of %d without naming them", len(names), together.how_many)
+    return Created(names=tuple(names))
+
+
+def _why_together(reply: httpx.Response, together: Together) -> str:
+    """Google's refusal of an all-or-nothing request, naming the part it was about."""
+    try:
+        said = reply.json()
+    except ValueError:
+        return f"Google refused the request: {reply.status_code}"
+    error = said.get("error") or {}
+    for detail in error.get("details") or []:
+        for failure in (detail.get("errors") or []) if isinstance(detail, dict) else []:
+            message = str(failure.get("message") or "")
+            if not message:
+                continue
+            code = _code_of(failure.get("errorCode") or {})
+            at = None
+            for part in (failure.get("location") or {}).get("fieldPathElements") or []:
+                if part.get("fieldName") in {"mutate_operations", "mutateOperations"}:
+                    at = part.get("index")
+                    break
+            about = ""
+            if isinstance(at, int) and 0 <= at < together.how_many:
+                about = _about(together.operations[at])
+            return f"Google refused {about or 'the campaign'}: {message} ({code})"
+    return f"Google refused the request: {reply.status_code} {error.get('message', '')}".strip()
+
+
+def _about(op: Operation) -> str:
+    """Which part of a campaign one operation is, in words."""
+    called = _CALLED.get(op.resource_type, op.resource_type.replace("_", " "))
+    keyword = (op.fields.get("keyword") or {}).get("text")
+    if keyword:
+        return f'{called} "{keyword}"'
+    name = op.fields.get("name")
+    if name:
+        return f'{called} "{name}"'
+    return called
 
 
 def _operation(op: Any) -> dict[str, Any]:
