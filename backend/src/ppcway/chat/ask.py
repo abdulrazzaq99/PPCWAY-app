@@ -39,12 +39,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import date
 from typing import Any, Final
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from ppcway.ads.clock import account_today
 from ppcway.chat import propose
 from ppcway.chat import tools as toolbox
 from ppcway.chat.propose import Handles
@@ -212,7 +213,7 @@ def answer(
     was given the fixed line.
     """
     may_chat(role)
-    at = today or datetime.now(UTC).date()
+    at = today or account_today(session, customer_id)
     turn = turn if turn is not None else Turn()
 
     # Offered only where the role allows it and there is a connection to judge

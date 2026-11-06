@@ -48,6 +48,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from ppcway.ads.clock import local_today
 from ppcway.ads.models import AdsConnection
 from ppcway.ads.numbers import account_numbers
 from ppcway.chat.transcript import forget_old as forget_transcripts
@@ -161,14 +162,17 @@ def _one_account(
     here rolls back this account and leaves the others alone."""
     with factory() as session:
         held = account_numbers(
-            session, connection.customer_id, currency=connection.currency, today=at.date()
+            session,
+            connection.customer_id,
+            currency=connection.currency,
+            today=local_today(connection.time_zone, at),
         )
         found = run_rules(
             session,
             connection.customer_id,
             currency=connection.currency,
             target_cost_per_lead=held.cost_per_lead,
-            today=at.date(),
+            today=local_today(connection.time_zone, at),
             now=at,
             protected=tuple(word for word in (connection.customer_name,) if word and len(word) > 2),
         )

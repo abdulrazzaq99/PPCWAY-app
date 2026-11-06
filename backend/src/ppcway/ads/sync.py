@@ -85,6 +85,9 @@ class Report:
     #: belongs to the caller's session and a sync function that reached into it
     #: would be a second writer to a row it does not own.
     account_status: str = ""
+    #: The account's own time zone, where this pass read it, for the same
+    #: reason: the connection is the caller's to write.
+    time_zone: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -295,7 +298,8 @@ def sync_structure(
                    customer.status,
                    campaign.advertising_channel_type, campaign.bidding_strategy_type,
                    campaign.start_date_time, campaign.end_date_time,
-                   campaign_budget.amount_micros, customer.currency_code
+                   campaign_budget.amount_micros, customer.currency_code,
+                   customer.time_zone
             FROM campaign WHERE campaign.status != 'REMOVED'
             """,
             **ask,  # type: ignore[arg-type]
@@ -305,6 +309,7 @@ def sync_structure(
 
         currency = ""
         account_status = ""
+        time_zone = ""
         campaigns: dict[str, dict[str, Any]] = {}
         labels: dict[str, str] = {}
         for row in rows:
@@ -318,6 +323,8 @@ def sync_structure(
             # guardrail refuses a change to an account it cannot name the state
             # of, so this is the figure that makes that check answerable.
             account_status = account_status or str(customer.get("status", ""))
+            # The zone its days are counted in. See `ads.clock`.
+            time_zone = time_zone or str(customer.get("timeZone", ""))
             labels[name] = str(campaign.get("name", ""))
             campaigns[name] = {
                 "campaign_id": str(campaign.get("id", "")),
@@ -342,6 +349,8 @@ def sync_structure(
         report.counts["campaigns"] = count
         if account_status:
             report.account_status = account_status
+        if time_zone:
+            report.time_zone = time_zone
         report.changes.extend(changes)
 
         rows, trouble = _ask(

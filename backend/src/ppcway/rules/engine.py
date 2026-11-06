@@ -32,6 +32,7 @@ from typing import Final
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ppcway.ads.clock import account_today
 from ppcway.ads.mirror import SyncRun
 from ppcway.metric.figures import FRESH_HOURS
 from ppcway.opt.models import COUNTS_TOWARD_CAP, UNDO_FOR, OptimizationAction, Status
@@ -94,7 +95,7 @@ def run(
 ) -> Pass:
     """One pass over one account. Reads the mirror, writes nothing."""
     at = now or datetime.now(UTC)
-    day = today or at.date()
+    day = today or account_today(session, customer_id, at)
     unspecified = tuple(r.id for r in waiting())
 
     trouble = _sync_trouble(session, customer_id, at)

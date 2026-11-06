@@ -93,6 +93,13 @@ from ppcway.auth.sessions import (
 )
 from ppcway.config import Settings, load_settings
 from ppcway.db.session import get_session, session_factory
+
+# The gateway's tables -- the write gate, the kill switches, the day's quota --
+# are read on ordinary requests such as opening the inbox, so they are
+# registered with the metadata whenever the app is, rather than only once some
+# endpoint has happened to import the module that defines them.
+from ppcway.gateway import quota as _quota  # noqa: F401
+from ppcway.gateway import switch as _switch  # noqa: F401
 from ppcway.mail.alerts import post_alerts
 from ppcway.mail.letters import (
     audit_code,
@@ -1945,6 +1952,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 days=window,
                 api_version=settings.google_ads_api_version,
                 login_customer_id=settings.google_ads_login_customer_id,
+                time_zone=connection.time_zone,
             )
         except (AdsConnectionRefused, VaultUnavailable) as exc:
             log.warning("home numbers failed for account %s: %s", account.id, exc)
@@ -2017,6 +2025,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     days=window,
                     api_version=settings.google_ads_api_version,
                     login_customer_id=settings.google_ads_login_customer_id,
+                    time_zone=connection.time_zone,
                 ).as_dict()
             except (AdsConnectionRefused, VaultUnavailable) as exc:
                 log.warning("campaign %s unreadable for %s: %s", campaign_id, account.id, exc)
@@ -2085,6 +2094,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         connection.customer_id = picked.customer_id
         connection.customer_name = picked.name
         connection.currency = picked.currency
+        # Its days are counted in its own zone; see `ads.clock`.
+        connection.time_zone = picked.time_zone
         session.commit()
         return AdsStatusOut(
             connected=True,

@@ -196,3 +196,68 @@ def test_a_refused_search_term_read_fails_the_run_and_says_why(
         "the two mirrors do not depend on each other, so one refused report"
         " does not leave the other empty for another night"
     )
+
+
+def _dated(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[tuple[date, date | None]]]:
+    """Every read, with the first and last day it asked Google for."""
+    asked: dict[str, list[tuple[date, date | None]]] = {}
+
+    def fake(name: str) -> Any:
+        def read(
+            session: Session,
+            customer_id: str,
+            *,
+            since: date | None = None,
+            until: date | None = None,
+            **_: Any,
+        ) -> Report:
+            asked.setdefault(name, []).append((since or NOW.date(), until))
+            return Report()
+
+        return read
+
+    for name, attr in (
+        ("days", "sync_days"),
+        ("search_terms", "sync_search_terms"),
+        ("keyword_days", "sync_keyword_days"),
+    ):
+        monkeypatch.setattr(runner, attr, fake(name))
+    return asked
+
+
+def test_the_hourly_read_asks_for_the_account_s_today_not_utc_s(
+    factory: sessionmaker[Session], reads: dict[str, list[date]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """At 02:00 UTC it is still yesterday evening in Toronto. Asking Google for
+    the UTC date asked for a day that had not started in the account."""
+    asked = _dated(monkeypatch)
+    two_utc = datetime.combine(NOW.date(), datetime.min.time(), tzinfo=UTC) + timedelta(hours=2)
+    with factory() as session:
+        held = _connection(session)
+        held.time_zone = "America/Toronto"
+        session.commit()
+        runner.sync_connection(session, held, SETTINGS, kind="today", now=two_utc)
+    toronto_today = NOW.date() - timedelta(days=1)
+    assert asked["days"] == [(toronto_today, toronto_today)]
+
+
+def test_a_zone_read_by_the_structure_pass_is_kept_and_used_at_once(
+    factory: sessionmaker[Session], reads: dict[str, list[date]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A first pass has no zone held yet; the structure read supplies it, and
+    the same pass dates its history reads by it."""
+    asked = _dated(monkeypatch)
+    monkeypatch.setattr(
+        runner,
+        "sync_structure",
+        lambda *a, **k: Report(counts={"campaigns": 2}, time_zone="Asia/Karachi"),
+    )
+    late_utc = datetime.combine(NOW.date(), datetime.min.time(), tzinfo=UTC) + timedelta(hours=21)
+    with factory() as session:
+        held = _connection(session)
+        runner.sync_connection(session, held, SETTINGS, kind="first", now=late_utc)
+        session.refresh(held)
+        assert held.time_zone == "Asia/Karachi"
+    karachi_today = NOW.date() + timedelta(days=1)
+    assert asked["days"] == [(karachi_today - timedelta(days=runner.FIRST_DAYS), karachi_today)]
+    assert asked["search_terms"][0][1] == karachi_today

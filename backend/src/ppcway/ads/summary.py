@@ -22,6 +22,7 @@ from typing import Any
 import httpx
 
 from ppcway.ads.accounts import API, _headers, _plain, _why
+from ppcway.ads.clock import local_today
 
 log = logging.getLogger(__name__)
 
@@ -176,13 +177,18 @@ def account_summary(
     login_customer_id: str | None = None,
     client: httpx.Client | None = None,
     today: datetime | None = None,
+    time_zone: str = "",
 ) -> Summary:
-    """Four reads: the days, the split, the campaigns, and the month so far."""
+    """Four reads: the days, the split, the campaigns, and the month so far.
+
+    Dated in the account's own `time_zone`, as Google files its figures, so
+    the window ends at the account's yesterday and "this month" is its month.
+    """
     own = client is None
     c = client or httpx.Client(timeout=httpx.Timeout(60))
-    now = today or datetime.now(UTC)
+    now = local_today(time_zone, today)
     found = Summary(customer_id=customer_id, days=days)
-    window = _during(days)
+    window = _during(days, today=now)
     ask = {
         "access_token": access_token,
         "developer_token": developer_token,
@@ -368,6 +374,7 @@ def campaign_detail(
     api_version: str = "v25",
     login_customer_id: str | None = None,
     client: httpx.Client | None = None,
+    time_zone: str = "",
 ) -> Detail:
     """What one campaign did, and what it is made of.
 
@@ -377,7 +384,7 @@ def campaign_detail(
     """
     own = client is None
     c = client or httpx.Client(timeout=httpx.Timeout(60))
-    window = _during(days)
+    window = _during(days, today=local_today(time_zone))
     found = Detail(campaign_id=campaign_id, days=days)
     where = f"campaign.id = {campaign_id}"
     ask = {

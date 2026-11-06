@@ -18,6 +18,7 @@ from typing import Final
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ppcway.ads.clock import account_today
 from ppcway.ads.mirror import MICRO, MirrorAd, SearchTermDay
 from ppcway.metric.figures import Figure, Period, Scope, Unit
 from ppcway.rules.catalogue import rule
@@ -87,7 +88,7 @@ def wasteful_terms(
     "alpha plumbing" and an exact match would protect nothing.
     """
     spec = rule("R1")
-    at = today or datetime.now(UTC).date()
+    at = today or account_today(session, customer_id)
     window = Period.last(int(spec.limits["window_days"]), until=at)
 
     rows = session.execute(
@@ -289,7 +290,7 @@ def disapproved_ads(
     that case is marked blocking and sorts ahead of any saving.
     """
     spec = rule("R4")
-    at = today or datetime.now(UTC).date()
+    at = today or account_today(session, customer_id)
     window = Period.last(1, until=at)
 
     live = session.scalars(

@@ -30,11 +30,12 @@ and says how much we hold when it is not.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from ppcway.ads.clock import account_today
 from ppcway.ads.numbers import Day, Held, Row, account_numbers, plain_money
 from ppcway.metric import verdicts
 
@@ -212,7 +213,7 @@ def report_for(
     today: date | None = None,
 ) -> Report:
     """Build the report for one account over one period."""
-    now = today or datetime.now(UTC).date()
+    now = today or account_today(session, customer_id)
     held = account_numbers(session, customer_id, days=days, currency=currency, today=now)
     report = Report(
         customer_id=customer_id,

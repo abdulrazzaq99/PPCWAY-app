@@ -34,6 +34,10 @@ class AdsConnection(Base):
     #: What that account spends, as Google writes it: "CAD", "USD", "EUR". Kept
     #: here because the mirror holds micros, which carry no currency of their own.
     currency: Mapped[str] = mapped_column(String(3), default="")
+    #: The account's own time zone, as Google names it: "America/Toronto". Its
+    #: figures are filed under dates in this zone, so "yesterday" for its
+    #: screens is yesterday here, not in UTC. Empty until it has been read.
+    time_zone: Mapped[str] = mapped_column(String(40), default="")
     #: Google's own word for the state of the account: "ENABLED", "SUSPENDED",
     #: "CANCELED", "CLOSED". Empty until a sync has read it, and empty is not
     #: the same as healthy -- the guardrails refuse a change to an account

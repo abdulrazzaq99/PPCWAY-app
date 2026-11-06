@@ -310,3 +310,21 @@ def test_no_page_size_is_sent() -> None:
     with DbSession(engine) as db:
         structure(db, httpx.Client(transport=httpx.MockTransport(handle), base_url="https://x"))
     assert bodies and all("pageSize" not in body for body in bodies)
+
+
+def test_the_structure_read_brings_back_the_account_s_time_zone(db: DbSession) -> None:
+    """Its days are counted in that zone, so the runner keeps it. See `ads.clock`."""
+    row = campaign()
+    row["customer"] = {"currencyCode": "CAD", "timeZone": "America/Toronto"}
+    seen: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        query = json.loads(request.content)["query"]
+        seen.append(query)
+        rows = [row] if "FROM campaign" in query else []
+        return httpx.Response(200, json={"results": rows})
+
+    client = httpx.Client(transport=httpx.MockTransport(handle), base_url="https://x")
+    report = structure(db, client)
+    assert report.time_zone == "America/Toronto"  # type: ignore[attr-defined]
+    assert any("customer.time_zone" in q for q in seen), "and it is asked for by name"

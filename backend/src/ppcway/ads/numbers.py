@@ -32,6 +32,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ppcway.ads.clock import account_today
 from ppcway.ads.mirror import (
     MICRO,
     CampaignDay,
@@ -273,7 +274,8 @@ def account_numbers(
     today: date | None = None,
 ) -> Held:
     """Add up what the mirror holds for one account over one window."""
-    now = today or datetime.now(UTC).date()
+    # The account's own today: its figures are filed under its dates.
+    now = today or account_today(session, customer_id)
     last = now - timedelta(days=1)
     start = now - timedelta(days=days)
     was_start = start - timedelta(days=days)
@@ -602,7 +604,8 @@ def campaign_numbers(
     today: date | None = None,
 ) -> CampaignHeld:
     """One campaign out of the mirror: its numbers, its parts and its history."""
-    now = today or datetime.now(UTC).date()
+    # The account's own today: its figures are filed under its dates.
+    now = today or account_today(session, customer_id)
     last = now - timedelta(days=1)
     start = now - timedelta(days=days)
     was_start = start - timedelta(days=days)

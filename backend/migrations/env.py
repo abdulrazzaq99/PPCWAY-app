@@ -32,7 +32,11 @@ from ppcway.db.base import Base
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Not `disable_existing_loggers`, the default: migrations also run inside
+    # other processes -- the test suite's Postgres fixture -- and switching off
+    # every logger that already exists silenced the app's own warnings there,
+    # so any test checking a warning failed if it ran after a migration.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 _settings = load_settings()
 if _settings.is_sqlite:
     # A first run has no data/ directory yet; SQLite will not create it.

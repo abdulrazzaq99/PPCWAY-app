@@ -34,6 +34,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ppcway.ads.clock import local_today
 from ppcway.ads.models import AdsConnection
 from ppcway.ads.numbers import MONTH, Held, account_numbers, plain_money
 from ppcway.auth.models import UserAccount
@@ -311,7 +312,7 @@ def candidates(
             connection.customer_id,
             days=WEEK,
             currency=connection.currency,
-            today=at.date(),
+            today=local_today(connection.time_zone, at),
         )
         if not held.read:
             # Nothing mirrored yet. No row is written, so next week tries again.
@@ -326,7 +327,7 @@ def candidates(
             connection.customer_id,
             currency=connection.currency,
             target_cost_per_lead=held.cost_per_lead,
-            today=at.date(),
+            today=local_today(connection.time_zone, at),
             now=at,
             protected=tuple(w for w in (connection.customer_name,) if w and len(w) > 2),
         )

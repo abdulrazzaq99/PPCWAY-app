@@ -30,6 +30,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from ppcway.ads.clock import local_today
 from ppcway.ads.mirror import KeywordDay, SearchTermDay, SyncRun
 from ppcway.ads.models import AdsConnection
 from ppcway.ads.oauth import (
@@ -135,21 +136,35 @@ def sync_connection(
         "login_customer_id": settings.google_ads_login_customer_id,
     }
     report = Report()
+    read_zone = ""
     try:
         if kind in ("first", "structure", "manual"):
             report = sync_structure(session, connection.customer_id, now=at, **keys)  # type: ignore[arg-type]
+            read_zone = report.time_zone
         if kind in ("first", "today", "backfill", "manual") and report.ok:
             run.stage = STAGES["history"]
             session.commit()
+            # The account's own today, not UTC's: Google files its figures
+            # under the account's dates, and in the evening west of UTC the UTC
+            # date is a day that has not started there yet. A zone this pass
+            # has just read wins over the one held.
+            day = local_today(read_zone or connection.time_zone, at)
             since = {
-                "first": at.date() - timedelta(days=FIRST_DAYS),
-                "today": at.date(),
-                "backfill": backfill_since(at.date()),
+                "first": day - timedelta(days=FIRST_DAYS),
+                "today": day,
+                "backfill": backfill_since(day),
                 # A person pressing refresh means "now", but late conversions
                 # land on the days behind it, so those are re-read too.
-                "manual": backfill_since(at.date()),
+                "manual": backfill_since(day),
             }[kind]
-            days = sync_days(session, connection.customer_id, since=since, now=at, **keys)  # type: ignore[arg-type]
+            days = sync_days(
+                session,
+                connection.customer_id,
+                since=since,
+                until=day,
+                now=at,
+                **keys,  # type: ignore[arg-type]
+            )
             report = Report(
                 ok=report.ok and days.ok,
                 trouble=report.trouble or days.trouble,
@@ -173,8 +188,15 @@ def sync_connection(
                         )
                         is not None
                     )
-                    reach = since if holds else at.date() - timedelta(days=FIRST_DAYS)
-                    got = read(session, connection.customer_id, since=reach, now=at, **keys)  # type: ignore[arg-type]
+                    reach = since if holds else day - timedelta(days=FIRST_DAYS)
+                    got = read(
+                        session,
+                        connection.customer_id,
+                        since=reach,
+                        until=day,
+                        now=at,
+                        **keys,  # type: ignore[arg-type]
+                    )
                     renamed = _COUNTED_AS[name]
                     report = Report(
                         ok=report.ok and got.ok,
@@ -190,6 +212,8 @@ def sync_connection(
         log.warning("sync refused for %s: %s", connection.customer_id, exc)
         report = Report(ok=False, trouble=str(exc))
 
+    if read_zone:
+        connection.time_zone = read_zone
     if report.account_status:
         # Written here rather than in the sync, which does not own this row.
         # Stamped with the time so a guardrail can tell a state we just read
