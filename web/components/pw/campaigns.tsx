@@ -2,6 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { CampaignDetail, type Detail } from "@/components/pw/campaign-detail";
+import {
+  Figures,
+  LeadsByDay,
+  MoneyAndLeads,
+  NeedsLine,
+  findingOf,
+} from "@/components/pw/campaign-overview";
 import { Chip, Pill, PillGroup, PwCard } from "@/components/pw/shell";
 import { Sparkline } from "@/components/pw/sparkline";
 import type { AdsSummary } from "@/lib/ads";
@@ -9,10 +16,13 @@ import { cn } from "@/lib/cn";
 import { LEARNING_DAYS, learning } from "@/lib/when";
 
 /*
-  Campaigns, laid out as the handoff draws them: the filter pills, a table with
-  a leads trend per row, and the chosen campaign opening underneath rather than
-  on a page of its own. Picking a row and reading its keywords is one movement,
-  and the list stays in sight.
+  Campaigns. The screen answers one question before it lists anything: which
+  campaigns are earning their money? So it opens with the finding in a
+  sentence, four figures against the period before, "money in, leads out" --
+  each campaign's share of the spend above its share of the leads -- and leads
+  a day. Then the table, with a leads trend per row and the chosen campaign
+  opening underneath rather than on a page of its own, so picking a row and
+  reading its keywords is one movement and the list stays in sight.
 
   Every figure is read from the merchant's own Google Ads account.
 */
@@ -22,7 +32,7 @@ const FILTERS = ["All", "Active", "Paused"] as const;
 
 export function money(amount: number, currency = ""): string {
   const sign = !currency || currency === "CAD" || currency === "USD" ? "$" : "";
-  return `${sign}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${sign}${amount.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function CampaignList({ initial, days: initialDays }: { initial: Summary; days: number }) {
@@ -68,40 +78,64 @@ export function CampaignList({ initial, days: initialDays }: { initial: Summary;
   });
   const currency = summary.currency ?? "";
 
+  const read = summary.read && (summary.campaigns?.length ?? 0) > 0;
+
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <p className="max-w-[760px] text-[18px] leading-[26px] font-semibold">
+          {read ? findingOf(summary) : "Your campaigns, from your own Google Ads account."}
+        </p>
         <PillGroup>
-          {FILTERS.map((name) => (
-            <Pill key={name} active={filter === name} onClick={() => setFilter(name)}>
-              {name}
-              {name === "All" && summary.campaigns ? ` ${summary.campaigns.length}` : ""}
+          {[7, 30, 90].map((n) => (
+            <Pill
+              key={n}
+              active={days === n}
+              onClick={() => {
+                setDays(n);
+                setAsks((a) => a + 1);
+              }}
+            >
+              {n} days
             </Pill>
           ))}
         </PillGroup>
-        <div className="flex flex-wrap items-center gap-3">
+      </div>
+
+      {read ? (
+        <>
+          <NeedsLine needs={summary.needs} />
+          <Figures summary={summary} />
+          <div className="grid items-stretch gap-4 lg:grid-cols-12">
+            <div className="lg:col-span-7">
+              <MoneyAndLeads summary={summary} />
+            </div>
+            <div className="flex lg:col-span-5 [&>section]:flex-1">
+              <LeadsByDay series={summary.series ?? []} />
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <h2 className="text-[17px] leading-[22px] font-semibold">Every campaign</h2>
           <PillGroup>
-            {[7, 30, 90].map((n) => (
-              <Pill
-                key={n}
-                active={days === n}
-                onClick={() => {
-                  setDays(n);
-                  setAsks((a) => a + 1);
-                }}
-              >
-                {n} days
+            {FILTERS.map((name) => (
+              <Pill key={name} active={filter === name} onClick={() => setFilter(name)}>
+                {name}
+                {name === "All" && summary.campaigns ? ` ${summary.campaigns.length}` : ""}
               </Pill>
             ))}
           </PillGroup>
-          <input
-            value={find}
-            onChange={(e) => setFind(e.target.value)}
-            placeholder="Find a campaign"
-            aria-label="Find a campaign"
-            className="border-pw-border-input bg-pw-card h-[42px] w-[220px] rounded-full border px-4 text-[14px]"
-          />
         </div>
+        <input
+          value={find}
+          onChange={(e) => setFind(e.target.value)}
+          placeholder="Find a campaign"
+          aria-label="Find a campaign"
+          className="border-pw-border-input bg-pw-card h-[42px] w-[240px] rounded-full border px-4 text-[14px]"
+        />
       </div>
 
       <PwCard className="overflow-hidden">
@@ -127,13 +161,17 @@ export function CampaignList({ initial, days: initialDays }: { initial: Summary;
           <table className="w-full text-left">
             <thead>
               <tr className="border-pw-divider text-pw-ink-500 border-b text-[13px]">
-                <th className="px-5 py-3 font-semibold sm:px-6">Campaign</th>
-                <th className="px-3 py-3 font-semibold">Status</th>
-                <th className="px-3 py-3 text-right font-semibold">Budget a day</th>
-                <th className="px-3 py-3 text-right font-semibold">Spend</th>
-                <th className="px-3 py-3 text-right font-semibold">Leads</th>
-                <th className="px-3 py-3 text-right font-semibold">Cost per lead</th>
-                <th className="px-5 py-3 font-semibold sm:px-6">Leads a day</th>
+                <th className="py-3 pr-2 pl-4 font-semibold sm:px-6">Campaign</th>
+                <th className="hidden px-3 py-3 font-semibold sm:table-cell">Status</th>
+                <th className="hidden px-3 py-3 text-right font-semibold md:table-cell">
+                  Budget a day
+                </th>
+                <th className="px-2 py-3 text-right font-semibold sm:px-3">Spend</th>
+                <th className="px-2 py-3 text-right font-semibold sm:px-3">Leads</th>
+                <th className="py-3 pr-4 pl-2 text-right font-semibold sm:px-3">Cost per lead</th>
+                <th className="hidden px-5 py-3 font-semibold sm:px-6 lg:table-cell">
+                  Leads a day
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -154,12 +192,17 @@ export function CampaignList({ initial, days: initialDays }: { initial: Summary;
                   >
                     <td
                       className={cn(
-                        "max-w-[260px] truncate py-3 pl-5 text-[15px] font-semibold sm:pl-6",
+                        "max-w-[150px] py-3 pr-2 pl-4 text-[15px] font-semibold sm:max-w-[360px] sm:pl-6",
                         here && "border-pw-blue border-l-[3px] pl-[17px] sm:pl-[21px]",
                       )}
                     >
-                      <span className="flex items-center gap-2">
-                        <span className="truncate">{row.name}</span>
+                      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        {/* Two lines rather than an ellipsis: Google Ads names
+                            run long, and the end is often the part that tells
+                            two campaigns apart. */}
+                        <span className="line-clamp-2" title={row.name}>
+                          {row.name}
+                        </span>
                         {day ? (
                           <Chip tone="info">
                             Learning · day {day} of {LEARNING_DAYS}
@@ -168,24 +211,24 @@ export function CampaignList({ initial, days: initialDays }: { initial: Summary;
                         {row.gone ? <Chip tone="neutral">Gone</Chip> : null}
                       </span>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="hidden px-3 py-3 sm:table-cell">
                       <Chip tone={row.status === "ENABLED" ? "good" : "neutral"}>
                         {row.status === "ENABLED" ? "Active" : "Paused"}
                       </Chip>
                     </td>
-                    <td className="pw-num px-3 py-3 text-right text-[15px]">
+                    <td className="pw-num hidden px-3 py-3 text-right text-[15px] md:table-cell">
                       {row.budget ? money(row.budget, currency) : "—"}
                     </td>
-                    <td className="pw-num px-3 py-3 text-right text-[15px]">
+                    <td className="pw-num px-2 py-3 text-right text-[15px] sm:px-3">
                       {money(row.cost, currency)}
                     </td>
-                    <td className="pw-num px-3 py-3 text-right text-[15px]">
+                    <td className="pw-num px-2 py-3 text-right text-[15px] sm:px-3">
                       {Math.round(row.leads)}
                     </td>
-                    <td className="pw-num px-3 py-3 text-right text-[15px]">
+                    <td className="pw-num py-3 pr-4 pl-2 text-right text-[15px] sm:px-3">
                       {row.cost_per_lead ? money(row.cost_per_lead, currency) : "—"}
                     </td>
-                    <td className="px-5 py-3 sm:px-6">
+                    <td className="hidden px-5 py-3 sm:px-6 lg:table-cell">
                       {/* One bar a day, from our own mirror. A trend answers
                           "which way is this going", which a share of spend
                           never could. */}
@@ -214,7 +257,7 @@ export function CampaignList({ initial, days: initialDays }: { initial: Summary;
         )
       ) : null}
 
-      <p className="text-pw-ink-400 text-[13px] leading-[20px]">
+      <p className="text-pw-ink-500 text-[13px] leading-[20px]">
         Pausing, resuming and budget changes are not switched on yet. When they are, each one
         becomes a change you approve, with the before and after shown and thirty days to undo it.
       </p>

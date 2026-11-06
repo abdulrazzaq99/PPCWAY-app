@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { DraftReview, NewCampaignForm } from "@/components/pw/campaign-builder";
-import { Header, PwPage } from "@/components/pw/shell";
+import { CampaignList } from "@/components/pw/campaigns";
+import { Header, HeaderLink, PwPage } from "@/components/pw/shell";
+import type { AdsDay, AdsSummary } from "@/lib/ads";
 import type { Draft } from "@/lib/builder";
 import {
   AdminErrors,
@@ -638,6 +640,93 @@ const LOOKS: Look[] = [
   },
 ];
 
+/*
+  The Campaigns screen's figures, shaped like a real two-campaign account: an
+  old campaign spending steadily for a few leads, and a two-day-old one that
+  has already brought more leads for far less. Totals are summed from the rows.
+*/
+function campaignDays(spend: number[], leads: number[]): AdsDay[] {
+  return spend.map((cost, n) => ({
+    date: new Date(Date.now() - (spend.length - n) * 86_400_000).toISOString().slice(0, 10),
+    calls: 0,
+    forms: leads[n] ?? 0,
+    leads: leads[n] ?? 0,
+    cost,
+    clicks: Math.round(cost * 1.6),
+    impressions: Math.round(cost * 40),
+  }));
+}
+const OLD_SPEND = [
+  4.9, 5.1, 4.8, 5.2, 5.0, 4.7, 5.3, 5.1, 4.9, 5.0, 5.2, 4.8, 5.1, 5.0, 4.9, 5.3, 5.0, 4.8, 5.2,
+  5.1, 4.9, 5.0, 5.4, 5.1, 4.9, 5.2, 5.0, 5.1, 5.3, 6.31,
+];
+const OLD_LEADS = [
+  0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 2, 3, 4, 5, 4, 0,
+];
+const NEW_SPEND = [...Array(28).fill(0), 0.0, 20.48];
+const NEW_LEADS = [...Array(29).fill(0), 38];
+const OLD_DAYS = campaignDays(OLD_SPEND, OLD_LEADS);
+const NEW_DAYS = campaignDays(NEW_SPEND, NEW_LEADS);
+const CAMPAIGNS: AdsSummary = {
+  read: true,
+  currency: "USD",
+  days: 30,
+  starts_on: OLD_DAYS[0].date,
+  ends_on: OLD_DAYS[29].date,
+  cost: 174.24,
+  leads: 64,
+  clicks: 312,
+  impressions: 6970,
+  cost_per_lead: 2.72,
+  cost_before: 141.3,
+  leads_before: 19,
+  cost_per_lead_before: 7.44,
+  month_cost: 61.4,
+  month_day: 6,
+  month_days: 30,
+  monthly_budget: 760,
+  series: OLD_DAYS.map((one, n) => ({
+    ...one,
+    cost: one.cost + NEW_DAYS[n].cost,
+    leads: one.leads + NEW_DAYS[n].leads,
+    forms: one.forms + NEW_DAYS[n].forms,
+    clicks: one.clicks + NEW_DAYS[n].clicks,
+  })),
+  campaigns: [
+    {
+      campaign_id: "21",
+      name: "pdfezy",
+      status: "ENABLED",
+      budget: 5,
+      cost: 153.76,
+      leads: 26,
+      clicks: 246,
+      cost_per_lead: 5.91,
+      days: OLD_DAYS,
+    },
+    {
+      campaign_id: "22",
+      name: "PDFezy | Search | PDF Tools | GeoA-11 | PL RO CZ HU GR PT MY ZA PH TR MX",
+      status: "ENABLED",
+      budget: 20,
+      cost: 20.48,
+      leads: 38,
+      clicks: 38,
+      cost_per_lead: 0.54,
+      starts_at: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10) + " 00:00:00",
+      days: NEW_DAYS,
+    },
+  ],
+  needs: [
+    {
+      kind: "changed_in_google",
+      label: "Changed in Google Ads",
+      what: "The daily budget of pdfezy went from $4.00 to $5.00 on 3 November.",
+      campaign_id: "21",
+    },
+  ],
+};
+
 /* A drafted campaign, as the builder writes one. */
 const BUILT: Draft = {
   id: "00000000-0000-4000-8000-000000000001",
@@ -771,6 +860,27 @@ export default async function Preview({
               trade="pdf to word"
             />
           </PwPage>
+        </div>
+      );
+    case "campaigns":
+      // A stand-in for the portal's 252px sidebar, so the canvas is the width
+      // a merchant actually sees.
+      return (
+        <div className="bg-pw-ground text-pw-ink flex min-h-dvh">
+          <div
+            aria-hidden
+            className="border-pw-border bg-pw-card hidden w-[252px] shrink-0 border-r lg:block"
+          />
+          <div className="min-w-0 flex-1">
+            <Header
+              eyebrow="Last 30 days · Oct 7 to Nov 5"
+              title="Campaigns"
+              right={<HeaderLink href="/campaigns/new">+ New campaign</HeaderLink>}
+            />
+            <PwPage>
+              <CampaignList initial={CAMPAIGNS} days={30} />
+            </PwPage>
+          </div>
         </div>
       );
     case "built-campaign":
