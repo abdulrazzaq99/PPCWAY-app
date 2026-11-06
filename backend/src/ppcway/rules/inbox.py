@@ -160,4 +160,6 @@ def _quiet(said: Pass) -> str:
         return "This week's ten changes are already used, so nothing new is being offered."
     if said.cannot_check:
         return said.cannot_check
+    if said.looked_over:
+        return f"We looked and found nothing worth changing. {said.looked_over}"
     return "We looked and found nothing worth changing."

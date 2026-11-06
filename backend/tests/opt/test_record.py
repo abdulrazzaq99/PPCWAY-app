@@ -126,7 +126,7 @@ def test_the_row_can_explain_itself_months_later(db: sessionmaker[Session]) -> N
     assert row.evidence["figures"][0]["as_of"]
     assert row.expected_impact and row.expected_impact["money_a_month"] == 91.2
     assert row.undo_plan.startswith("Remove the negative keyword")
-    assert (row.rule_id, row.rule_version) == ("R1", 1)
+    assert (row.rule_id, row.rule_version) == ("R1", 2)
     assert row.guardrail_config_version == 3
     assert row.window_start == WINDOW.start and row.window_end == WINDOW.end
     assert row.risk == Risk.LOW.value

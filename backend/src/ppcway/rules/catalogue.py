@@ -108,7 +108,7 @@ class Rule:
 CATALOGUE: Final[dict[str, Rule]] = {
     "R1": Rule(
         id="R1",
-        version=1,
+        version=2,
         name="Money going on the wrong searches",
         about=(
             "Somebody searched for something your ads should not have answered, "
@@ -127,8 +127,11 @@ CATALOGUE: Final[dict[str, Rule]] = {
                 "wasted_multiple_of_target": 1.5,
                 "enough_clicks": 100.0,
                 # And a floor in money, so a cheap account with a low target
-                # does not start excluding terms that cost pennies.
-                "least_wasted": 20.0,
+                # does not start excluding terms that cost pennies. It was 20
+                # until 6 November 2026 (version 1), which on a small account
+                # was the whole test: at five dollars a day no single search
+                # reached it, and the brief's own bar never got a say.
+                "least_wasted": 5.0,
                 "window_days": 30.0,
             }
         ),

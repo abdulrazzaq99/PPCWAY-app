@@ -38,6 +38,53 @@ KEYWORD_MOST_WORDS: Final = 10
 KEYWORD_MOST_CHARACTERS: Final = 80
 
 
+@dataclass(slots=True)
+class Looked:
+    """What R1 looked at on a pass, for saying so when it found nothing.
+
+    "We looked and found nothing" is true and says nothing. A merchant who is
+    told how many searches were checked, how many brought somebody, and how
+    close the nearest one came to being called wasted can see the work, and
+    can see that nothing is being hidden.
+    """
+
+    days: int = 30
+    #: Searches that cost something in the window.
+    searches: int = 0
+    with_leads: int = 0
+    #: The spend at which a search that brought nobody is called wasted.
+    bar: float = 0.0
+    currency: str = ""
+    #: The search that brought nobody and came nearest that bar, and its spend.
+    closest: str = ""
+    closest_spend: float = 0.0
+
+    def in_words(self) -> str:
+        if self.searches == 0:
+            return (
+                f"No search cost anything in the last {self.days} days, so there was"
+                " nothing to check."
+            )
+        none = self.searches - self.with_leads
+        said = (
+            f"Otto checked {self.searches} {'search' if self.searches == 1 else 'searches'}"
+            f" from the last {self.days} days. {self.with_leads} brought a lead."
+        )
+        if none <= 0:
+            return said
+        said += (
+            f" None of the other {none} has cost {self.bar:,.2f} {self.currency} yet,"
+            " which is when Otto calls a search wasted"
+        )
+        if self.closest:
+            said += (
+                f'; the nearest is {self.closest_spend:,.2f} {self.currency} on "{self.closest}".'
+            )
+        else:
+            said += "."
+        return said
+
+
 @dataclass(frozen=True, slots=True)
 class Wasteful:
     """One search term, summed over the window."""
@@ -74,8 +121,12 @@ def wasteful_terms(
     today: date | None = None,
     protected: Sequence[str] = (),
     blocked: Sequence[str] = (),
+    looked: Looked | None = None,
 ) -> list[Recommendation]:
     """R1: searches that cost money and never led to anybody getting in touch.
+
+    `looked`, when given, is filled with what was checked, so an empty inbox
+    can say how close anything came.
 
     `target_cost_per_lead` is the account's own target. The client owes us these
     per plan; until they arrive a caller passes the account's own average, which
@@ -153,6 +204,11 @@ def wasteful_terms(
     least = spec.limits["least_wasted"]
     worth_losing = multiple * target_cost_per_lead if target_cost_per_lead > 0 else 0.0
 
+    if looked is not None:
+        looked.days = window.days
+        looked.currency = currency
+        looked.bar = round(max(least, worth_losing), 2)
+
     found: list[Recommendation] = []
     for row in rows:
         spend = round((row.cost_micros or 0) / MICRO, 2)
@@ -160,11 +216,13 @@ def wasteful_terms(
         conversions = float(row.conversions or 0)
         term = str(row.term or "")
 
+        if looked is not None and spend > 0:
+            looked.searches += 1
+            if conversions > 0:
+                looked.with_leads += 1
         if conversions > 0:
             continue
         if latest.get(row.term_hash, "") in {"ADDED", "EXCLUDED", "ADDED_EXCLUDED"}:
-            continue
-        if spend < least:
             continue
         if _is_protected(term, protected, blocked):
             continue
@@ -175,11 +233,17 @@ def wasteful_terms(
             # Answered from no ad group -- Performance Max reports searches
             # like this -- so there is nowhere to put an ad group exclusion.
             continue
+        if spend < least:
+            # Checked after everything else, so the search named as nearest
+            # is one Otto could actually have offered.
+            _nearly(looked, term, spend)
+            continue
 
         by_clicks = clicks / enough_clicks if enough_clicks else 0.0
         by_spend = spend / worth_losing if worth_losing else 0.0
         ratio = max(by_clicks, by_spend)
         if ratio < 1.0:
+            _nearly(looked, term, spend)
             continue
 
         as_of = _aware(row.as_of)
@@ -258,6 +322,13 @@ def wasteful_terms(
             )
         )
     return found
+
+
+def _nearly(looked: Looked | None, term: str, spend: float) -> None:
+    """Keep the search that brought nobody and came nearest the bar."""
+    if looked is not None and spend > looked.closest_spend:
+        looked.closest = term
+        looked.closest_spend = spend
 
 
 def _fits_a_keyword(term: str) -> bool:

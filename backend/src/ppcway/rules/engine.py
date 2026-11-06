@@ -75,6 +75,8 @@ class Pass:
     #: Why the rules that rest on leads did not run, in the merchant's words:
     #: the account counts no enquiries, so nothing can be called wasted.
     cannot_check: str = ""
+    #: What R1 checked, in words, for an inbox with nothing in it.
+    looked_over: str = ""
 
     @property
     def room_left(self) -> int:
@@ -111,6 +113,7 @@ def run(
         )
 
     blind = _cannot_tell_leads(session, customer_id, day)
+    looked = library.Looked()
     found: list[Recommendation] = []
     ran: list[str] = []
     for spec in live():
@@ -119,7 +122,15 @@ def run(
         ran.append(spec.id)
         found.extend(
             _for(
-                spec, session, customer_id, currency, target_cost_per_lead, day, protected, blocked
+                spec,
+                session,
+                customer_id,
+                currency,
+                target_cost_per_lead,
+                day,
+                protected,
+                blocked,
+                looked,
             )
         )
 
@@ -141,6 +152,7 @@ def run(
         ran=tuple(ran),
         not_specified=unspecified,
         cannot_check=blind,
+        looked_over="" if blind or "R1" not in ran else looked.in_words(),
     )
 
 
@@ -153,6 +165,7 @@ def _for(
     day: date,
     protected: Sequence[str],
     blocked: Sequence[str],
+    looked: library.Looked | None = None,
 ) -> list[Recommendation]:
     """Dispatch to the one function that implements a rule.
 
@@ -168,6 +181,7 @@ def _for(
             today=day,
             protected=protected,
             blocked=blocked,
+            looked=looked,
         )
     if spec.id == "R4":
         return library.disapproved_ads(session, customer_id, currency=currency, today=day)

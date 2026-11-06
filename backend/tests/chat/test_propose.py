@@ -310,7 +310,7 @@ def test_a_proposal_from_chat_cites_the_same_figures_as_the_nightly_pass(
     handles, handle = _a_handle(world)
     create_proposal(_asked(world, handles, handle=handle, change="add_negative_keyword"))
     row = db.scalars(sa.select(OptimizationAction)).one()
-    assert row.rule_id == "R1" and row.rule_version == 1
+    assert row.rule_id == "R1" and row.rule_version == 2
     assert row.evidence is not None
     assert row.evidence["figures"][0]["id"].startswith("search_term_spend:")
     assert row.undo_plan

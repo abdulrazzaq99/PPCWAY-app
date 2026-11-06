@@ -163,3 +163,65 @@ def test_the_inbox_says_why_when_it_cannot_check(db: DbSession) -> None:
 
 def test_an_account_that_has_spent_nothing_is_not_called_blind(db: DbSession) -> None:
     assert _run(db).cannot_check == ""
+
+
+# ---------- the brief's bar, on a small account ----------
+
+
+def test_on_a_small_account_the_brief_s_own_bar_decides(db: DbSession) -> None:
+    """1.5 times the target cost per lead, as the brief says. At a 3.00 target
+    that is 4.50, so a search that cost 6.00 and brought nobody is a loser --
+    which the old twenty-dollar floor never let a five-dollar-a-day account
+    see."""
+    spent(db, forms=12)
+    db.add(
+        SearchTermDay(
+            id=uuid.uuid4(),
+            customer_id="1",
+            campaign_id="11",
+            ad_group_id="21",
+            day=TODAY - timedelta(days=4),
+            term="pdf editor jobs",
+            term_hash=term_key("pdf editor jobs"),
+            status="NONE",
+            clicks=12,
+            cost_micros=round(6.0 * MICRO),
+            conversions=0.0,
+            leads=0.0,
+            refreshed_at=NOW - timedelta(hours=2),
+        )
+    )
+    db.commit()
+    said = run(db, "1", currency="USD", target_cost_per_lead=3.0, today=TODAY, now=NOW)
+    assert [one.target_label for one in said.offered] == ["pdf editor jobs"]
+    assert said.offered[0].rule.version == 2
+
+
+def test_nothing_found_says_what_was_checked_and_how_close_it_came(db: DbSession) -> None:
+    spent(db, forms=12)
+    a_search(db, "pdf to word", conversions=3, leads=3.0)
+    db.add(
+        SearchTermDay(
+            id=uuid.uuid4(),
+            customer_id="1",
+            campaign_id="11",
+            ad_group_id="21",
+            day=TODAY - timedelta(days=4),
+            term="merge pdf free",
+            term_hash=term_key("merge pdf free"),
+            status="NONE",
+            clicks=6,
+            cost_micros=round(3.1 * MICRO),
+            conversions=0.0,
+            leads=0.0,
+            refreshed_at=NOW - timedelta(hours=2),
+        )
+    )
+    db.commit()
+    inbox = cards_for(db, "1", currency="USD", target_cost_per_lead=3.0, today=TODAY, now=NOW)
+    assert inbox.cards == ()
+    said = inbox.nothing_because
+    assert said.startswith("We looked and found nothing worth changing.")
+    assert "Otto checked 2 searches from the last 30 days. 1 brought a lead." in said
+    assert "None of the other 1 has cost 5.00 USD yet" in said
+    assert 'the nearest is 3.10 USD on "merge pdf free"' in said

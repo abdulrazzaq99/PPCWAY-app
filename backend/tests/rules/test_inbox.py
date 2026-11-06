@@ -124,7 +124,7 @@ def test_a_card_carries_everything_the_brief_asks_for(db: DbSession) -> None:
     assert said["risk"] == "low"
     assert said["route"] == "owner"
     assert said["undo"]
-    assert said["rule_id"] == "R1" and said["rule_version"] == 1
+    assert said["rule_id"] == "R1" and said["rule_version"] == 2
 
 
 def test_without_a_model_the_computed_words_are_used(db: DbSession) -> None:
@@ -162,7 +162,9 @@ def test_nothing_found_says_so_plainly(db: DbSession) -> None:
     read_ok(db)
     said = _inbox(db)
     assert said.cards == ()  # type: ignore[attr-defined]
-    assert said.nothing_because == "We looked and found nothing worth changing."  # type: ignore[attr-defined]
+    # And what was checked, so "nothing" is never a bare claim.
+    assert said.nothing_because.startswith("We looked and found nothing worth changing.")  # type: ignore[attr-defined]
+    assert "No search cost anything in the last 30 days" in said.nothing_because  # type: ignore[attr-defined]
 
 
 def test_an_empty_inbox_because_the_week_is_full_says_that_instead(

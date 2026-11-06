@@ -114,8 +114,9 @@ def test_the_latest_status_wins_not_any_status(db: DbSession) -> None:
 
 
 def test_pennies_are_not_worth_a_card(db: DbSession) -> None:
-    """A cheap account with a low target must not start excluding trifles."""
-    a_term(db, "plumber near me cheap", clicks=400, spend=12.0)
+    """A cheap account with a low target must not start excluding trifles:
+    under five in money, however many clicks."""
+    a_term(db, "plumber near me cheap", clicks=400, spend=4.0)
     assert _found(db) == []
 
 
