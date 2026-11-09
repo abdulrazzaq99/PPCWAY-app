@@ -130,6 +130,8 @@ def _lines(text: str, *, most: int) -> list[str]:
 def _profile(business: Business) -> str:
     """The business, in the words the model is allowed to work from."""
     says = [f"Name: {business.name or 'not given'}"]
+    if business.site_title:
+        says.append(f"Their website's title: {business.site_title}")
     if business.services:
         says.append(f"What they do: {', '.join(business.services)}")
     if business.places:

@@ -91,6 +91,9 @@ class Business:
     """
 
     name: str = ""
+    #: The landing page's own title, for the model to write in the site's
+    #: voice. Context only: no claim is licensed by it (`builder.site`).
+    site_title: str = ""
     #: What they sell, in their own words.
     services: tuple[str, ...] = ()
     #: The towns they work in.

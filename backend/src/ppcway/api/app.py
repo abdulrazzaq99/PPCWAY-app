@@ -2270,7 +2270,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from ppcway.builder.build import build_plan
         from ppcway.builder.campaign import BIDDING, MOST_THEMES, Place
         from ppcway.builder.models import CampaignDraft
+        from ppcway.builder.site import own_name_or_not, read_site
         from ppcway.builder.validate import Business
+        from ppcway.org.models import Membership
 
         account, place, connection = _builder_connection(session, x_session_token, "propose")
         themes = [str(t).strip() for t in body.get("themes") or [] if str(t).strip()]
@@ -2307,16 +2309,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         claims = body.get("claims") or {}
         years = claims.get("years_trading")
-        name = place.name or connection.customer_name
+        # Whose ads these are: the landing page's own name first, then the
+        # business's PPCWay name if somebody chose it, then the Google Ads
+        # account's. Never a person's own name, which is what a business made
+        # on a first page load is called (`builder.site`).
+        site = read_site(final_url)
+        people = [
+            (person.name or "", person.email or "")
+            for person in session.scalars(
+                select(UserAccount)
+                .join(Membership, Membership.account_id == UserAccount.id)
+                .where(Membership.organization_id == place.id)
+            )
+        ]
+        chosen = own_name_or_not(place.name or "", people)
+        name = site.name or chosen or connection.customer_name or ""
         business = Business(
             name=name,
+            site_title=site.title,
             services=tuple(themes),
             places=tuple(p.name for p in places),
             open_all_hours=bool(claims.get("open_all_hours")),
             free_quotes=bool(claims.get("free_quotes")),
             emergency_callout=bool(claims.get("emergency_callout")),
             years_trading=int(years) if isinstance(years, int) and years > 0 else None,
-            brand_words=tuple(w for w in (place.name, connection.customer_name) if w),
+            brand_words=tuple(
+                dict.fromkeys(w for w in (site.name, chosen, connection.customer_name) if w)
+            ),
         )
         keys = _read_keys(connection)
 

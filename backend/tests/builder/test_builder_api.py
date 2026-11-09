@@ -26,6 +26,8 @@ from ppcway.auth import google
 from ppcway.auth.models import UserAccount
 from ppcway.builder.draft import Written
 from ppcway.builder.models import CampaignDraft
+from ppcway.builder.site import Site, own_name_or_not
+from ppcway.builder.validate import Business
 from ppcway.chat import transcript as _transcript  # noqa: F401 - registers its table
 from ppcway.config import Settings
 from ppcway.db.base import Base
@@ -54,8 +56,13 @@ BRIEF: dict[str, Any] = {
 
 
 class Google:
+    """Google's write side, faked -- and, for the tests' convenience, what the
+    landing page is called and who the ad text was written for."""
+
     def __init__(self) -> None:
         self.sent: list[Together] = []
+        self.site = Site()
+        self.wrote_for: list[Business] = []
 
     def mutate_together(self, together: Together) -> Created:
         self.sent.append(together)
@@ -92,8 +99,10 @@ def world(
         },
     )
     from ppcway.ads import planner
-    from ppcway.builder import build
+    from ppcway.builder import build, site
     from ppcway.gateway import send
+
+    door = Google()
 
     def ideas(seeds: list[str], **_: Any) -> Demand:
         theme = seeds[0]
@@ -114,18 +123,21 @@ def world(
             {"resource": "geoTargetConstants/2616", "name": "Poland", "kind": "Country"}
         ],
     )
-    monkeypatch.setattr(
-        build,
-        "write_copy",
-        lambda models, **k: Written(
+
+    def written(models: Any, **k: Any) -> Written:
+        door.wrote_for.append(k["business"])
+        return Written(
             headlines=tuple(f"Convert files fast {n}" for n in range(11)),
             descriptions=("Turn a PDF into a Word file.", "Works in your browser."),
             asked=1,
-        ),
-    )
+        )
+
+    monkeypatch.setattr(build, "write_copy", written)
+    # The landing page is never fetched in a test. Each test that cares says
+    # what the page is called; the rest get a page that could not be read.
+    monkeypatch.setattr(site, "read_site", lambda url, **k: door.site)
     monkeypatch.setattr("ppcway.api.app.fresh_access_token", lambda *a, **k: "access")
     monkeypatch.setattr("ppcway.api.app._sync", lambda *a, **k: None)
-    door = Google()
     monkeypatch.setattr(send, "doors", lambda settings: lambda connection: door)
 
     app = create_app(
@@ -320,3 +332,64 @@ def test_signed_out_gets_nothing(world: tuple[FastAPI, sessionmaker[Session], Go
     with TestClient(app) as client:
         assert client.post("/v1/campaigns/drafts", json=BRIEF).status_code == 401
         assert client.get("/v1/campaigns/places?q=pol").status_code == 401
+
+
+def test_the_ads_are_written_for_the_website_not_the_person_signed_in(
+    world: tuple[FastAPI, sessionmaker[Session], Google],
+) -> None:
+    """9 November: the owner's ads were drafted for "Abdul Razzaq", the person,
+    because PPCWay names a business after whoever signed in first. The page the
+    ads send people to says whose ads they are."""
+    app, factory, door = world
+    door.site = Site(name="PDFezy", title="PDFezy | Free PDF tools online")
+    with TestClient(app) as client:
+        token = owner(client, factory)
+        made = client.post("/v1/campaigns/drafts", headers=head(token), json=BRIEF)
+    assert made.status_code == 201, made.text
+    business = made.json()["plan"]["business"]
+    assert business["name"] == "PDFezy"
+    assert business["site_title"] == "PDFezy | Free PDF tools online"
+    assert door.wrote_for and all(one.name == "PDFezy" for one in door.wrote_for)
+    assert "ownerx" not in [w.lower() for w in business["brand_words"]], (
+        "the person's own name is not a brand an ad may carry"
+    )
+
+
+def test_without_a_readable_page_the_google_ads_account_name_is_used(
+    world: tuple[FastAPI, sessionmaker[Session], Google],
+) -> None:
+    app, factory, _door = world
+    with TestClient(app) as client:
+        token = owner(client, factory)
+        made = client.post("/v1/campaigns/drafts", headers=head(token), json=BRIEF)
+    business = made.json()["plan"]["business"]
+    assert business["name"] == "PDFezy", "the account's name, never the person's"
+    assert business["site_title"] == ""
+
+
+def test_a_business_named_after_a_person_is_not_a_business_name() -> None:
+    people = [("Abdul Razzaq", "abdulrazzaq0621@gmail.com")]
+    assert own_name_or_not("Abdul Razzaq", people) == ""
+    assert own_name_or_not("abdulrazzaq0621", people) == ""
+    assert own_name_or_not("  PDFezy  ", people) == "PDFezy"
+    assert own_name_or_not("", people) == ""
+
+
+def test_an_unreadable_page_reads_as_nothing() -> None:
+    from ppcway.builder.site import read_site
+
+    def refused(*a: Any, **k: Any) -> Any:
+        raise RuntimeError("private address")
+
+    assert read_site("https://10.0.0.1/", crawl=refused) == Site()
+
+
+def test_a_long_title_is_cut_before_it_reaches_a_prompt() -> None:
+    from types import SimpleNamespace
+
+    from ppcway.builder.site import MOST_TITLE, read_site
+
+    page = SimpleNamespace(business_name="PDFezy", meta_title="word " * 80)
+    said = read_site("https://pdfezy.com/", crawl=lambda *a, **k: page)
+    assert said.name == "PDFezy"
+    assert len(said.title) <= MOST_TITLE
