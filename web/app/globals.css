@@ -266,6 +266,43 @@ body {
 }
 
 /*
+  Dropdowns: one chevron, drawn here, instead of the browser's own. The native
+  arrow sits hard against the right edge with no room around it, and each
+  browser draws a different one -- on Settings, "Admin" and "Member" looked
+  cramped beside the outlined fields around them. The text keeps the padding
+  its classes gave it on the left; the right is reserved for the chevron so a
+  long choice never runs under it.
+
+  Unlayered and with `[class]`, like the phone rule above, so it holds against
+  the Tailwind padding classes every select carries.
+*/
+select,
+select[class] {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 2.5rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' stroke='%236b6680' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.875rem center;
+  background-size: 12px 12px;
+  cursor: pointer;
+}
+select[multiple],
+select[size]:not([size="1"]) {
+  padding-right: 0.75rem;
+  background-image: none;
+}
+select:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+/* The internal console is dark: the same chevron, in its muted grey. */
+.adm select,
+.adm select[class] {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' stroke='%23b1b2b8' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/*
   A link or button that has to be found with a thumb. The text keeps the size
   it was drawn at; this grows only the area around it, and only on a phone,
   where there is no pointer to be precise with. 44px is the smallest square

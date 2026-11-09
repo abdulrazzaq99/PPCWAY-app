@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { DraftReview, NewCampaignForm } from "@/components/pw/campaign-builder";
 import { CampaignDetail, type Detail, type Suggestions } from "@/components/pw/campaign-detail";
 import { CampaignList } from "@/components/pw/campaigns";
+import { Team } from "@/components/pw/team";
 import { Header, HeaderLink, PwPage } from "@/components/pw/shell";
 import type { AdsDay, AdsSummary } from "@/lib/ads";
 import type { Draft } from "@/lib/builder";
@@ -984,6 +985,41 @@ export default async function Preview({
 
   switch (screen) {
     // The campaign builder, in the merchant portal's own skin.
+    case "team":
+      // Settings' people and invitations: the role dropdowns are the thing to see.
+      return (
+        <div className="bg-pw-ground text-pw-ink min-h-dvh">
+          <Header eyebrow="Settings" title="People" />
+          <PwPage>
+            <Team
+              org={{
+                id: "preview",
+                name: "PDFezy",
+                plan: "starter",
+                currency: "CAD",
+                your_role: "owner",
+                can: ["view", "propose", "approve", "invite", "billing"],
+                people: [
+                  {
+                    account_id: "a",
+                    email: "abdulrazzaq0621@gmail.com",
+                    name: "Abdul Razzaq",
+                    role: "owner",
+                    is_you: true,
+                  },
+                  {
+                    account_id: "b",
+                    email: "webalive.ca@gmail.com",
+                    name: "Web Alive",
+                    role: "admin",
+                    is_you: false,
+                  },
+                ],
+              }}
+            />
+          </PwPage>
+        </div>
+      );
     case "new-campaign":
       return (
         <div className="bg-pw-ground text-pw-ink min-h-dvh">
