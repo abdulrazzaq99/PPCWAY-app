@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { AccountCard } from "@/components/pw/account-card";
+import { NavLink } from "@/components/pw/nav-link";
 import { cn } from "@/lib/cn";
 
 /*
@@ -83,37 +84,6 @@ export function Sidebar({
         <AccountCard business={business} plan={plan} />
       </div>
     </aside>
-  );
-}
-
-function NavLink({ item, active }: { item: NavItem; active: string }) {
-  const here = active === item.href || active.startsWith(item.href + "/");
-  return (
-    <Link
-      href={item.href}
-      aria-current={here ? "page" : undefined}
-      className={cn(
-        "flex h-10 items-center gap-3 rounded-[10px] px-3 text-[15px] leading-[20px]",
-        here
-          ? "bg-pw-blue-tint text-pw-blue-ink font-semibold"
-          : "text-pw-ink-700 hover:bg-pw-muted",
-      )}
-    >
-      <span aria-hidden className={cn("shrink-0", here ? "text-pw-blue" : "text-pw-ink-400")}>
-        {item.icon}
-      </span>
-      <span className="min-w-0 flex-1 truncate">{item.label}</span>
-      {item.badge ? (
-        <span
-          className={cn(
-            "flex h-[20px] min-w-[22px] items-center justify-center rounded-full px-[7px] text-[11px] font-bold",
-            item.badgeTone === "otto" ? "bg-pw-otto text-white" : "bg-pw-muted text-pw-ink-600",
-          )}
-        >
-          {item.badge}
-        </span>
-      ) : null}
-    </Link>
   );
 }
 
