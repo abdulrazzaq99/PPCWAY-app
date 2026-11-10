@@ -137,7 +137,11 @@ def test_each_check_refuses_what_it_is_for(standing: dict[str, object], check: s
     [
         ({"standing": {"account_status": ""}}, "account_serviceable"),
         ({"standing": {"own_customer_id": ""}}, "scope"),
-        ({"limits": {"max_daily_budget": 0.0}}, "hard_spend_limits"),
+        # A rise with no ceiling to measure it against.
+        (
+            {"limits": {"max_daily_budget": 0.0}, "proposal": {"change_pct": 20.0}},
+            "hard_spend_limits",
+        ),
         ({"proposal": {"metrics_as_of": None}}, "data_freshness"),
         ({"proposal": {"pauses": 5}, "standing": {"active_entities": 0}}, "blast_radius"),
         ({"limits": {"autonomy": ""}}, "autonomy_level"),
@@ -186,7 +190,7 @@ def test_a_tap_cannot_authorise_what_the_limits_forbid() -> None:
     """
     said = ruling(
         limits={"autonomy": Autonomy.APPROVE_FIRST.value, "max_daily_budget": 20.0},
-        proposal={"new_daily_budget": 500.0},
+        proposal={"new_daily_budget": 500.0, "change_pct": 20.0},
     )
     assert said.ruling.verdict is Verdict.REJECTED
     assert said.ruling.check == "hard_spend_limits"
@@ -196,7 +200,7 @@ def test_a_tap_cannot_authorise_what_the_limits_forbid() -> None:
 
 
 def test_a_budget_past_the_ceiling_is_refused() -> None:
-    said = ruling(proposal={"new_daily_budget": 90.0})
+    said = ruling(proposal={"new_daily_budget": 90.0, "change_pct": 20.0})
     assert said.ruling.verdict is Verdict.REJECTED
     assert "ceiling" in said.ruling.because
 
@@ -300,3 +304,25 @@ def test_every_refusal_says_why_in_words_a_person_can_read() -> None:
         because = said.ruling.because
         assert because.endswith("."), because
         assert because[0].isupper(), because
+
+
+def test_a_cut_needs_no_ceiling() -> None:
+    """A cut cannot breach a spending ceiling. Refusing it for want of one
+    left a merchant unable to spend less (found 10 November)."""
+    said = ruling(limits={"max_daily_budget": 0.0}, proposal={"change_pct": -20.0})
+    assert said.ruling.check != "hard_spend_limits"
+
+
+def test_putting_back_an_earlier_budget_needs_no_ceiling() -> None:
+    """Undoing a cut restores the merchant's own budget. A missing ceiling must
+    not trap them in a change they regret."""
+    said = ruling(
+        limits={"max_daily_budget": 0.0},
+        proposal={"change_pct": None, "new_daily_budget": 5.0, "is_undo": True},
+    )
+    assert said.ruling.check != "hard_spend_limits"
+
+
+def test_a_change_whose_direction_is_unknown_is_treated_as_a_rise() -> None:
+    said = ruling(limits={"max_daily_budget": 0.0}, proposal={"change_pct": None})
+    assert said.ruling.check == "hard_spend_limits"

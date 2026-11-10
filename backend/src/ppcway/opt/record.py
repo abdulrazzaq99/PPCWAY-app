@@ -114,6 +114,11 @@ def write_proposal(
             "words": found.impact.words,
             "blocking": found.impact.blocking,
             "priority": found.priority,
+            # How far it moves the number it touches. The second ruling, at
+            # approval, reads it back for the 20% and 50% bands; until 10
+            # November it was never written, so a budget change would have
+            # passed those bands unmeasured.
+            "change_pct": found.change_pct,
         },
         undo_plan=found.undo,
         window_start=found.figures[0].period.start if found.figures else None,

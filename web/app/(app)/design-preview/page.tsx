@@ -842,7 +842,75 @@ const PANEL_OTTO: Suggestions = {
   trouble: "",
   inbox: {
     connected: true,
+    notes: [
+      {
+        campaign: "23251884470",
+        words:
+          "PDFezy | Search loses 60% of its searches to its budget, while its leads cost 0.40 USD each against 2.69 USD for the rest of your account. Otto would suggest a bigger budget for it, but no daily budget ceiling is set for this account. Set one in Settings and Otto will offer it.",
+      },
+    ],
     cards: [
+      {
+        id: "8c2d4e6f-1a3b-4c5d-9e7f-0a1b2c3d4e5f",
+        status: "awaiting_approval",
+        answerable: true,
+        expires_at: "2026-11-17T04:07:00+00:00",
+        rule_id: "R7",
+        rule_version: 1,
+        kind: "decrease_daily_budget",
+        title: "A campaign whose leads cost far more",
+        about: "",
+        target: { kind: "campaign", id: "23251884470", label: "pdfezy" },
+        reason:
+          "pdfezy's leads cost 2.69 USD each over the last 30 days, 6.7 times the 0.40 USD the rest of your account pays. Lowering its daily budget from 5.00 USD to 4.00 USD puts less money where leads cost most.",
+        reason_from: "template",
+        reason_is_ours: true,
+        impact: {
+          money_a_month: 30.4,
+          currency: "USD",
+          confidence: 0.98,
+          words:
+            "About 30.40 USD a month less spent there. Expect fewer leads from this campaign; the ones it still brings should cost about the same or less.",
+          blocking: false,
+        },
+        evidence: [
+          {
+            id: "campaign_spend:campaign-23251884470",
+            value: 137.2,
+            unit: "money",
+            as_of: ASOF,
+            verdict: "real",
+          },
+          {
+            id: "campaign_leads:campaign-23251884470",
+            value: 51,
+            unit: "count",
+            as_of: ASOF,
+            verdict: "real",
+          },
+          {
+            id: "campaign_cost_per_lead:campaign-23251884470",
+            value: 2.69,
+            unit: "money",
+            as_of: ASOF,
+            verdict: "real",
+          },
+          {
+            id: "rest_of_account_cost_per_lead:account",
+            value: 0.4,
+            unit: "money",
+            as_of: ASOF,
+            verdict: "real",
+          },
+        ],
+        undo: "Set the daily budget back to 5.00 USD. Google uses the amount from the moment it is changed.",
+        reversible: true,
+        risk: "low",
+        route: "owner",
+        priority: 29.8,
+        as_of: "2026-11-09",
+        campaigns: ["23251884470"],
+      },
       {
         id: "6b1f0c2e-1d4a-4e8b-9a51-6f2b7c9d0e11",
         status: "awaiting_approval",

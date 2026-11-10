@@ -34,7 +34,9 @@ function Figures({ card }: { card: Card }) {
           <dd className="text-[14px] leading-[18px] font-semibold tabular-nums">
             {cite.unit === "money"
               ? money(cite.value, card.impact.currency)
-              : cite.value.toLocaleString("en-GB")}
+              : cite.unit === "ratio"
+                ? `${Math.round(cite.value * 100)}%`
+                : cite.value.toLocaleString("en-GB")}
           </dd>
         </div>
       ))}
@@ -175,10 +177,29 @@ function OneChange({ change }: { change: Change }) {
   are; with none, the empty inbox already says it.
 */
 export function CannotCheck({ inbox }: { inbox: Inbox }) {
-  if (!inbox.cannot_check || inbox.cards.length === 0) return null;
+  const said = [
+    ...(inbox.cannot_check && inbox.cards.length > 0 ? [inbox.cannot_check] : []),
+    ...(inbox.notes ?? []).map((note) => note.words),
+  ];
+  if (said.length === 0) return null;
   return (
-    <div className="border-pw-warn-border bg-pw-warn-bg text-pw-warn-ink rounded-[14px] border px-4 py-3 text-[14px] leading-[20px]">
-      {inbox.cannot_check}
+    <div className="flex flex-col gap-2">
+      {said.map((line) => (
+        <div
+          key={line}
+          className="border-pw-warn-border bg-pw-warn-bg text-pw-warn-ink rounded-[14px] border px-4 py-3 text-[14px] leading-[20px]"
+        >
+          {line}
+          {/ceiling/.test(line) ? (
+            <>
+              {" "}
+              <a href="/settings" className="font-semibold underline">
+                Open Settings
+              </a>
+            </>
+          ) : null}
+        </div>
+      ))}
     </div>
   );
 }

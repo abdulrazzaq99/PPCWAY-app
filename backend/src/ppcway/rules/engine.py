@@ -36,7 +36,7 @@ from ppcway.ads.clock import account_today
 from ppcway.ads.mirror import MICRO, CampaignDay, SyncRun
 from ppcway.metric.figures import FRESH_HOURS
 from ppcway.opt.models import COUNTS_TOWARD_CAP, UNDO_FOR, OptimizationAction, Status
-from ppcway.rules import library
+from ppcway.rules import budgets, library
 from ppcway.rules.catalogue import Rule, live, waiting
 from ppcway.rules.recommend import Recommendation, in_order
 
@@ -77,6 +77,10 @@ class Pass:
     cannot_check: str = ""
     #: What R1 checked, in words, for an inbox with nothing in it.
     looked_over: str = ""
+    #: Things a rule found but would not offer yet, in the merchant's words,
+    #: each with the campaign it is about: a campaign that could use more
+    #: budget when no ceiling is set, say.
+    notes: tuple[dict[str, str], ...] = ()
 
     @property
     def room_left(self) -> int:
@@ -114,6 +118,7 @@ def run(
 
     blind = _cannot_tell_leads(session, customer_id, day)
     looked = library.Looked()
+    notes: list[dict[str, str]] = []
     found: list[Recommendation] = []
     ran: list[str] = []
     for spec in live():
@@ -131,6 +136,7 @@ def run(
                 protected,
                 blocked,
                 looked,
+                notes,
             )
         )
 
@@ -153,6 +159,7 @@ def run(
         not_specified=unspecified,
         cannot_check=blind,
         looked_over="" if blind or "R1" not in ran else looked.in_words(),
+        notes=tuple(notes),
     )
 
 
@@ -166,6 +173,7 @@ def _for(
     protected: Sequence[str],
     blocked: Sequence[str],
     looked: library.Looked | None = None,
+    notes: list[dict[str, str]] | None = None,
 ) -> list[Recommendation]:
     """Dispatch to the one function that implements a rule.
 
@@ -185,6 +193,10 @@ def _for(
         )
     if spec.id == "R4":
         return library.disapproved_ads(session, customer_id, currency=currency, today=day)
+    if spec.id == "R6":
+        return budgets.held_back(session, customer_id, currency=currency, today=day, notes=notes)
+    if spec.id == "R7":
+        return budgets.dearest(session, customer_id, currency=currency, today=day)
     # Unreachable while `live()` only returns implemented rules, and a test
     # says so. Here rather than an assert because a rule marked implemented
     # with nothing behind it should produce nothing, not a crash in a job.
@@ -275,7 +287,7 @@ def _used_this_week(session: Session, customer_id: str, at: datetime) -> int:
 #: The rules that call something wasted because it brought no leads. On an
 #: account that counts no leads at all, every search looks wasted -- including
 #: the ones the business lives on -- so these do not run there.
-RESTS_ON_LEADS: Final = frozenset({"R1"})
+RESTS_ON_LEADS: Final = frozenset({"R1", "R6", "R7"})
 
 #: The window that question is asked over, which is R1's own.
 LEADS_WINDOW_DAYS: Final = 30

@@ -68,6 +68,8 @@ class Inbox:
     ran_at: datetime
     #: Why the rules resting on leads did not run. Empty when they did.
     cannot_check: str = ""
+    #: Found but not offered yet, in words. See `engine.Pass.notes`.
+    notes: tuple[dict[str, str], ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -81,6 +83,7 @@ class Inbox:
             "not_specified": list(self.not_specified),
             "ran_at": self.ran_at.isoformat(),
             "cannot_check": self.cannot_check,
+            "notes": list(self.notes),
         }
 
 
@@ -138,6 +141,7 @@ def _inbox(said: Pass, models: Models | None) -> Inbox:
         not_specified=said.not_specified,
         ran_at=said.ran_at,
         cannot_check=said.cannot_check,
+        notes=said.notes,
     )
 
 

@@ -56,6 +56,8 @@ def batch_for(action: OptimizationAction) -> Batch:
         operations = _exclusions(sent)
     elif change == "set_ad_status":
         operations = (_ad_status(sent),)
+    elif change == "set_budget":
+        operations = (_budget(sent),)
     elif change == "remove_exclusions":
         operations = _removals(sent)
     else:
@@ -83,6 +85,9 @@ def done_words(action: OptimizationAction) -> str:
         if str(sent.get("status")) == "PAUSED":
             return "The ad is paused."
         return "The ad is back on."
+    if change == "set_budget":
+        amount = int(sent.get("amount_micros") or 0) / 1_000_000
+        return f"The daily budget of {action.target_label} is now {amount:,.2f}."
     return "The change is made."
 
 
@@ -123,6 +128,24 @@ def _ad_status(sent: dict[str, Any]) -> Operation:
         resource_name=ad,
         fields={"status": status},
         update_mask=("status",),
+    )
+
+
+def _budget(sent: dict[str, Any]) -> Operation:
+    """A campaign budget's daily amount, and nothing else about it."""
+    budget = str(sent.get("budget") or "")
+    amount = sent.get("amount_micros")
+    if "/campaignBudgets/" not in budget:
+        raise Unsendable("The change names no campaign budget.")
+    if not isinstance(amount, int) or amount <= 0:
+        raise Unsendable("The change names no daily amount above zero.")
+    return Operation(
+        resource_type="campaign_budget",
+        doing=Doing.UPDATE,
+        resource_name=budget,
+        fields={"amountMicros": amount},
+        # Google's JSON name for the field, as the request body spells it.
+        update_mask=("amountMicros",),
     )
 
 

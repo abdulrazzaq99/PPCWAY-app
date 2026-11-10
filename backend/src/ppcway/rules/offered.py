@@ -63,6 +63,8 @@ class Offered:
     changes: tuple[dict[str, Any], ...] = ()
     #: Why the checks that rest on leads did not run, when they did not.
     cannot_check: str = ""
+    #: Found but not offered yet, in words. See `engine.Pass.notes`.
+    notes: tuple[dict[str, str], ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -78,6 +80,7 @@ class Offered:
             "ran_at": self.ran_at,
             "target_cost_per_lead": self.target_cost_per_lead,
             "cannot_check": self.cannot_check,
+            "notes": list(self.notes),
         }
 
 
@@ -284,6 +287,8 @@ def inbox_for(
         ran_at=found.ran_at.isoformat(),
         target_cost_per_lead=target_cost_per_lead,
         cannot_check=found.cannot_check,
+        # A campaign's panel shows only the notes about that campaign.
+        notes=tuple(n for n in found.notes if not campaign_id or n.get("campaign") == campaign_id),
         changes=tuple(
             recent_changes(
                 session,
@@ -456,6 +461,8 @@ def _can_be_put_back(row: OptimizationAction) -> bool:
         return any((row.outcome or {}).get("landed") or [])
     if sent.get("change") == "set_ad_status":
         return bool(sent.get("ad")) and bool((row.before or {}).get("status"))
+    if sent.get("change") == "set_budget":
+        return bool(sent.get("budget")) and isinstance(sent.get("was_micros"), int)
     return False
 
 

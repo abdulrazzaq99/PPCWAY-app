@@ -101,6 +101,12 @@ class MirrorCampaign(Mirrored, Base):
     channel: Mapped[str] = mapped_column(String(30), default="")
     bidding: Mapped[str] = mapped_column(String(40), default="")
     budget_micros: Mapped[int] = mapped_column(Integer, default=0)
+    #: The budget's own resource name, which is what a budget change is sent
+    #: to, and whether other campaigns share it -- a shared budget is never
+    #: changed for one campaign's sake. Kept out of the fingerprint, so reading
+    #: them for the first time is not reported as a change in Google Ads.
+    budget_resource: Mapped[str] = mapped_column(String(255), default="")
+    budget_shared: Mapped[bool] = mapped_column(Boolean, default=False)
     #: Google's own words, "yyyy-MM-dd HH:mm:ss" in the account's time zone. In
     #: v25 the date-only fields are gone, so this is a moment, not a day.
     starts_at: Mapped[str] = mapped_column(String(25), default="")

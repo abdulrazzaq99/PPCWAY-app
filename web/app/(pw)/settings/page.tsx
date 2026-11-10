@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { BudgetCeiling, type Limits } from "@/components/pw/budget-ceiling";
 import { ConnectionCard } from "@/components/pw/connection-card";
 import { Header, PwPage } from "@/components/pw/shell";
 import { Team, type Org } from "@/components/pw/team";
@@ -9,9 +10,10 @@ export const metadata: Metadata = { title: "Settings · PPCway" };
 type Status = { connected: boolean; customer_id?: string; customer_name?: string };
 
 export default async function SettingsPage() {
-  const [org, ads] = await Promise.all([
+  const [org, ads, limits] = await Promise.all([
     ask<Org | null>("/v1/org", null),
     ask<Status>("/v1/ads/status", { connected: false }),
+    ask<Limits | null>("/v1/otto/limits", null),
   ]);
 
   return (
@@ -19,6 +21,7 @@ export default async function SettingsPage() {
       <Header eyebrow={org?.name ?? "Your business"} title="Settings" />
       <PwPage>
         <ConnectionCard ads={ads} canDisconnect={Boolean(org?.can.includes("disconnect"))} />
+        {limits && ads.connected ? <BudgetCeiling initial={limits} /> : null}
         {org ? <Team org={org} /> : null}
       </PwPage>
     </>

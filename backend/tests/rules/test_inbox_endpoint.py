@@ -263,7 +263,7 @@ def test_the_inbox_says_which_rules_are_still_missing(
         token = connected(client, factory)
         mirror(factory)
         said = client.get("/v1/otto/inbox", headers={"x-session-token": token}).json()
-    assert said["ran"] == ["R1", "R4"]
+    assert said["ran"] == ["R1", "R4", "R6", "R7"]
     assert said["not_specified"] == ["R2", "R3", "R5"]
 
 
@@ -650,3 +650,31 @@ def test_a_campaign_s_changes_follow_it_after_the_yes(
     assert change["campaigns"] == ["11"]
     assert change["status"] == "applied"
     assert other["changes"] == []
+
+
+def test_the_owner_sets_the_daily_budget_ceiling_as_a_new_version(
+    app_and_db: tuple[FastAPI, sessionmaker[Session]],
+) -> None:
+    """Without a ceiling Otto never suggests a bigger budget. Setting one writes
+    a new version of the limits, so an old action keeps the version that judged
+    it."""
+    from ppcway.opt.models import GuardrailConfig
+
+    app, factory = app_and_db
+    with TestClient(app) as client:
+        token = connected(client, factory)
+        head = {"x-session-token": token}
+        before = client.get("/v1/otto/limits", headers=head).json()
+        set_once = client.post("/v1/otto/limits", headers=head, json={"max_daily_budget": 40})
+        set_twice = client.post("/v1/otto/limits", headers=head, json={"max_daily_budget": 55.5})
+        nonsense = client.post("/v1/otto/limits", headers=head, json={"max_daily_budget": "lots"})
+        too_much = client.post("/v1/otto/limits", headers=head, json={"max_daily_budget": 200_000})
+    assert before == {"max_daily_budget": 0.0, "currency": "CAD", "may_set": True}
+    assert set_once.json()["max_daily_budget"] == 40.0
+    assert set_twice.json()["max_daily_budget"] == 55.5
+    assert nonsense.status_code == 422 and too_much.status_code == 422
+    with factory() as session:
+        versions = session.scalars(
+            sa.select(GuardrailConfig.version).order_by(GuardrailConfig.version)
+        ).all()
+    assert versions == [1, 2]

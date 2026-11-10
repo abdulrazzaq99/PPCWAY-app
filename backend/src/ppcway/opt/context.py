@@ -205,3 +205,42 @@ def as_dict(standing: Standing, limits: Limits) -> dict[str, Any]:
         },
         "limits_version": limits.version,
     }
+
+
+def set_ceiling(
+    session: Session,
+    organization_id: UUID,
+    amount: float,
+    *,
+    by: UUID | None = None,
+) -> GuardrailConfig:
+    """Write a new version of the limits with this daily budget ceiling.
+
+    A new version, never an edit: every action records the version that
+    judged it, so changing the ceiling must not change what an old action was
+    judged by. Everything else is carried over from the newest version, or
+    from the client's defaults where none has been written.
+    """
+    from sqlalchemy import inspect
+
+    newest = session.scalars(
+        select(GuardrailConfig)
+        .where(GuardrailConfig.organization_id == organization_id)
+        .order_by(GuardrailConfig.version.desc())
+        .limit(1)
+    ).first()
+    carried: dict[str, object] = {}
+    if newest is not None:
+        for column in inspect(GuardrailConfig).columns:
+            if column.key not in {"id", "version", "created_at", "created_by"}:
+                carried[column.key] = getattr(newest, column.key)
+    carried.update(
+        organization_id=organization_id,
+        version=(newest.version + 1) if newest is not None else 1,
+        max_daily_budget=float(amount),
+        created_by=by,
+    )
+    written = GuardrailConfig(**carried)
+    session.add(written)
+    session.commit()
+    return written

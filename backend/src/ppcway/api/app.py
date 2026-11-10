@@ -1462,6 +1462,50 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(409, str(exc)) from None
         return _send_now(session, said, connection, str(action_id), undoing=True)
 
+    @app.get("/v1/otto/limits")
+    def otto_limits(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """The daily budget ceiling Otto's budget suggestions must stay under."""
+        from ppcway.opt.context import limits_for
+
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "view")
+        connection = _connection(session, account)
+        return {
+            "max_daily_budget": limits_for(session, place.id).max_daily_budget,
+            "currency": connection.currency if connection else "",
+            "may_set": may(session, account, place, "thresholds"),
+        }
+
+    @app.post("/v1/otto/limits")
+    def set_otto_limits(
+        body: dict[str, Any],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Set the most any one campaign may be given to spend a day.
+
+        Without it Otto never suggests a bigger budget: the guardrails refuse
+        a rise they have no ceiling to measure against. Zero switches budget
+        rises off again. A new version of the limits, never an edit.
+        """
+        from ppcway.opt.context import set_ceiling
+
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "thresholds")
+        try:
+            amount = float(body.get("max_daily_budget"))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            raise HTTPException(422, "Give the ceiling as an amount, such as 40.") from None
+        if not (0 <= amount <= 100_000):
+            raise HTTPException(422, "The ceiling has to be between 0 and 100,000 a day.")
+        set_ceiling(session, place.id, round(amount, 2), by=account.id)
+        return otto_limits(session, x_session_token)
+
     @app.get("/v1/otto/auto-apply")
     def auto_apply_standing(
         session: Annotated[Session, Depends(get_session)],

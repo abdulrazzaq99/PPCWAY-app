@@ -121,7 +121,7 @@ def test_a_pass_offers_what_the_rules_found(db: DbSession) -> None:
     a_refused_ad(db, "901")
     said = _run(db)
     assert said.ok
-    assert said.ran == ("R1", "R4")
+    assert said.ran == ("R1", "R4", "R6", "R7")
     assert len(said.offered) == 2
     assert said.held_back == ()
 

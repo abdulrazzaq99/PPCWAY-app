@@ -188,6 +188,76 @@ CATALOGUE: Final[dict[str, Rule]] = {
         implemented=False,
         spec="v0.1 §1.2 -- not supplied",
     ),
+    # Two rules of PPCWay's own, written on 10 November 2026 when the owner
+    # found Otto had nothing to say on an account whose conversion tracking
+    # counts nearly every click: R1 can never find a search with no leads
+    # there, and R4 had no refused ad to find. Both compare campaigns with
+    # each other rather than judging one search, so they work on any account
+    # that counts leads at all. Their thresholds are judgements, recorded in
+    # docs/decisions/2026-11-10-otto-moves-money-between-campaigns.md, and
+    # they stand until the client's own R2, R3 and R5 arrive.
+    "R6": Rule(
+        id="R6",
+        version=1,
+        name="A campaign held back by its budget",
+        about=(
+            "This campaign brings leads far more cheaply than the rest of your account, "
+            "and it runs out of budget before the day is over."
+        ),
+        kind="increase_daily_budget",
+        # More spend is never low risk, however good the campaign: a person
+        # always decides it, and it is never applied unattended.
+        risk=Risk.MEDIUM,
+        route=Route.OWNER,
+        limits=MappingProxyType(
+            {
+                "window_days": 30.0,
+                # Leads cost at most this share of the account's average...
+                "cheaper_than": 0.6,
+                # ...and Google says it lost at least this share of its searches
+                # to the budget, on average over the last fourteen days.
+                "lost_to_budget": 0.2,
+                # Enough leads that the comparison is not luck.
+                "least_leads": 10.0,
+                # A campaign this new is still learning; Google advises leaving
+                # its budget alone until it has settled.
+                "settled_days": 7.0,
+                # Within the client's band for a change a merchant may approve
+                # alone (opt.guardrails: up to 20%).
+                "step_pct": 20.0,
+            }
+        ),
+        implemented=True,
+        spec="PPCWay, 10 November 2026, pending the client's R2/R3/R5",
+    ),
+    "R7": Rule(
+        id="R7",
+        version=1,
+        name="A campaign whose leads cost far more",
+        about=(
+            "This campaign's leads cost a lot more than the rest of your account's. "
+            "Less of the budget there means less money on your dearest leads."
+        ),
+        kind="decrease_daily_budget",
+        # Spending less cannot cost more, which is what makes it low risk. It
+        # can cost leads, which is why it is a suggestion and says so.
+        risk=Risk.LOW,
+        route=Route.OWNER,
+        limits=MappingProxyType(
+            {
+                "window_days": 30.0,
+                # Leads cost at least this many times the account's average.
+                "dearer_than": 2.0,
+                "least_leads": 10.0,
+                "settled_days": 7.0,
+                "step_pct": 20.0,
+                # Never suggest a budget below this, in the account's currency.
+                "least_budget": 1.0,
+            }
+        ),
+        implemented=True,
+        spec="PPCWay, 10 November 2026, pending the client's R2/R3/R5",
+    ),
 }
 
 

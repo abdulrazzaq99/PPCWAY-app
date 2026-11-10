@@ -16,9 +16,20 @@ from ppcway.rules.catalogue import (
 )
 
 
-def test_only_the_two_rules_the_client_named_are_live() -> None:
-    """R1 and R4. The brief names those two because they are the auto-apply types."""
-    assert [r.id for r in live()] == ["R1", "R4"]
+def test_the_client_s_two_rules_and_ppcway_s_two_are_live() -> None:
+    """R1 and R4 are the client's, the auto-apply types. R6 and R7 are
+    PPCWay's own, from 10 November, comparing campaigns' cost per lead; they
+    stand until the client's R2, R3 and R5 arrive."""
+    assert [r.id for r in live()] == ["R1", "R4", "R6", "R7"]
+
+
+def test_ppcway_s_own_rules_say_so_and_more_spend_is_never_low_risk() -> None:
+    from ppcway.rules.catalogue import Risk, rule
+
+    for rule_id in ("R6", "R7"):
+        assert "PPCWay" in rule(rule_id).spec
+    assert rule("R6").risk is not Risk.LOW, "a budget rise is a person's call"
+    assert not rule("R6").auto_eligible
 
 
 def test_the_other_three_are_declared_and_say_what_is_missing() -> None:

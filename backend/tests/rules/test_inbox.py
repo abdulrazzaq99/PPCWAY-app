@@ -192,7 +192,7 @@ def test_the_inbox_says_which_rules_ran_and_which_are_missing(db: DbSession) -> 
     """So a status screen can be honest rather than implying five of five."""
     read_ok(db)
     said = _inbox(db).as_dict()  # type: ignore[attr-defined]
-    assert said["ran"] == ["R1", "R4"]
+    assert said["ran"] == ["R1", "R4", "R6", "R7"]
     assert said["not_specified"] == ["R2", "R3", "R5"]
 
 

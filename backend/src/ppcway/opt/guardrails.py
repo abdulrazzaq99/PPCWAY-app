@@ -225,7 +225,17 @@ def scope(p: Proposal, s: Standing, limits: Limits, now: datetime) -> Ruling | N
 
 
 def hard_spend_limits(p: Proposal, s: Standing, limits: Limits, now: datetime) -> Ruling | None:
-    if p.new_daily_budget is not None:
+    """The ceilings a change may not cross.
+
+    The daily budget ceiling governs a rise. A cut cannot breach a spending
+    ceiling, and putting back the merchant's own earlier budget is not a new
+    rise: refusing either for want of a ceiling would leave a merchant unable
+    to spend less, or unable to undo a cut they regret (found 10 November,
+    building the budget rules). A change whose direction is not recorded is
+    treated as a rise, the safe way round.
+    """
+    raising = p.change_pct is None or p.change_pct > 0
+    if p.new_daily_budget is not None and raising and not p.is_undo:
         if limits.max_daily_budget <= 0:
             return _no(
                 "hard_spend_limits", "No daily budget ceiling has been set for this account."

@@ -83,6 +83,8 @@ export type Inbox = {
   target_cost_per_lead?: number;
   /** Why the checks that rest on leads did not run: the account counts no enquiries. */
   cannot_check?: string;
+  /** Found but not offered yet, in words: a campaign waiting for a budget ceiling. */
+  notes?: { campaign: string; words: string }[];
 };
 
 export type Said = { kind: string; words: string };

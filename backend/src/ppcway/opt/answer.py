@@ -385,6 +385,17 @@ def _reverse(action: OptimizationAction) -> dict[str, Any]:
         if not was:
             raise NotAnswerable("We have no record of what that ad was set to before.")
         return {"change": "set_ad_status", "ad": str(sent["ad"]), "status": was}
+    if change == "set_budget" and sent.get("budget"):
+        was_micros = sent.get("was_micros")
+        if not isinstance(was_micros, int) or was_micros <= 0:
+            raise NotAnswerable("We have no record of what that budget was before.")
+        return {
+            "change": "set_budget",
+            "budget": str(sent["budget"]),
+            "campaign": str(sent.get("campaign") or ""),
+            "amount_micros": was_micros,
+            "was_micros": sent.get("amount_micros"),
+        }
     raise NotAnswerable(
         "That change was recorded before PPCWay kept what it sent to Google, so it"
         " has to be put back in Google Ads itself."

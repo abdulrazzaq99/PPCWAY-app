@@ -299,7 +299,8 @@ def sync_structure(
                    campaign.advertising_channel_type, campaign.bidding_strategy_type,
                    campaign.start_date_time, campaign.end_date_time,
                    campaign_budget.amount_micros, customer.currency_code,
-                   customer.time_zone
+                   customer.time_zone, campaign.campaign_budget,
+                   campaign_budget.explicitly_shared
             FROM campaign WHERE campaign.status != 'REMOVED'
             """,
             **ask,  # type: ignore[arg-type]
@@ -311,6 +312,9 @@ def sync_structure(
         account_status = ""
         time_zone = ""
         campaigns: dict[str, dict[str, Any]] = {}
+        # Which budget each campaign spends from, and whether it is shared.
+        # Set beside the tracked fields, not among them: see the mirror.
+        budgets: dict[str, tuple[str, bool]] = {}
         labels: dict[str, str] = {}
         for row in rows:
             campaign = row.get("campaign", {})
@@ -326,6 +330,10 @@ def sync_structure(
             # The zone its days are counted in. See `ads.clock`.
             time_zone = time_zone or str(customer.get("timeZone", ""))
             labels[name] = str(campaign.get("name", ""))
+            budgets[name] = (
+                str(campaign.get("campaignBudget", "") or ""),
+                bool(row.get("campaignBudget", {}).get("explicitlyShared", False)),
+            )
             campaigns[name] = {
                 "campaign_id": str(campaign.get("id", "")),
                 "name": str(campaign.get("name", "")),
@@ -347,6 +355,14 @@ def sync_structure(
             now=at,
         )
         report.counts["campaigns"] = count
+        if budgets:
+            for held in session.scalars(
+                select(MirrorCampaign).where(
+                    MirrorCampaign.customer_id == customer_id,
+                    MirrorCampaign.resource_name.in_(list(budgets)),
+                )
+            ):
+                held.budget_resource, held.budget_shared = budgets[held.resource_name]
         if account_status:
             report.account_status = account_status
         if time_zone:
