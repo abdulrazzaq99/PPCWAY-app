@@ -87,6 +87,17 @@ export function Sidebar({
   );
 }
 
+/*
+  One width for every screen's header and its content, so the two always line
+  up. It was 1200px for the content alone while the header ran the full width:
+  on a wide or zoomed-out screen the title sat at the left edge, the cards
+  floated in the middle, and both sides were empty strips that matched nothing
+  (the owner, 10 November). Now the content fills the space beside the sidebar
+  up to 1600px, and past that the header and content centre together with
+  equal margins.
+*/
+const PAGE = "mx-auto w-full max-w-[1600px] px-5 sm:px-8";
+
 export function Header({
   eyebrow,
   title,
@@ -97,7 +108,7 @@ export function Header({
   right?: ReactNode;
 }) {
   return (
-    <header className="flex flex-wrap items-start justify-between gap-4 px-5 pt-7 pb-5 sm:px-8">
+    <header className={cn(PAGE, "flex flex-wrap items-start justify-between gap-4 pt-7 pb-5")}>
       <div className="min-w-0">
         {eyebrow ? <p className="text-pw-ink-500 text-[13px] leading-[17px]">{eyebrow}</p> : null}
         <h1 className="display mt-1 text-[26px] leading-[32px] font-semibold sm:text-[30px] sm:leading-[36px]">
@@ -136,7 +147,7 @@ export function HeaderLink({ href, children }: { href: string; children: ReactNo
 
 export function PwPage({ children }: { children: ReactNode }) {
   return (
-    <div className="mx-auto w-full max-w-[1200px] px-5 pb-16 sm:px-8">
+    <div className={cn(PAGE, "pb-16")}>
       <div className="flex flex-col gap-4">{children}</div>
     </div>
   );
