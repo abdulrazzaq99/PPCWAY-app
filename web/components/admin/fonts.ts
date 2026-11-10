@@ -1,4 +1,4 @@
-import { IBM_Plex_Mono, Public_Sans } from "next/font/google";
+import localFont from "next/font/local";
 
 /*
   The console's two faces, loaded only where the console is drawn.
@@ -11,16 +11,28 @@ import { IBM_Plex_Mono, Public_Sans } from "next/font/google";
   Kept apart from the root layout so the merchant app and the public site do
   not download a typeface they never use.
 */
-export const adSans = Public_Sans({
+// From files in `app/fonts/`, not Google Fonts, so a build never downloads
+// them -- see the note in `app/layout.tsx`.
+export const adSans = localFont({
+  src: "../../app/fonts/public-sans-latin-wght-normal.woff2",
   variable: "--font-ad-sans",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: "100 900",
   display: "swap",
 });
 
-export const adMono = IBM_Plex_Mono({
+export const adMono = localFont({
+  src: [
+    {
+      path: "../../app/fonts/ibm-plex-mono-latin-400-normal.woff2",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "../../app/fonts/ibm-plex-mono-latin-500-normal.woff2",
+      weight: "500",
+      style: "normal",
+    },
+  ],
   variable: "--font-ad-mono",
-  subsets: ["latin"],
-  weight: ["400", "500"],
   display: "swap",
 });
