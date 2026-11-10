@@ -1221,11 +1221,17 @@ export default async function Preview({
     }
     case "built-campaign":
       return (
-        <div className="bg-pw-ground text-pw-ink min-h-dvh">
-          <Header eyebrow="New campaign" title="Here's the campaign we built for you." />
-          <PwPage>
-            <DraftReview initial={BUILT} mayLaunch />
-          </PwPage>
+        <div className="bg-pw-ground text-pw-ink flex min-h-dvh">
+          <div
+            aria-hidden
+            className="border-pw-border bg-pw-card hidden w-[252px] shrink-0 border-r lg:block"
+          />
+          <div className="min-w-0 flex-1">
+            <Header eyebrow="New campaign" title="Here's the campaign we built for you." />
+            <PwPage>
+              <DraftReview initial={BUILT} mayLaunch />
+            </PwPage>
+          </div>
         </div>
       );
     case "overview":
