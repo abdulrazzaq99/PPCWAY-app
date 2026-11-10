@@ -1,11 +1,12 @@
 import { notFound } from "next/navigation";
-import { DraftReview, NewCampaignForm } from "@/components/pw/campaign-builder";
+import { DraftReview } from "@/components/pw/campaign-builder";
+import { CampaignStepper, type StepperStart } from "@/components/pw/campaign-stepper";
 import { CampaignDetail, type Detail, type Suggestions } from "@/components/pw/campaign-detail";
 import { CampaignList } from "@/components/pw/campaigns";
 import { Team } from "@/components/pw/team";
 import { Header, HeaderLink, PwPage } from "@/components/pw/shell";
 import type { AdsDay, AdsSummary } from "@/lib/ads";
-import type { Draft } from "@/lib/builder";
+import type { Draft, Prefill } from "@/lib/builder";
 import {
   AdminErrors,
   AdminJobs,
@@ -669,6 +670,140 @@ const NEW_SPEND = [...Array(28).fill(0), 0.0, 20.48];
 const NEW_LEADS = [...Array(29).fill(0), 38];
 const OLD_DAYS = campaignDays(OLD_SPEND, OLD_LEADS);
 const NEW_DAYS = campaignDays(NEW_SPEND, NEW_LEADS);
+/* The builder's catalogue, as /v1/campaigns/start serves it (builder/kinds.py).
+   A copy for the preview only; the live screen reads the API. */
+const BUILDER_PREFILL: Prefill = {
+  connected: true,
+  currency: "USD",
+  account_name: "PDFezy",
+  may_launch: true,
+  kinds: [
+    {
+      id: "at_their_place",
+      label: "We go to our customers",
+      examples: "Plumbers, cleaners, movers, repairs, landscaping",
+      noun: "a business that goes to its customers",
+      services_hint: "emergency plumber, end of tenancy cleaning…",
+      win: "calls and enquiries",
+      promises: [
+        "free_quotes",
+        "same_day",
+        "emergency_callout",
+        "open_all_hours",
+        "licensed_insured",
+        "family_owned",
+      ],
+      negatives: ["jobs", "careers", "salary", "diy", "how to"],
+    },
+    {
+      id: "they_visit",
+      label: "Customers come to us",
+      examples: "Shops, salons, restaurants, clinics, gyms",
+      noun: "a place customers visit",
+      services_hint: "haircut and colour, dental check-up…",
+      win: "visits and bookings",
+      promises: ["book_online", "free_consultation", "open_all_hours", "family_owned"],
+      negatives: ["jobs", "careers", "salary"],
+    },
+    {
+      id: "professional",
+      label: "We advise or do work for clients",
+      examples: "Lawyers, accountants, consultants, agencies",
+      noun: "a professional service",
+      services_hint: "small business tax returns, immigration lawyer…",
+      win: "enquiries",
+      promises: ["free_consultation", "licensed_insured", "book_online", "family_owned"],
+      negatives: ["jobs", "careers", "salary", "course", "template"],
+    },
+    {
+      id: "online_shop",
+      label: "We sell products online",
+      examples: "Clothing, gifts, parts, home goods",
+      noun: "an online shop",
+      services_hint: "linen bedding, bike lights…",
+      win: "sales",
+      promises: ["free_shipping", "next_day", "money_back"],
+      negatives: ["jobs", "careers", "salary", "wholesale", "used"],
+    },
+    {
+      id: "software",
+      label: "We offer software or an online tool",
+      examples: "Apps, online tools, software for businesses",
+      noun: "an online tool",
+      services_hint: "pdf to word, invoicing software…",
+      win: "sign-ups",
+      promises: ["free_plan", "free_trial", "no_card", "money_back"],
+      negatives: ["jobs", "careers", "salary", "crack", "torrent"],
+    },
+    {
+      id: "other",
+      label: "Something else",
+      examples: "Charities, events, classes, anything not listed",
+      noun: "a business",
+      services_hint: "weekend pottery class, wedding photography…",
+      win: "enquiries",
+      promises: ["free_consultation", "book_online", "money_back"],
+      negatives: ["jobs", "careers", "salary"],
+    },
+  ],
+  promises: [
+    { id: "free_quotes", label: "We give free quotes or estimates", short: "free quotes" },
+    {
+      id: "free_consultation",
+      label: "The first consultation is free",
+      short: "a free first consultation",
+    },
+    { id: "open_all_hours", label: "We're open 24 hours, 7 days a week", short: "24/7 opening" },
+    { id: "same_day", label: "We offer same-day service", short: "same-day service" },
+    { id: "emergency_callout", label: "We take emergency callouts", short: "emergency callouts" },
+    {
+      id: "licensed_insured",
+      label: "We're licensed and insured",
+      short: "licensed and insured work",
+    },
+    { id: "family_owned", label: "We're family-owned", short: "a family-owned business" },
+    { id: "book_online", label: "Customers can book online", short: "online booking" },
+    { id: "free_shipping", label: "Shipping is free", short: "free shipping" },
+    { id: "next_day", label: "We deliver the next day", short: "next-day delivery" },
+    { id: "money_back", label: "There's a money-back guarantee", short: "a money-back guarantee" },
+    { id: "free_plan", label: "There's a free version", short: "a free version" },
+    { id: "free_trial", label: "There's a free trial", short: "a free trial" },
+    { id: "no_card", label: "No credit card needed to start", short: "no card to start" },
+  ],
+};
+
+/* Where the stepper preview opens, by ?state=: each question, with the ones
+   before it answered, as a real visit would have them. */
+const ANSWERED_BUSINESS: StepperStart = {
+  kind: "software",
+  url: "https://pdfezy.com/",
+  site: { name: "PDFezy", title: "PDFezy - Free Online PDF Converter & Editor" },
+};
+const ANSWERED_SELL: StepperStart = {
+  ...ANSWERED_BUSINESS,
+  themes: ["pdf to word", "compress pdf"],
+};
+const ANSWERED_WHO: StepperStart = {
+  ...ANSWERED_SELL,
+  places: [
+    { resource: "geoTargetConstants/2616", name: "Poland", kind: "Country" },
+    { resource: "geoTargetConstants/2642", name: "Romania", kind: "Country" },
+  ],
+};
+const ANSWERED_ALL: StepperStart = {
+  ...ANSWERED_WHO,
+  promises: ["free_plan", "no_card"],
+  budget: "20",
+};
+const STEPPER_STATES: Record<string, StepperStart | undefined> = {
+  business: { ...ANSWERED_BUSINESS, at: 0 },
+  sell: { ...ANSWERED_BUSINESS, at: 1 },
+  who: { ...ANSWERED_SELL, at: 2 },
+  promise: { ...ANSWERED_WHO, promises: ["free_plan", "no_card"], at: 3 },
+  budget: { ...ANSWERED_ALL, at: 4 },
+  check: { ...ANSWERED_ALL, at: 5 },
+};
+
 /* One campaign opened, with what Otto has for it: a search to exclude that is
    on offer, a refused ad found since the last nightly pass, and a change
    already made. Figures as the rules would write them. */
@@ -1022,15 +1157,23 @@ export default async function Preview({
       );
     case "new-campaign":
       return (
-        <div className="bg-pw-ground text-pw-ink min-h-dvh">
-          <Header eyebrow="Campaigns" title="Start a new campaign." />
-          <PwPage>
-            <NewCampaignForm
-              prefill={{ connected: true, currency: "USD", may_launch: true }}
-              site="pdfezy.com"
-              trade="pdf to word"
-            />
-          </PwPage>
+        <div className="bg-pw-ground text-pw-ink flex min-h-dvh">
+          <div
+            aria-hidden
+            className="border-pw-border bg-pw-card hidden w-[252px] shrink-0 border-r lg:block"
+          />
+          <div className="min-w-0 flex-1">
+            <Header eyebrow="Campaigns" title="Start a new campaign." />
+            <PwPage>
+              <CampaignStepper
+                key={state ?? "start"}
+                prefill={BUILDER_PREFILL}
+                site="pdfezy.com"
+                trade=""
+                start={STEPPER_STATES[state ?? ""]}
+              />
+            </PwPage>
+          </div>
         </div>
       );
     case "campaigns":

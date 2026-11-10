@@ -64,7 +64,7 @@ export function Field({ label, labelAside, hint, error, children, className }: F
           {error}
         </p>
       ) : hint ? (
-        <p className="text-meta text-pw-ink-400">{hint}</p>
+        <p className="text-meta text-pw-ink-500">{hint}</p>
       ) : null}
     </div>
   );

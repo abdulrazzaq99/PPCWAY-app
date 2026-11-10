@@ -10,11 +10,9 @@ import { PwCard } from "@/components/pw/shell";
 import {
   DESCRIPTION_CHARS,
   HEADLINE_CHARS,
-  MOST_THEMES,
   type Draft,
   type Place,
   type Plan,
-  type Prefill,
 } from "@/lib/builder";
 import { cn } from "@/lib/cn";
 
@@ -30,9 +28,9 @@ import { cn } from "@/lib/cn";
   Google before anything is created.
 */
 
-const ENGLISH: Place = { resource: "languageConstants/1000", name: "English" };
+export const ENGLISH: Place = { resource: "languageConstants/1000", name: "English" };
 
-async function call<T>(path: string, body?: unknown): Promise<{ ok: boolean; data: T }> {
+export async function call<T>(path: string, body?: unknown): Promise<{ ok: boolean; data: T }> {
   const res = await fetch(`/api/campaigns/${path}`, {
     method: body === undefined ? "GET" : "POST",
     headers: body === undefined ? undefined : { "content-type": "application/json" },
@@ -71,7 +69,7 @@ function Tag({ children, onRemove }: { children: ReactNode; onRemove?: () => voi
 }
 
 /* Words typed one at a time: services, or searches never to pay for. */
-function Words({
+export function Words({
   label,
   hint,
   words,
@@ -138,7 +136,13 @@ function Words({
 }
 
 /* Places, looked up by name in Google's own list of places it can target. */
-function PlacePicker({ places, onChange }: { places: Place[]; onChange: (next: Place[]) => void }) {
+export function PlacePicker({
+  places,
+  onChange,
+}: {
+  places: Place[];
+  onChange: (next: Place[]) => void;
+}) {
   const [typed, setTyped] = useState("");
   const [found, setFound] = useState<Place[]>([]);
   const [looking, setLooking] = useState(false);
@@ -272,262 +276,6 @@ function Bidding({
         meta="Better once your calls and forms are counted properly in Google Ads."
         onSelect={() => onChange("leads")}
       />
-    </div>
-  );
-}
-
-function Steps() {
-  const steps = [
-    [
-      "Ask Google what people type",
-      "Real searches only, from Keyword Planner. Otto cannot invent any.",
-    ],
-    ["Write and check the ads", "Otto drafts; PPCWay's rules check length, claims and trademarks."],
-    ["You review it", "Change anything. Nothing goes to Google until you launch."],
-  ];
-  return (
-    <ol className="flex flex-col gap-4">
-      {steps.map(([title, meta], n) => (
-        <li key={title} className="flex gap-3">
-          <span className="bg-pw-blue-tint text-pw-blue-ink flex size-7 shrink-0 items-center justify-center rounded-full text-[13px] font-bold">
-            {n + 1}
-          </span>
-          <div>
-            <p className="text-[15px] leading-[20px] font-semibold">{title}</p>
-            <p className="text-pw-ink-500 mt-[2px] text-[13px] leading-[18px]">{meta}</p>
-          </div>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-/* ---------- 87:10926: start a new campaign ---------- */
-
-export function NewCampaignForm({
-  prefill,
-  site,
-  trade,
-}: {
-  prefill: Prefill;
-  site: string;
-  trade: string;
-}) {
-  const router = useRouter();
-  const [themes, setThemes] = useState<string[]>(trade ? [trade] : []);
-  const [name, setName] = useState("");
-  const [url, setUrl] = useState(site ? (site.startsWith("http") ? site : `https://${site}`) : "");
-  const [budget, setBudget] = useState("20");
-  const [places, setPlaces] = useState<Place[]>([]);
-  const [language, setLanguage] = useState<Place>(ENGLISH);
-  const [languages, setLanguages] = useState<Place[]>([ENGLISH]);
-  const [bidding, setBidding] = useState<"clicks" | "leads">("clicks");
-  const [negatives, setNegatives] = useState<string[]>(["jobs", "careers", "salary"]);
-  const [claims, setClaims] = useState({
-    free_quotes: false,
-    open_all_hours: false,
-    emergency_callout: false,
-  });
-  const [working, setWorking] = useState(false);
-  const [trouble, setTrouble] = useState("");
-
-  useEffect(() => {
-    let live = true;
-    call<{ languages?: Place[] }>("languages").then(({ ok, data }) => {
-      if (live && ok && data.languages?.length) setLanguages(data.languages);
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  const money = Number(budget);
-  const ready = themes.length > 0 && places.length > 0 && money > 0 && /^https?:\/\//.test(url);
-
-  const start = async () => {
-    setWorking(true);
-    setTrouble("");
-    const { ok, data } = await call<Draft & { error?: string }>("drafts", {
-      name,
-      themes,
-      final_url: url,
-      daily_budget: money,
-      places,
-      language,
-      bidding,
-      negatives,
-      claims,
-    });
-    if (!ok) {
-      setTrouble(data.error ?? "That did not work.");
-      setWorking(false);
-      return;
-    }
-    router.push(`/campaigns/new/${data.id}`);
-  };
-
-  if (!prefill.connected) {
-    return (
-      <PwCard className="p-6">
-        <p className="text-[16px] leading-[22px]">
-          Connect your Google Ads account first, and the campaign is built in it.
-        </p>
-        <Link href="/settings" className="text-brand mt-3 inline-block font-semibold">
-          Go to Settings
-        </Link>
-      </PwCard>
-    );
-  }
-
-  return (
-    <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="flex flex-col gap-4">
-        <Section
-          title="What should it be about?"
-          hint="Add one service at a time, in the words a customer would use. Each becomes its own ad group with its own ad."
-        >
-          <Words
-            label="Services"
-            words={themes}
-            onChange={setThemes}
-            most={MOST_THEMES}
-            placeholder="pdf to word, water heater repair…"
-          />
-        </Section>
-
-        <Section title="Where, and in which language">
-          <div className="flex flex-col gap-5">
-            <PlacePicker places={places} onChange={setPlaces} />
-            <Field label="The language your customers search in">
-              {(id) => (
-                <select
-                  id={id}
-                  value={language.resource}
-                  onChange={(e) =>
-                    setLanguage(languages.find((l) => l.resource === e.target.value) ?? ENGLISH)
-                  }
-                  className="border-pw-border-strong bg-pw-card h-[48px] rounded-[12px] border px-4 text-[15px]"
-                >
-                  {languages.map((one) => (
-                    <option key={one.resource} value={one.resource}>
-                      {one.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </Field>
-          </div>
-        </Section>
-
-        <Section title="Budget and bidding">
-          <div className="flex flex-col gap-5">
-            <Field
-              label="The most it may spend a day"
-              hint="Google may spend up to twice this on a busy day and evens it out over the month."
-            >
-              {(id) => (
-                <Input
-                  id={id}
-                  inputMode="decimal"
-                  value={budget}
-                  onChange={(e) => setBudget(e.target.value)}
-                  trailing={<span className="text-pw-ink-500 text-[14px]">{prefill.currency}</span>}
-                />
-              )}
-            </Field>
-            <Bidding value={bidding} onChange={setBidding} />
-          </div>
-        </Section>
-
-        <Section
-          title="Where the ads send people"
-          hint="The page someone lands on when they click. Use the page about these services if there is one."
-        >
-          <div className="flex flex-col gap-5">
-            <Field label="Landing page">
-              {(id) => (
-                <Input
-                  id={id}
-                  value={url}
-                  placeholder="https://"
-                  onChange={(e) => setUrl(e.target.value)}
-                />
-              )}
-            </Field>
-            <Field label="Campaign name" hint="Leave it empty and the first service names it.">
-              {(id) => <Input id={id} value={name} onChange={(e) => setName(e.target.value)} />}
-            </Field>
-          </div>
-        </Section>
-
-        <Section
-          title="What the ads may say"
-          hint="The ads only claim what you tick here. Anything else is refused, however good it would sound."
-        >
-          <div className="flex flex-col gap-3">
-            <Checkbox
-              checked={claims.free_quotes}
-              onChange={(v) => setClaims((c) => ({ ...c, free_quotes: v }))}
-            >
-              We give free quotes
-            </Checkbox>
-            <Checkbox
-              checked={claims.open_all_hours}
-              onChange={(v) => setClaims((c) => ({ ...c, open_all_hours: v }))}
-            >
-              We are open 24 hours
-            </Checkbox>
-            <Checkbox
-              checked={claims.emergency_callout}
-              onChange={(v) => setClaims((c) => ({ ...c, emergency_callout: v }))}
-            >
-              We take emergency callouts
-            </Checkbox>
-          </div>
-        </Section>
-
-        <Section
-          title="Searches never to pay for"
-          hint="Your ads will not show for searches containing these. Take out any that are part of what you sell."
-        >
-          <Words
-            label="Excluded words"
-            words={negatives}
-            onChange={setNegatives}
-            placeholder="jobs, diy, course…"
-          />
-        </Section>
-      </div>
-
-      <div className="flex flex-col gap-4 lg:sticky lg:top-6">
-        <PwCard className="p-5 sm:p-6">
-          <h2 className="text-[17px] leading-[22px] font-semibold">How it gets written</h2>
-          <div className="mt-4">
-            <Steps />
-          </div>
-        </PwCard>
-        <PwCard className="p-5 sm:p-6">
-          <h2 className="text-[17px] leading-[22px] font-semibold">Ready when you are</h2>
-          <p className="text-pw-ink-500 mt-1 text-[14px] leading-[20px]">
-            {working
-              ? "Asking Google what people search for and writing the ads. This takes up to a minute."
-              : "About a minute. Nothing goes to Google, and nothing costs money, until you launch it."}
-          </p>
-          {trouble ? (
-            <p role="alert" className="mt-3 text-[14px] leading-[19px] font-semibold text-red-700">
-              {trouble}
-            </p>
-          ) : null}
-          <Button className="mt-4 w-full" onClick={start} disabled={!ready || working}>
-            {working ? "Writing your campaign…" : "Start writing"}
-          </Button>
-          {!ready && !working ? (
-            <p className="text-pw-ink-400 mt-2 text-[12px] leading-[17px]">
-              Needs at least one service, one place, a budget and a landing page.
-            </p>
-          ) : null}
-        </PwCard>
-      </div>
     </div>
   );
 }

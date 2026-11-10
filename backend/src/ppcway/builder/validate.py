@@ -37,6 +37,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Final
 
+from ppcway.builder.kinds import BY_PROMISE, LEGACY, PHRASES
+
 #: Google's own limits for a responsive search ad. Restated here rather than
 #: read from the API, because an asset has to be refused before it is sent and
 #: the API only answers about assets it has been sent.
@@ -105,6 +107,13 @@ class Business:
     open_all_hours: bool = False
     free_quotes: bool = False
     emergency_callout: bool = False
+    #: Which kind of business it is (`builder.kinds`), so the copy is written
+    #: for a software product as one and for a salon as the other.
+    kind: str = ""
+    #: The promises the merchant ticked as true (`builder.kinds.PROMISES`).
+    #: The three booleans above are the first builder's version of the same
+    #: thing, kept so a draft written before 10 November still checks.
+    promises: tuple[str, ...] = ()
     years_trading: int | None = None
     #: Accreditations they have evidence for.
     accreditations: tuple[str, ...] = ()
@@ -172,23 +181,16 @@ _SUPERLATIVES: Final = frozenset(
     }
 )
 
-#: Claims that are only true if the merchant said so. Each maps to the field
-#: on `Business` that licenses it. This is stage three's whole substance: a
-#: specific claim is refused unless something the merchant told us supports it.
-_NEEDS_SAYING: Final[dict[str, str]] = {
-    "24 hour": "open_all_hours",
-    "24/7": "open_all_hours",
-    "24-7": "open_all_hours",
-    "open all hours": "open_all_hours",
-    "round the clock": "open_all_hours",
-    "any time of day": "open_all_hours",
-    "free quote": "free_quotes",
-    "free estimate": "free_quotes",
-    "no call out charge": "free_quotes",
-    "emergency": "emergency_callout",
-    "same day": "emergency_callout",
-    "callout": "emergency_callout",
-}
+
+def promised(business: Business) -> frozenset[str]:
+    """Every promise this business may make: ticked, or carried from a draft
+    written before promises were a list."""
+    allowed = set(business.promises)
+    for flag, ids in LEGACY.items():
+        if getattr(business, flag, False):
+            allowed.update(ids)
+    return frozenset(allowed)
+
 
 #: Shouting. Google refuses an asset in capitals, and a word in capitals is
 #: not the same as an acronym.
@@ -250,12 +252,20 @@ def _factual(text: str, kind: Kind, business: Business) -> str:
     to say.
     """
     lowered = text.lower()
-    for phrase, field_name in _NEEDS_SAYING.items():
-        if phrase in lowered and not getattr(business, field_name, False):
-            return (
-                f'"{phrase}" is a claim the business profile does not support.'
-                f" It can only be used if the merchant has told us it is true."
-            )
+    allowed = promised(business)
+    # Longest phrase first, and a phrase that is allowed is blanked out before
+    # the shorter ones are looked for: "try for free" is the free trial's
+    # wording, and must not then be refused as the free version's "for free".
+    for phrase, promise in PHRASES:
+        if phrase not in lowered:
+            continue
+        if promise.id in allowed:
+            lowered = lowered.replace(phrase, " ")
+            continue
+        return (
+            f'"{phrase}" promises {BY_PROMISE[promise.id].short}, which was not ticked as'
+            f" true for this business. It can only be used if the merchant says it is."
+        )
     years = re.search(r"\b(\d{1,3})\s*(?:\+\s*)?years?\b", lowered)
     if years:
         claimed = int(years.group(1))

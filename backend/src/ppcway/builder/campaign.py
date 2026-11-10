@@ -110,7 +110,7 @@ class CampaignPlan:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CampaignPlan:
         business = dict(data.get("business") or {})
-        for key in ("services", "places", "accreditations", "brand_words"):
+        for key in ("services", "places", "accreditations", "brand_words", "promises"):
             business[key] = tuple(business.get(key) or ())
         return cls(
             name=str(data.get("name", "")),

@@ -393,3 +393,62 @@ def test_a_long_title_is_cut_before_it_reaches_a_prompt() -> None:
     said = read_site("https://pdfezy.com/", crawl=lambda *a, **k: page)
     assert said.name == "PDFezy"
     assert len(said.title) <= MOST_TITLE
+
+
+def test_the_screen_is_given_every_kind_of_business_and_its_promises(
+    world: tuple[FastAPI, sessionmaker[Session], Google],
+) -> None:
+    app, factory, _door = world
+    with TestClient(app) as client:
+        token = owner(client, factory)
+        said = client.get("/v1/campaigns/start", headers=head(token)).json()
+    assert {k["id"] for k in said["kinds"]} >= {"online_shop", "software", "professional"}
+    assert any(p["id"] == "free_trial" for p in said["promises"])
+
+
+def test_a_software_draft_keeps_its_kind_and_only_real_promises(
+    world: tuple[FastAPI, sessionmaker[Session], Google],
+) -> None:
+    app, factory, door = world
+    brief = {
+        **BRIEF,
+        "kind": "software",
+        "promises": ["free_plan", "no_card", "invented"],
+        "years_trading": 4,
+    }
+    with TestClient(app) as client:
+        token = owner(client, factory)
+        made = client.post("/v1/campaigns/drafts", headers=head(token), json=brief)
+    assert made.status_code == 201, made.text
+    business = made.json()["plan"]["business"]
+    assert business["kind"] == "software"
+    assert business["promises"] == ["free_plan", "no_card"], "an unknown promise is dropped"
+    assert business["years_trading"] == 4
+    assert door.wrote_for[0].promises == ("free_plan", "no_card")
+
+
+def test_the_first_builder_s_ticks_still_count(
+    world: tuple[FastAPI, sessionmaker[Session], Google],
+) -> None:
+    app, factory, _door = world
+    brief = {**BRIEF, "claims": {"emergency_callout": True, "years_trading": 12}}
+    with TestClient(app) as client:
+        token = owner(client, factory)
+        made = client.post("/v1/campaigns/drafts", headers=head(token), json=brief)
+    business = made.json()["plan"]["business"]
+    assert business["promises"] == ["same_day", "emergency_callout"]
+    assert business["kind"] == "other"
+    assert business["years_trading"] == 12
+
+
+def test_the_landing_page_s_name_is_offered_while_typing(
+    world: tuple[FastAPI, sessionmaker[Session], Google],
+) -> None:
+    app, factory, door = world
+    door.site = Site(name="PDFezy", title="PDFezy | Free PDF tools")
+    with TestClient(app) as client:
+        token = owner(client, factory)
+        found = client.get("/v1/campaigns/site?url=https://pdfezy.com/", headers=head(token)).json()
+        refused = client.get("/v1/campaigns/site?url=ftp://pdfezy.com", headers=head(token))
+    assert found == {"name": "PDFezy", "title": "PDFezy | Free PDF tools"}
+    assert refused.status_code == 422

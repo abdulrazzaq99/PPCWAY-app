@@ -14,6 +14,8 @@ const ALLOWED = [
   /^start$/,
   /^places$/,
   /^languages$/,
+  // The landing page's own name, read while the merchant types it.
+  /^site$/,
   /^drafts$/,
   /^drafts\/[0-9a-f-]{36}$/,
   /^drafts\/[0-9a-f-]{36}\/launch$/,

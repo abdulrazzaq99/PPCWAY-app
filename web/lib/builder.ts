@@ -52,12 +52,33 @@ export type Draft = {
   refused?: { theme: string; text: string; because: string }[];
 };
 
+/** A kind of business, as the builder asks it (`builder/kinds.py`). */
+export type BusinessKind = {
+  id: string;
+  label: string;
+  examples: string;
+  /** How it reads inside a sentence: "an online tool". */
+  noun: string;
+  services_hint: string;
+  /** What counts as a win for it: "sign-ups", "sales". */
+  win: string;
+  /** The promises it is offered first. */
+  promises: string[];
+  /** Searches it is offered to skip. */
+  negatives: string[];
+};
+
+/** Something an ad may only say when the merchant says it is true. */
+export type PromiseOption = { id: string; label: string; short: string };
+
 export type Prefill = {
   connected: boolean;
   currency?: string;
   account_name?: string;
   business_name?: string;
   may_launch?: boolean;
+  kinds?: BusinessKind[];
+  promises?: PromiseOption[];
 };
 
 /** Google's own limits for a responsive search ad. */

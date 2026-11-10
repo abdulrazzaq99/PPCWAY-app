@@ -34,6 +34,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Final
 
+from ppcway.builder.kinds import PROMISES, kind_of
 from ppcway.builder.validate import (
     DESCRIPTIONS_LEAST,
     DESCRIPTIONS_WANTED,
@@ -45,6 +46,7 @@ from ppcway.builder.validate import (
     Refusal,
     Rules,
     check,
+    promised,
 )
 from ppcway.model.jobs import Job
 from ppcway.model.service import Models, ModelUnavailable
@@ -58,9 +60,12 @@ HOW_TO_WRITE: Final = """You write Google Search ad text for a small business. Y
 business actually does, and you may claim nothing beyond it.
 
 Rules you may not break:
-- Every claim must be supported by the business profile. If it does not say \
-the business is open 24 hours, you may not write that it is. The same for free \
-quotes, emergency callouts, years of experience and any accreditation.
+- Every claim must be supported by the business profile. Make only the \
+promises listed under "Promises they can make". Anything under "Promises they \
+cannot make", and any number of years or any accreditation the profile does \
+not give, will be refused.
+- Write for the kind of business given. Software is not sold like a repair \
+service, and a shop is not a consultancy.
 - No superlatives and no unverifiable claims: not "best", not "cheapest", not \
 "number one", not "guaranteed".
 - No exclamation marks. No words in capitals.
@@ -130,15 +135,19 @@ def _lines(text: str, *, most: int) -> list[str]:
 def _profile(business: Business) -> str:
     """The business, in the words the model is allowed to work from."""
     says = [f"Name: {business.name or 'not given'}"]
+    if business.kind:
+        says.append(f"Kind of business: {kind_of(business.kind).label}")
     if business.site_title:
         says.append(f"Their website's title: {business.site_title}")
     if business.services:
-        says.append(f"What they do: {', '.join(business.services)}")
+        says.append(f"What they sell: {', '.join(business.services)}")
     if business.places:
-        says.append(f"Where they work: {', '.join(business.places)}")
-    says.append(f"Open 24 hours: {'yes' if business.open_all_hours else 'no'}")
-    says.append(f"Free quotes: {'yes' if business.free_quotes else 'no'}")
-    says.append(f"Emergency callout: {'yes' if business.emergency_callout else 'no'}")
+        says.append(f"Where their customers are: {', '.join(business.places)}")
+    allowed = promised(business)
+    can = [one.short for one in PROMISES if one.id in allowed]
+    cannot = [one.short for one in PROMISES if one.id not in allowed]
+    says.append("Promises they can make: " + (", ".join(can) or "none"))
+    says.append("Promises they cannot make: " + (", ".join(cannot) or "none"))
     says.append(
         "Years trading: "
         + (str(business.years_trading) if business.years_trading is not None else "not given")

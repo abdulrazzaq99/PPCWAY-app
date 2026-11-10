@@ -198,7 +198,8 @@ def test_the_prompt_carries_the_business_profile() -> None:
     models = Saying(_fifteen())
     write_copy(models, business=ALPHA, theme="Emergency", keywords=["plumber"])
     asked = models.asked[0]["said"]
-    assert "Open 24 hours: yes" in asked
+    can = asked.split("Promises they can make:")[1].split("\n")[0]
+    assert "24/7 opening" in can, "a promise the profile makes is one it may write"
     assert "Accreditations: RGI" in asked
     assert "Years trading: 12" in asked
     system = models.asked[0]["system"]

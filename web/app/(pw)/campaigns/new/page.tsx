@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { NewCampaignForm } from "@/components/pw/campaign-builder";
+import { CampaignStepper } from "@/components/pw/campaign-stepper";
 import { Header, HeaderLink, PwPage } from "@/components/pw/shell";
 import type { Prefill } from "@/lib/builder";
 import { ask } from "@/lib/pw-fetch";
@@ -7,9 +7,10 @@ import { ask } from "@/lib/pw-fetch";
 export const metadata: Metadata = { title: "New campaign · PPCway" };
 
 /*
-  Start a new campaign (Figma 87:10926). The account's currency and the
-  business's own website and trade are filled in before anybody types; the
-  rest is the merchant's to say.
+  Start a new campaign, as a stepper that works for any kind of business
+  (`components/pw/campaign-stepper.tsx`). The account's currency, the kinds
+  of business and their promises, and the website the ads already use are
+  filled in before anybody types; the rest is the merchant's to say.
 */
 export default async function NewCampaignPage() {
   const [prefill, business] = await Promise.all([
@@ -24,11 +25,7 @@ export default async function NewCampaignPage() {
         right={<HeaderLink href="/campaigns">Back to campaigns</HeaderLink>}
       />
       <PwPage>
-        <p className="text-pw-ink-700 max-w-[720px] text-[15px] leading-[21px]">
-          Say what it should be about. PPCWay writes it from real searches and checks every word
-          against what you tell us. Nothing goes live until you approve it.
-        </p>
-        <NewCampaignForm
+        <CampaignStepper
           prefill={prefill}
           site={business.site ?? ""}
           trade={business.trade ?? ""}

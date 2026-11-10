@@ -124,7 +124,7 @@ def test_a_claim_the_profile_does_not_support_is_refused(text: str) -> None:
     """The stage a word list cannot do. Plausible, and untrue."""
     said = _one(text, business=NINE_TO_FIVE)
     assert said.refused[0].stage is Stage.FACTUAL
-    assert "the business profile does not support" in said.refused[0].because
+    assert "was not ticked as true for this business" in said.refused[0].because
 
 
 def test_the_same_claim_passes_for_a_business_that_made_it() -> None:

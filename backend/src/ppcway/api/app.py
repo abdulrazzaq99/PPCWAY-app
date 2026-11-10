@@ -2182,19 +2182,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session: Annotated[Session, Depends(get_session)],
         x_session_token: Annotated[str | None, Header()] = None,
     ) -> dict[str, Any]:
-        """What the new-campaign form can fill in before anybody types."""
+        """What the new-campaign form can fill in before anybody types.
+
+        With the kinds of business and the promises each can make, so the
+        screen asks a shop about shipping and a software product about trials
+        from the same list the copy checks police (`builder.kinds`).
+        """
+        from ppcway.builder.kinds import catalogue
+
         account = _signed_in(session, x_session_token)
         place = _home(session, account)
         connection = _connection(session, account)
         if connection is None or not connection.customer_id:
-            return {"connected": False}
+            return {"connected": False, **catalogue()}
         return {
             "connected": True,
             "currency": connection.currency,
             "account_name": connection.customer_name,
             "business_name": place.name,
             "may_launch": may(session, account, place, "approve"),
+            **catalogue(),
         }
+
+    @app.get("/v1/campaigns/site")
+    def builder_site(
+        session: Annotated[Session, Depends(get_session)],
+        url: str = "",
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """The name and title a landing page gives itself, as the ads will use them.
+
+        Read through the audit's crawler, which refuses private addresses, so
+        the screen can say "the ads will be written for PDFezy" while the
+        merchant is still typing. An unreadable page answers with nothing,
+        and the screen says the account's name will be used instead.
+        """
+        from ppcway.builder.site import read_site
+
+        _builder_connection(session, x_session_token, "propose")
+        address = url.strip()
+        if not address.startswith(("http://", "https://")) or len(address) > 2000:
+            raise HTTPException(422, "Give the page as an address starting with https://.")
+        site = read_site(address)
+        return {"name": site.name, "title": site.title}
 
     @app.get("/v1/campaigns/places")
     def builder_places(
@@ -2269,6 +2299,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from ppcway.ads.planner import ideas_for
         from ppcway.builder.build import build_plan
         from ppcway.builder.campaign import BIDDING, MOST_THEMES, Place
+        from ppcway.builder.kinds import LEGACY, kind_of, known_promises
         from ppcway.builder.models import CampaignDraft
         from ppcway.builder.site import own_name_or_not, read_site
         from ppcway.builder.validate import Business
@@ -2308,7 +2339,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(422, "Give the page people land on, starting with https://.")
 
         claims = body.get("claims") or {}
-        years = claims.get("years_trading")
+        # The kind of business and the promises ticked as true. The first
+        # builder sent three booleans under `claims`; they still count.
+        kind = kind_of(body.get("kind"))
+        promises = set(known_promises(body.get("promises")))
+        for flag, ids in LEGACY.items():
+            if claims.get(flag):
+                promises.update(ids)
+        ticked = known_promises(sorted(promises))
+        years = body.get("years_trading", claims.get("years_trading"))
         # Whose ads these are: the landing page's own name first, then the
         # business's PPCWay name if somebody chose it, then the Google Ads
         # account's. Never a person's own name, which is what a business made
@@ -2329,10 +2368,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             site_title=site.title,
             services=tuple(themes),
             places=tuple(p.name for p in places),
-            open_all_hours=bool(claims.get("open_all_hours")),
-            free_quotes=bool(claims.get("free_quotes")),
-            emergency_callout=bool(claims.get("emergency_callout")),
-            years_trading=int(years) if isinstance(years, int) and years > 0 else None,
+            kind=kind.id,
+            promises=ticked,
+            years_trading=int(years) if isinstance(years, int) and 0 < years < 200 else None,
             brand_words=tuple(
                 dict.fromkeys(w for w in (site.name, chosen, connection.customer_name) if w)
             ),
