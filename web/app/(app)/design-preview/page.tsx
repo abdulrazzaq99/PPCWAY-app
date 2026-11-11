@@ -3,6 +3,7 @@ import { DraftReview } from "@/components/pw/campaign-builder";
 import { CampaignStepper, type StepperStart } from "@/components/pw/campaign-stepper";
 import { CampaignDetail, type Detail, type Suggestions } from "@/components/pw/campaign-detail";
 import { CampaignList } from "@/components/pw/campaigns";
+import LoadingNewCampaign from "@/app/(pw)/campaigns/new/loading";
 import { Report } from "@/components/pw/report";
 import { ReportPaper } from "@/components/pw/report-paper";
 import { Team } from "@/components/pw/team";
@@ -1463,6 +1464,18 @@ export default async function Preview({
               }}
             />
           </PwPage>
+        </div>
+      );
+    case "new-campaign-loading":
+      return (
+        <div className="bg-pw-ground text-pw-ink flex min-h-dvh">
+          <div
+            aria-hidden
+            className="border-pw-border bg-pw-card hidden w-[252px] shrink-0 border-r lg:block"
+          />
+          <div className="min-w-0 flex-1">
+            <LoadingNewCampaign />
+          </div>
         </div>
       );
     case "new-campaign":

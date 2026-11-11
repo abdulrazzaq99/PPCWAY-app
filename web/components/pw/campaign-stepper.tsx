@@ -6,6 +6,7 @@ import {
   ArrowRightIcon,
   BriefcaseIcon,
   CheckIcon,
+  CircleNotchIcon,
   ShoppingBagIcon,
   SparkleIcon,
   StorefrontIcon,
@@ -398,6 +399,8 @@ export function CampaignStepper({
                   ) : null}
                 </div>
               </>
+            ) : working ? (
+              <Writing />
             ) : (
               <CheckStep trouble={trouble} />
             )}
@@ -436,10 +439,26 @@ export function CampaignStepper({
               </div>
             ) : (
               <div className="flex flex-wrap items-center justify-end gap-3">
-                <p className="text-pw-ink-500 text-[13px] leading-[18px]">
-                  {working ? "This takes up to a minute." : "It takes about a minute."}
-                </p>
-                <Button onClick={write} disabled={working}>
+                {working ? null : (
+                  <p className="text-pw-ink-500 text-[13px] leading-[18px]">
+                    It takes about a minute.
+                  </p>
+                )}
+                <Button
+                  onClick={write}
+                  disabled={working}
+                  aria-busy={working}
+                  // Busy, not unavailable: it stays blue while Otto writes.
+                  className={working ? "disabled:bg-pw-blue! disabled:text-white!" : ""}
+                >
+                  {working ? (
+                    <CircleNotchIcon
+                      size={16}
+                      weight="bold"
+                      aria-hidden
+                      className="animate-spin motion-reduce:animate-none"
+                    />
+                  ) : null}
                   {working ? "Writing your campaign…" : "Write my campaign"}
                   {working ? null : <ArrowRightIcon size={16} weight="bold" aria-hidden />}
                 </Button>
@@ -799,6 +818,83 @@ function BudgetStep({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/*
+  While Otto writes. It takes up to a minute, and a button that only changes
+  its words for a minute looks broken. This says what is happening, counts the
+  seconds, and says so plainly when it runs long, without pretending to know
+  how far along it is: the backend sends no progress, so there is no bar
+  filling up to a made-up percentage.
+*/
+const WRITING = [
+  ["Reading your website", "Its name and title, so the ads carry your business's own name."],
+  [
+    "Asking Google what people search for",
+    "Real searches from Keyword Planner, never invented ones.",
+  ],
+  ["Writing the ads", "Headlines and descriptions for each group of searches, in your words."],
+  ["Checking every line", "Length, honesty against what you ticked, and no other company's name."],
+] as const;
+
+function Writing() {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const tick = window.setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => window.clearInterval(tick);
+  }, []);
+  const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  const note =
+    seconds >= 120
+      ? "This is taking much longer than usual. You can keep waiting, or go back and try again: nothing has been sent to Google."
+      : seconds >= 60
+        ? "Still writing. A long website or many services takes a little longer. Nothing has been sent to Google."
+        : "This takes up to a minute. You can leave this page open and look at the preview meanwhile.";
+  return (
+    <div role="status" aria-live="polite">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <CircleNotchIcon
+            size={22}
+            weight="bold"
+            aria-hidden
+            className="text-pw-blue shrink-0 animate-spin motion-reduce:animate-none"
+          />
+          <h2 className="text-[22px] leading-[28px] font-semibold tracking-[-0.01em]">
+            Otto is writing your campaign
+          </h2>
+        </div>
+        <span
+          className="pw-num text-pw-ink-500 pt-1 text-[14px] leading-[20px]"
+          aria-label={`${seconds} seconds so far`}
+        >
+          {clock}
+        </span>
+      </div>
+      <div className="bg-pw-blue-tint relative mt-5 h-[5px] overflow-hidden rounded-full">
+        <span className="pw-indeterminate bg-pw-blue absolute inset-y-0 left-0 w-1/3 rounded-full" />
+      </div>
+      <p className="text-pw-ink-600 mt-4 max-w-[620px] text-[14px] leading-[21px]">{note}</p>
+      <ol className="mt-6 flex flex-col gap-4">
+        {WRITING.map(([title, meta]) => (
+          <li key={title} className="flex gap-3">
+            <span
+              aria-hidden
+              className="bg-pw-blue-tint text-pw-blue mt-[2px] flex size-[18px] shrink-0 items-center justify-center rounded-full"
+            >
+              <span className="bg-pw-blue size-[6px] rounded-full" />
+            </span>
+            <span>
+              <span className="block text-[15px] leading-[20px] font-semibold">{title}</span>
+              <span className="text-pw-ink-500 mt-[2px] block text-[14px] leading-[20px]">
+                {meta}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
