@@ -52,8 +52,9 @@ export function Team({ org }: { org: Org }) {
   const [naming, setNaming] = useState(false);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("member");
-  const [link, setLink] = useState("");
-  const [posted, setPosted] = useState(false);
+  // What happened to the last invitation: emailed to `to`, or, when the email
+  // could not go, the link for the owner to pass on themselves.
+  const [sent, setSent] = useState<{ to: string; link?: string } | null>(null);
   const [trouble, setTrouble] = useState("");
   const [busy, setBusy] = useState(false);
   const mayInvite = org.can.includes("invite");
@@ -61,7 +62,7 @@ export function Team({ org }: { org: Org }) {
   async function send() {
     setBusy(true);
     setTrouble("");
-    setLink("");
+    setSent(null);
     try {
       const res = await fetch("/api/org/invite", {
         method: "POST",
@@ -69,17 +70,16 @@ export function Team({ org }: { org: Org }) {
         body: JSON.stringify({ email, role }),
       });
       const said = (await res.json().catch(() => ({}))) as {
-        token?: string;
+        email?: string;
         link?: string;
         emailed?: boolean;
         error?: string;
       };
-      if (!res.ok || !said.token) {
+      if (!res.ok || (!said.emailed && !said.link)) {
         setTrouble(said.error ?? "That invitation could not be made.");
         return;
       }
-      setPosted(Boolean(said.emailed));
-      setLink(said.link ?? `${window.location.origin}/invite?token=${said.token}`);
+      setSent({ to: said.email ?? email, link: said.emailed ? undefined : said.link });
       setEmail("");
       router.refresh();
     } catch {
@@ -235,7 +235,7 @@ export function Team({ org }: { org: Org }) {
               disabled={busy || !email.trim()}
               className="bg-pw-blue hover:bg-pw-blue-hover h-[44px] rounded-[12px] px-4 text-[15px] font-semibold text-white disabled:opacity-60"
             >
-              {busy ? "Making the link…" : "Invite"}
+              {busy ? "Sending…" : "Invite"}
             </button>
           </div>
 
@@ -249,14 +249,24 @@ export function Team({ org }: { org: Org }) {
             </p>
           ) : null}
 
-          {link ? (
-            <div className="border-pw-blue-tint bg-pw-blue-tint mt-4 rounded-[12px] border p-4">
+          {sent ? (
+            <div
+              className="border-pw-blue-tint bg-pw-blue-tint mt-4 rounded-[12px] border p-4"
+              role="status"
+            >
               <p className="text-pw-blue-ink text-[14px] leading-[21px] font-semibold">
-                {posted
-                  ? "Sent. It works once, for that address, for fourteen days."
-                  : "Email is not set up yet, so pass this link on yourself. It works once, for that address, for fourteen days."}
+                {sent.link
+                  ? `We could not email ${sent.to}, so pass this link on yourself.`
+                  : `Invitation emailed to ${sent.to}.`}
               </p>
-              <p className="text-pw-ink-700 mt-2 text-[13px] break-all">{link}</p>
+              <p className="text-pw-ink-700 mt-1 text-[13px] leading-[19px]">
+                {sent.link
+                  ? "It works once, for that address, for fourteen days."
+                  : "They will get an email from PPCway with a button to join. It works once, for that address, for fourteen days."}
+              </p>
+              {sent.link ? (
+                <p className="text-pw-ink-700 mt-2 text-[13px] break-all">{sent.link}</p>
+              ) : null}
             </div>
           ) : null}
         </PwCard>

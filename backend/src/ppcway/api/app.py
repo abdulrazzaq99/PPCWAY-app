@@ -840,11 +840,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session: Annotated[Session, Depends(get_session)],
         x_session_token: Annotated[str | None, Header()] = None,
     ) -> dict[str, object]:
-        """Ask somebody to join, and post it to them.
+        """Ask somebody to join, and email it to them through Resend.
 
-        The link comes back as well as going out, because an owner whose email is
-        not set up yet, or whose invitee never receives it, still has to be able
-        to pass it on. It is shown once and not stored.
+        The link comes back only when the email could not go: then the owner has
+        to pass it on themselves, and it is shown once and not stored. When the
+        email went, the link stays in the invitee's inbox and nowhere else, so it
+        cannot be copied out of the inviter's screen.
         """
         account = _signed_in(session, x_session_token)
         place = _home(session, account)
@@ -875,13 +876,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except NotSent as exc:
             # The invitation exists either way; the owner can pass the link on.
             log.warning("invitation to %s not sent: %s", place.id, exc)
-        return {
-            "token": token,
+        said: dict[str, object] = {
             "email": str(body.email),
             "role": role.value,
-            "link": link,
             "emailed": posted,
         }
+        if not posted:
+            said["link"] = link
+        return said
 
     @app.post("/v1/org/accept", response_model=OrgOut)
     def accept_invite(
