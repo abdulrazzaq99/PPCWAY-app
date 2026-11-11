@@ -652,3 +652,12 @@ select:disabled {
   --color-ad-mark-open: var(--ad-mark-open);
   --color-ad-mark-refused: var(--ad-mark-refused);
 }
+
+/* On paper the page is white: the desk colour behind the app must not print
+   as a band under the last sheet. */
+@media print {
+  html,
+  body {
+    background: #fff;
+  }
+}

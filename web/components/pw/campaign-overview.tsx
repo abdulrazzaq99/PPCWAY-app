@@ -1,5 +1,6 @@
 import type { AdsDay, AdsNeed, AdsRow, AdsSummary } from "@/lib/ads";
 import { cn } from "@/lib/cn";
+import { moneyOf } from "@/lib/money";
 import { learning } from "@/lib/when";
 
 /*
@@ -27,11 +28,7 @@ import { learning } from "@/lib/when";
 const RAMP = ["#2f5bea", "#7d97f0", "#b9c6f2", "#dde4fb", "#c7ccd4", "#e4e7ec"];
 const INK_ON = ["#ffffff", "#ffffff", "#1e3a8a", "#1e3a8a", "#374151", "#374151"];
 
-export function moneyOf(amount: number, currency = ""): string {
-  const sign = !currency || currency === "CAD" || currency === "USD" ? "$" : "";
-  const tail = sign ? "" : ` ${currency}`;
-  return `${sign}${amount.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${tail}`;
-}
+export { moneyOf };
 
 function shortName(name: string, most = 34): string {
   return name.length > most ? `${name.slice(0, most - 1).trimEnd()}…` : name;

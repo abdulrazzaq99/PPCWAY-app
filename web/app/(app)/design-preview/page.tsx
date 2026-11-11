@@ -3,10 +3,13 @@ import { DraftReview } from "@/components/pw/campaign-builder";
 import { CampaignStepper, type StepperStart } from "@/components/pw/campaign-stepper";
 import { CampaignDetail, type Detail, type Suggestions } from "@/components/pw/campaign-detail";
 import { CampaignList } from "@/components/pw/campaigns";
+import { Report } from "@/components/pw/report";
+import { ReportPaper } from "@/components/pw/report-paper";
 import { Team } from "@/components/pw/team";
 import { Header, HeaderLink, PwPage } from "@/components/pw/shell";
 import type { AdsDay, AdsSummary } from "@/lib/ads";
 import type { Draft, Prefill } from "@/lib/builder";
+import type { ReportSaid } from "@/lib/reports";
 import {
   AdminErrors,
   AdminJobs,
@@ -1176,6 +1179,213 @@ const BUILT: Draft = {
   },
 };
 
+/* ---------- the report, with figures shaped like PDFezy's ---------- */
+
+// Sample data for measuring the design: thirty days ending 10 Nov.
+const REPORT_LEADS = [
+  9, 11, 8, 12, 10, 6, 5, 9, 12, 13, 11, 10, 7, 6, 10, 12, 14, 11, 9, 5, 4, 11, 13, 15, 12, 10, 6,
+  7, 14, 10,
+];
+const REPORT_COST = [
+  7.8, 8.4, 7.1, 9.2, 8.8, 5.6, 4.9, 8.1, 9.4, 9.9, 9.1, 8.6, 6.2, 5.8, 8.9, 9.6, 10.4, 9.0, 8.2,
+  4.7, 4.1, 9.3, 10.1, 11.2, 9.8, 8.7, 5.9, 6.4, 10.6, 8.9,
+];
+const REPORT_SERIES: AdsDay[] = REPORT_LEADS.map((leads, i) => {
+  const at = new Date(Date.UTC(2026, 9, 12 + i, 12));
+  return {
+    date: at.toISOString().slice(0, 10),
+    calls: 0,
+    forms: leads,
+    leads,
+    cost: REPORT_COST[i],
+    clicks: Math.round(leads * 2.1),
+    impressions: Math.round(leads * 38),
+  };
+});
+
+const REPORT: ReportSaid = {
+  read: true,
+  currency: "USD",
+  days: 30,
+  held_days: 74,
+  starts_on: "2026-10-12",
+  ends_on: "2026-11-10",
+  business: "PDFezy",
+  customer_id: "2580586343",
+  looked_at: new Date(Date.now() - 14 * 60_000).toISOString(),
+  year_held: false,
+  sentence: "You spent $246.70 and it brought 307 enquiries, which is $0.80 each.",
+  figures: [
+    {
+      key: "leads",
+      label: "Leads",
+      kind: "count",
+      value: 307,
+      before: 271,
+      year_ago: null,
+      change: 13.3,
+      verdict: "normal",
+      words: "The number moved, but not by more than two periods of this size normally differ.",
+      test: "two Poisson counts",
+    },
+    {
+      key: "cost_per_lead",
+      label: "Cost per lead",
+      kind: "money",
+      value: 0.8,
+      before: 0.86,
+      year_ago: null,
+      change: -7,
+      verdict: "normal",
+      words: "Within the normal range.",
+      test: "two Poisson counts",
+    },
+    {
+      key: "cost",
+      label: "Spend",
+      kind: "money",
+      value: 246.7,
+      before: 233.1,
+      year_ago: null,
+      change: 5.8,
+      verdict: "none",
+      words: "Spend is a decision, not a measurement, so it gets no verdict.",
+      test: "",
+    },
+    {
+      key: "lead_rate",
+      label: "Lead rate",
+      kind: "rate",
+      value: 47.6,
+      before: 51.2,
+      year_ago: null,
+      change: -7,
+      verdict: "real",
+      words: "A real change.",
+      test: "a two-proportion test",
+    },
+    {
+      key: "clicks",
+      label: "Clicks",
+      kind: "count",
+      value: 645,
+      before: 529,
+      year_ago: null,
+      change: 21.9,
+      verdict: "none",
+      words: "How many people clicked, for context rather than judgement.",
+      test: "",
+    },
+    {
+      key: "click_rate",
+      label: "Click rate",
+      kind: "rate",
+      value: 5.5,
+      before: null,
+      year_ago: null,
+      change: null,
+      verdict: "none",
+      words: "Of the people shown your ad, the share who clicked it.",
+      test: "",
+    },
+  ],
+  campaigns: [
+    {
+      campaign_id: "12",
+      name: "PDFezy | Search",
+      status: "ENABLED",
+      budget: 20,
+      leads: 262,
+      cost: 104.8,
+      cost_per_lead: 0.4,
+    },
+    {
+      campaign_id: "11",
+      name: "pdfezy",
+      status: "ENABLED",
+      budget: 5,
+      leads: 42,
+      cost: 112.98,
+      cost_per_lead: 2.69,
+    },
+    {
+      campaign_id: "13",
+      name: "ai pdf tools",
+      status: "ENABLED",
+      budget: 20,
+      leads: 3,
+      cost: 28.92,
+      cost_per_lead: 9.64,
+    },
+  ],
+  series: REPORT_SERIES,
+  changes: [
+    {
+      id: "c1",
+      status: "applied",
+      title: "Stop paying for a search that brings nobody",
+      target: { kind: "search_term", id: "a", label: "pdf to jpg converter offline" },
+      words: "Made on 7 Nov. It can be undone until 7 Dec.",
+      approved_at: "2026-11-07T10:02:00Z",
+      applied_at: "2026-11-07T10:03:00Z",
+      reverted_at: null,
+    },
+    {
+      id: "c2",
+      status: "applied",
+      title: "Lower the budget of a campaign whose leads cost far more",
+      target: { kind: "campaign", id: "11", label: "pdfezy" },
+      words: "The daily budget of pdfezy is now 4.00. It can be undone until 4 Dec.",
+      approved_at: "2026-11-04T09:12:00Z",
+      applied_at: "2026-11-04T09:13:00Z",
+      reverted_at: null,
+    },
+    {
+      id: "c3",
+      status: "reverted",
+      title: "Stop paying for a search that brings nobody",
+      target: { kind: "search_term", id: "b", label: "free pdf editor" },
+      words: "Made on 29 Oct and undone by you on 30 Oct.",
+      approved_at: "2026-10-29T15:40:00Z",
+      applied_at: "2026-10-29T15:41:00Z",
+      reverted_at: "2026-10-30T08:00:00Z",
+    },
+  ],
+  changes_in_all: 3,
+  definitions: [
+    {
+      term: "Lead",
+      what: "Somebody who called you or sent a form, as counted by Google's conversion tracking. If that tracking is not set up, this number is zero however many times your phone rang.",
+    },
+    {
+      term: "Cost per lead",
+      what: "What you spent in the period divided by the leads it brought.",
+    },
+    {
+      term: "Lead rate",
+      what: "Of the people who clicked your ad, the share who then called or sent a form.",
+    },
+    { term: "Click rate", what: "Of the people who were shown your ad, the share who clicked it." },
+    {
+      term: "A real change",
+      what: "The difference is bigger than the ordinary wobble between two periods of this size: it would happen by chance less than about one time in twenty. It is worth looking into.",
+    },
+    {
+      term: "Within the normal range",
+      what: "The number moved, but not by more than two periods of this size normally differ. Nothing has been proved either way, and acting on it is guesswork.",
+    },
+    {
+      term: "Too little data to tell",
+      what: "There were not enough leads or clicks in the two periods for any comparison to mean anything. More time, not more analysis, is what this needs.",
+    },
+    {
+      term: "Why spend has no verdict",
+      what: "Spend is a decision you made, not a measurement with noise in it. Asking whether a budget change is statistically significant answers a question nobody asked.",
+    },
+  ],
+  shares: [],
+};
+
 export default async function Preview({
   searchParams,
 }: {
@@ -1188,6 +1398,38 @@ export default async function Preview({
 
   switch (screen) {
     // The campaign builder, in the merchant portal's own skin.
+    case "report":
+      return (
+        <div className="bg-pw-ground text-pw-ink flex min-h-dvh">
+          <div
+            aria-hidden
+            className="border-pw-border bg-pw-card hidden w-[252px] shrink-0 border-r lg:block"
+          />
+          <div className="min-w-0 flex-1">
+            <Header
+              eyebrow="PDFezy, 12 Oct to 10 Nov 2026"
+              title="Reports"
+              right={<HeaderLink href="/reports/pdf">Download PDF</HeaderLink>}
+            />
+            <PwPage>
+              <Report
+                said={state === "empty" ? { ...REPORT, changes: [], changes_in_all: 0 } : REPORT}
+                share={<span className="text-pw-ink-500 text-[14px]">(share controls)</span>}
+              />
+            </PwPage>
+          </div>
+        </div>
+      );
+    case "report-paper":
+      return (
+        <div className="bg-pw-ground min-h-dvh px-4 py-8 print:bg-white print:p-0">
+          <div className="mx-auto max-w-[794px] shadow-[0_1px_3px_rgba(21,17,42,0.08),0_12px_32px_-12px_rgba(21,17,42,0.12)] print:max-w-none print:shadow-none">
+            <ReportPaper
+              said={state === "empty" ? { ...REPORT, changes: [], changes_in_all: 0 } : REPORT}
+            />
+          </div>
+        </div>
+      );
     case "team":
       // Settings' people and invitations: the role dropdowns are the thing to see.
       return (

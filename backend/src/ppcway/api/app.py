@@ -10,16 +10,18 @@ import logging
 import re
 from collections.abc import Iterator
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from hmac import compare_digest
+from html import escape
 from json import dumps as json_dumps
 from pathlib import Path
 from typing import Annotated, Any
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -126,7 +128,7 @@ from ppcway.org.places import (
     remove,
     role_of,
 )
-from ppcway.rules.offered import inbox_for
+from ppcway.rules.offered import changes_between, inbox_for
 from ppcway.share.links import make_link, open_link, revoke
 from ppcway.share.models import ShareLink
 
@@ -2710,6 +2712,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         answer = report.as_dict()
         answer["business"] = connection.customer_name
+        if report.read:
+            changes, in_all = changes_between(
+                session,
+                organization_id=_home(session, account).id,
+                starts_on=date.fromisoformat(report.starts_on),
+                ends_on=date.fromisoformat(report.ends_on),
+            )
+            answer["changes"] = changes
+            answer["changes_in_all"] = in_all
         answer["shares"] = [
             {
                 "id": str(link.id),
@@ -2726,6 +2737,56 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         ]
         return answer
+
+    @app.get("/v1/reports/pdf")
+    def report_paper(
+        session: Annotated[Session, Depends(get_session)],
+        days: int = 30,
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> Response:
+        """The report as a PDF, printed the moment it is asked for.
+
+        Printed, never kept: a stored copy would be out of date by the next
+        sync, and the point of downloading it is to have today's figures. It
+        prints the report's own A4 page in the web app, signed in as the person
+        asking, so the PDF is exactly what that page shows them and reads
+        nothing they could not read themselves.
+        """
+        account = _signed_in(session, x_session_token)
+        connection = _connection(session, account)
+        if connection is None or not connection.customer_id:
+            raise HTTPException(404, "No Google Ads account is connected yet.")
+        window = days if days in (7, 30, 90) else 30
+        report = report_for(
+            session, connection.customer_id, days=window, currency=connection.currency
+        )
+        if not report.read:
+            raise HTTPException(409, report.trouble or "There is nothing to report yet.")
+        business = connection.customer_name or "Google Ads"
+        period = period_words(report.starts_on, report.ends_on)
+        base = settings.app_base_url.rstrip("/")
+        try:
+            made = to_pdf(
+                f"{base}/reports/pdf?days={window}",
+                session_cookie=(WEB_SESSION_COOKIE, x_session_token or ""),
+                footer=_report_footer(business, period),
+                margin={"top": "12mm", "bottom": "16mm", "left": "0mm", "right": "0mm"},
+            )
+        except NotPrinted as exc:
+            log.warning("report for %s would not print: %s", connection.customer_id, exc)
+            raise HTTPException(503, "The report could not be made into a PDF just now.") from exc
+        name = f"PPCWay report - {file_name(business)} - {period}.pdf"
+        return Response(
+            content=made,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{name.encode("ascii", "replace").decode()}"; '
+                    f"filename*=UTF-8''{quote(name)}"
+                ),
+                "Cache-Control": "no-store",
+            },
+        )
 
     @app.post("/v1/reports/share", response_model=ShareOut, status_code=201)
     def share_report(
@@ -4162,6 +4223,30 @@ def _kind_of(run_id: UUID, factory: sessionmaker[Session]) -> Kind:
         return Kind(named)
     except ValueError:
         return Kind.OTHER
+
+
+#: The web app's session cookie, as `web/lib/session.ts` names it. The printed
+#: report is drawn by the web app for whoever holds it.
+WEB_SESSION_COOKIE = "ppcway_session"
+
+
+def period_words(starts_on: str, ends_on: str) -> str:
+    """'12 Oct to 10 Nov 2026', with the first year only when the years differ."""
+    starts, ends = date.fromisoformat(starts_on), date.fromisoformat(ends_on)
+    first = f"{starts.day} {starts:%b}" + ("" if starts.year == ends.year else f" {starts.year}")
+    return f"{first} to {ends.day} {ends:%b} {ends.year}"
+
+
+def _report_footer(business: str, period: str) -> str:
+    """Chromium's footer for every sheet: whose report, which dates, which page."""
+    return (
+        '<div style="width:100%;padding:0 16mm;display:flex;justify-content:space-between;'
+        "font-family:Inter,'Helvetica Neue',Arial,sans-serif;font-size:7.5pt;color:#7a7590;"
+        '-webkit-print-color-adjust:exact">'
+        f"<span>{escape(business)} &middot; Google Ads report, {escape(period)}</span>"
+        '<span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>'
+        "</div>"
+    )
 
 
 def _mailer(settings: Settings) -> Post:

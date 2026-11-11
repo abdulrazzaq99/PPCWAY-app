@@ -111,7 +111,7 @@ DEFINITIONS: list[dict[str, str]] = [
         "term": "A real change",
         "what": (
             "The difference is bigger than the ordinary wobble between two periods of this "
-            "size — it would happen by chance less than about one time in twenty. It is "
+            "size: it would happen by chance less than about one time in twenty. It is "
             "worth looking into."
         ),
     },
@@ -198,7 +198,7 @@ def _sentence(held: Held) -> str:
     if held.cost:
         return (
             f"You spent {money} and Google counted no enquiries at all. Either nobody "
-            "called, or the tracking that counts calls and forms is not set up — the "
+            "called, or the tracking that counts calls and forms is not set up. The "
             "website audit checks that, and it is the first thing to fix."
         )
     return "Nothing was spent in this period, so there is nothing to report."

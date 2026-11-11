@@ -29,7 +29,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Final
 from uuid import UUID
 
@@ -360,6 +360,64 @@ def recent_changes(
         for row, campaigns in zip(candidates, where, strict=True)
         if not campaign_id or campaign_id in campaigns
     ][:MOST_CHANGES]
+    return _listed(session, kept, at, waiting_because)
+
+
+#: The most changes a report lists. A quarter at the weekly cap is about 130,
+#: and no report should be a ledger; past this it says how many more there are.
+MOST_IN_A_REPORT: Final = 60
+
+
+def changes_between(
+    session: Session,
+    *,
+    organization_id: UUID,
+    starts_on: date,
+    ends_on: date,
+    now: datetime | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """The changes this business said yes to inside a report's dates, newest first.
+
+    A change belongs to the day it was made in Google Ads, or, if it never was,
+    the day somebody approved it, or the day it was offered. Returns the list
+    and how many there were in all, so a report that stops at the cap can say
+    so instead of looking complete.
+    """
+    at = now or datetime.now(UTC)
+    when = func.coalesce(
+        OptimizationAction.applied_at,
+        OptimizationAction.approved_at,
+        OptimizationAction.created_at,
+    )
+    starts = datetime.combine(starts_on, time.min, tzinfo=UTC)
+    ends = datetime.combine(ends_on + timedelta(days=1), time.min, tzinfo=UTC)
+    candidates = [
+        row
+        for row in session.scalars(
+            select(OptimizationAction)
+            .where(
+                OptimizationAction.organization_id == organization_id,
+                OptimizationAction.undo_of.is_(None),
+                OptimizationAction.status.in_(AFTER_YES),
+                when >= starts,
+                when < ends,
+            )
+            .order_by(when.desc())
+        )
+        if row.status != Status.REJECTED.value or _stopped_after_yes(row)
+    ]
+    shown = candidates[:MOST_IN_A_REPORT]
+    where = campaigns_of(session, [row.payload for row in shown])
+    return _listed(session, list(zip(shown, where, strict=True)), at, ""), len(candidates)
+
+
+def _listed(
+    session: Session,
+    kept: list[tuple[OptimizationAction, tuple[str, ...]]],
+    at: datetime,
+    waiting_because: str,
+) -> list[dict[str, Any]]:
+    """Each change in words, with where it stands and the campaigns it touched."""
     rows = [row for row, _ in kept]
     if not rows:
         return []

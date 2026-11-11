@@ -85,7 +85,9 @@ category (89:14503), platform (87:9316), closed (89:14556).
 
 ## Report PDF (3)
 
-`/reports/pdf?page=` 1 (87:9442), agency (87:9560), 2 (87:9493).
+`/reports/pdf?days=` page 1 (87:9442) and page 2 (87:9493), drawn with the signed-in
+account's real figures since 11 November; the backend prints this page for "Download PDF".
+The agency variant (87:9560) waits for agency accounts and has no route yet.
 
 ## Mobile (11)
 

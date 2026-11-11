@@ -24,6 +24,19 @@ export type Definition = { term: string; what: string };
 
 export type Share = { id: string; expires_at: string; opened: number; sent_to: string };
 
+/** One change PPCWay made, in the inbox's own words. */
+export type ReportChange = {
+  id: string;
+  /** approved, applied, failed, reverted, or rejected after a yes. */
+  status: string;
+  title: string;
+  target: { kind: string; id: string; label: string };
+  words: string;
+  approved_at: string | null;
+  applied_at: string | null;
+  reverted_at: string | null;
+};
+
 export type ReportSaid = {
   read: boolean;
   trouble?: string;
@@ -45,4 +58,11 @@ export type ReportSaid = {
   shared?: boolean;
   expires_at?: string;
   shares?: Share[];
+  /** What PPCWay changed inside these dates, newest first. */
+  changes?: ReportChange[];
+  /** How many there were, when the list stops short of all of them. */
+  changes_in_all?: number;
+  customer_id?: string;
+  /** Set by the page when the service could not be reached at all. */
+  unreachable?: boolean;
 };
