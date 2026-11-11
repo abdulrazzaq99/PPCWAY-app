@@ -118,7 +118,7 @@ export function ReportPaper({ said }: { said: ReportSaid }) {
                     {Math.round(row.leads) === 1 ? "lead" : "leads"} for{" "}
                     {moneyOf(row.cost, currency)}
                     {row.leads > 0 ? `, ${moneyOf(row.cost_per_lead, currency)} a lead` : ""}
-                    {row.gone ? ", no longer running" : ""}
+                    {row.gone ? ", deleted in Google Ads" : ""}
                   </span>
                 </span>
                 <span className="flex flex-col gap-1">

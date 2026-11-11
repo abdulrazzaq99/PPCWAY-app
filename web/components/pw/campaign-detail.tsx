@@ -8,6 +8,7 @@ import { Chip, PwCard, Tile, Tiles } from "@/components/pw/shell";
 import type { AdsDay } from "@/lib/ads";
 import { cn } from "@/lib/cn";
 import type { Inbox } from "@/lib/otto";
+import { dayMonth } from "@/lib/report-view";
 import { LEARNING_DAYS, ago, learning } from "@/lib/when";
 
 /*
@@ -44,6 +45,10 @@ type Ad = {
   descriptions?: string[];
   final_urls?: string[];
   approval: string;
+  /** Where Google's review stands. */
+  review?: string;
+  /** Google's verdict and review, in words; "refused" only for a real disapproval. */
+  standing?: { key: string; label: string; words: string };
   status: string;
   impressions: number;
   clicks: number;
@@ -78,6 +83,7 @@ export type Detail = {
   impression_share: number;
   starts_at?: string;
   gone?: boolean;
+  gone_on?: string;
   series?: AdsDay[];
   keywords: Keyword[];
   terms: Term[];
@@ -124,7 +130,7 @@ export function CampaignDetail({
   const cards = suggestions?.inbox?.cards ?? [];
   const worth = cards.reduce((sum, card) => sum + (card.impact.money_a_month || 0), 0);
   const live = detail.metrics_read !== false;
-  const day = learning(detail.starts_at);
+  const day = detail.gone ? 0 : learning(detail.starts_at);
 
   if (!detail.read) {
     return (
@@ -146,19 +152,23 @@ export function CampaignDetail({
         <div className="min-w-0">
           <h2 className="display flex flex-wrap items-center gap-3 text-[22px] leading-[28px] font-semibold">
             {detail.name}
-            <Chip tone={detail.status === "ENABLED" ? "good" : "neutral"}>
-              {detail.status === "ENABLED" ? "Active" : "Paused"}
-            </Chip>
+            {detail.gone ? (
+              <Chip tone="neutral">Deleted</Chip>
+            ) : (
+              <Chip tone={detail.status === "ENABLED" ? "good" : "neutral"}>
+                {detail.status === "ENABLED" ? "Active" : "Paused"}
+              </Chip>
+            )}
             {day ? (
               <Chip tone="info">
                 Learning · day {day} of {LEARNING_DAYS}
               </Chip>
             ) : null}
-            {detail.gone ? <Chip tone="neutral">No longer in the account</Chip> : null}
           </h2>
           <p className="text-pw-ink-500 mt-1 text-[14px]">
-            {detail.budget ? `${money(detail.budget, c)} a day` : "No daily budget set"} · last{" "}
-            {detail.days} days
+            {detail.gone
+              ? `Deleted in Google Ads${detail.gone_on ? ` on ${dayMonth(detail.gone_on)}` : ""}. Its figures stay here for the days it spent money in.`
+              : `${detail.budget ? `${money(detail.budget, c)} a day` : "No daily budget set"} · last ${detail.days} days`}
           </p>
         </div>
         {onClose ? (
@@ -362,11 +372,7 @@ export function CampaignDetail({
                     <p className="text-[15px] font-semibold">
                       {ad.headlines.filter(Boolean).join(" · ") || ad.ad_group}
                     </p>
-                    <Chip tone={ad.approval === "APPROVED" ? "good" : "bad"}>
-                      {ad.approval === "APPROVED"
-                        ? "Approved"
-                        : ad.approval.toLowerCase().replace(/_/g, " ")}
-                    </Chip>
+                    <AdStanding ad={ad} />
                   </div>
                   <p className="text-pw-ink-500 mt-1 text-[14px]">
                     {ad.ad_group}
@@ -610,5 +616,42 @@ function Table({
         </tbody>
       </table>
     </div>
+  );
+}
+
+/*
+  Where an ad stands with Google, as the backend worded it. Only a real
+  disapproval is red: a new ad is "unknown" to Google until its review is done,
+  and calling that refused told a merchant their ad was rejected on the day
+  they launched it.
+*/
+const STANDING_TONES: Record<string, "good" | "warn" | "bad" | "info" | "neutral"> = {
+  approved: "good",
+  limited: "warn",
+  review: "info",
+  appeal: "neutral",
+  refused: "bad",
+};
+
+function AdStanding({ ad }: { ad: Ad }) {
+  const standing = ad.standing ?? {
+    key:
+      ad.approval === "APPROVED"
+        ? "approved"
+        : ad.approval === "DISAPPROVED"
+          ? "refused"
+          : "review",
+    label:
+      ad.approval === "APPROVED"
+        ? "Approved"
+        : ad.approval === "DISAPPROVED"
+          ? "Refused by Google"
+          : "Under review",
+    words: "",
+  };
+  return (
+    <span title={standing.words || undefined}>
+      <Chip tone={STANDING_TONES[standing.key] ?? "neutral"}>{standing.label}</Chip>
+    </span>
   );
 }

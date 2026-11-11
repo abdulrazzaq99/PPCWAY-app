@@ -468,7 +468,8 @@ def sync_structure(
                    ad_group_ad.ad.responsive_search_ad.headlines,
                    ad_group_ad.ad.responsive_search_ad.descriptions,
                    ad_group_ad.ad.final_urls, ad_group_ad.status,
-                   ad_group_ad.policy_summary.approval_status, ad_group.id, campaign.id
+                   ad_group_ad.policy_summary.approval_status,
+                   ad_group_ad.policy_summary.review_status, ad_group.id, campaign.id
             FROM ad_group_ad WHERE ad_group_ad.status != 'REMOVED'
             """,
             **ask,  # type: ignore[arg-type]
@@ -477,6 +478,7 @@ def sync_structure(
             report.trouble = report.trouble or trouble
         else:
             ads: dict[str, dict[str, Any]] = {}
+            reviews: dict[str, str] = {}
             labels = {}
             for row in rows:
                 entry = row.get("adGroupAd", {})
@@ -487,6 +489,7 @@ def sync_structure(
                 search_ad = ad.get("responsiveSearchAd", {})
                 headlines = [str(h.get("text", "")) for h in search_ad.get("headlines", [])]
                 labels[name] = " · ".join(headlines[:2]) or str(ad.get("id", ""))
+                reviews[name] = str(entry.get("policySummary", {}).get("reviewStatus", ""))
                 ads[name] = {
                     "ad_id": str(ad.get("id", "")),
                     "ad_group_id": str(row.get("adGroup", {}).get("id", "")),
@@ -512,6 +515,14 @@ def sync_structure(
             )
             report.counts["ads"] = count
             report.changes.extend(changes)
+            if reviews:
+                for kept in session.scalars(
+                    select(MirrorAd).where(
+                        MirrorAd.customer_id == customer_id,
+                        MirrorAd.resource_name.in_(list(reviews)),
+                    )
+                ):
+                    kept.review = reviews[kept.resource_name]
 
         session.commit()
         return report

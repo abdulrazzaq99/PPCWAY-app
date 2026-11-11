@@ -563,7 +563,8 @@ def campaign_detail(
             customer_id,
             f"""
             SELECT ad_group.name, ad_group_ad.ad.responsive_search_ad.headlines,
-                   ad_group_ad.policy_summary.approval_status, ad_group_ad.status,
+                   ad_group_ad.policy_summary.approval_status,
+                   ad_group_ad.policy_summary.review_status, ad_group_ad.status,
                    metrics.impressions, metrics.clicks, metrics.conversions
             FROM ad_group_ad WHERE {where} AND segments.date {window}
             ORDER BY metrics.impressions DESC
@@ -581,6 +582,7 @@ def campaign_detail(
                     "ad_group": str(row.get("adGroup", {}).get("name", "")),
                     "headlines": [str(h.get("text", "")) for h in heads][:3],
                     "approval": str(entry.get("policySummary", {}).get("approvalStatus", "")),
+                    "review": str(entry.get("policySummary", {}).get("reviewStatus", "")),
                     "status": str(entry.get("status", "")),
                     "impressions": impressions,
                     "clicks": clicks,

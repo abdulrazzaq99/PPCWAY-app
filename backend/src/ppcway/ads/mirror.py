@@ -151,6 +151,11 @@ class MirrorAd(Mirrored, Base):
     kind: Mapped[str] = mapped_column(String(40), default="")
     status: Mapped[str] = mapped_column(String(20), default="")
     approval: Mapped[str] = mapped_column(String(30), default="")
+    #: Where Google's review stands: REVIEW_IN_PROGRESS, REVIEWED, UNDER_APPEAL
+    #: or ELIGIBLE_MAY_SERVE. Set after the upsert and kept out of the change
+    #: fingerprint, like a campaign's budget name: a review finishing is
+    #: Google's doing, not a change somebody made in the account.
+    review: Mapped[str] = mapped_column(String(30), default="")
     headlines: Mapped[list[str]] = mapped_column(JSON, default=list)
     descriptions: Mapped[list[str]] = mapped_column(JSON, default=list)
     final_urls: Mapped[list[str]] = mapped_column(JSON, default=list)

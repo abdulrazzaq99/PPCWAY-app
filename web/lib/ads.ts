@@ -29,8 +29,10 @@ export type AdsRow = {
   cost_per_lead: number;
   /** Google's own "yyyy-MM-dd HH:mm:ss", which the Learning chip counts from. */
   starts_at?: string;
-  /** Gone from Google, kept here, because it spent real money while it ran. */
+  /** Deleted in Google Ads, kept here, because it spent real money while it ran. */
   gone?: boolean;
+  /** The day PPCWay found it deleted. */
+  gone_on?: string;
   days?: AdsDay[];
 };
 

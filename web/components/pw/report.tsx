@@ -336,7 +336,7 @@ function WhereFrom({ rows, currency }: { rows: CampaignShare[]; currency: string
                   <td className="max-w-[300px] px-6 py-3.5 sm:pl-8">
                     <span className="block truncate text-[15px] font-semibold">{row.name}</span>
                     {row.gone ? (
-                      <span className="text-pw-ink-500 text-[12.5px]">No longer running</span>
+                      <span className="text-pw-ink-500 text-[12.5px]">Deleted in Google Ads</span>
                     ) : null}
                   </td>
                   <td className="pw-num px-3 py-3.5 text-right text-[15px]">

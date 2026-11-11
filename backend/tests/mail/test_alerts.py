@@ -181,6 +181,27 @@ def test_a_refused_ad_is_named_with_its_campaign(db: DbSession) -> None:
     assert "24 hour plumber" in refused.lines[0]
 
 
+def test_an_ad_google_is_still_reviewing_raises_no_alarm(db: DbSession) -> None:
+    """A new ad is UNKNOWN until Google has looked at it: no "will not show" email."""
+    connection = connected(db)
+    db.add(
+        MirrorAd(
+            customer_id="1",
+            resource_name="customers/1/adGroupAds/21~41",
+            ad_id="41",
+            ad_group_id="21",
+            campaign_id="11",
+            status="ENABLED",
+            approval="UNKNOWN",
+            review="REVIEW_IN_PROGRESS",
+            headlines=["24 hour plumber"],
+        )
+    )
+    db.commit()
+
+    assert [a for a in look(db, connection, now=NOW) if a.kind == "ad_refused"] == []
+
+
 def test_three_failed_syncs_in_a_row_is_our_fault_said_out_loud(db: DbSession) -> None:
     connection = connected(db)
     for back in range(3):

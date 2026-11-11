@@ -32,6 +32,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ppcway.ads.approval import standing
 from ppcway.ads.clock import account_today
 from ppcway.ads.mirror import (
     MICRO,
@@ -53,10 +54,6 @@ WORTH_SAYING = 20.0
 #: An average month, for turning daily budgets into the monthly figure a
 #: merchant actually thinks in.
 MONTH = 30.4
-
-#: Google's approval words that mean the ad is running. Everything else means a
-#: person has to do something before it will show.
-RUNNING = {"APPROVED", "APPROVED_LIMITED", ""}
 
 #: How far back the activity list and the "somebody changed this" line look.
 RECENTLY = 7
@@ -105,6 +102,8 @@ class Row:
     #: Google's own "yyyy-MM-dd HH:mm:ss", which is what the Learning chip counts from.
     starts_at: str = ""
     gone: bool = False
+    #: The day PPCWay found it deleted in Google Ads, for saying when.
+    gone_on: str = ""
     days: list[Day] = field(default_factory=list)
 
     @property
@@ -125,6 +124,7 @@ class Row:
             "cost_per_lead": self.cost_per_lead,
             "starts_at": self.starts_at,
             "gone": self.gone,
+            "gone_on": self.gone_on,
             "days": [d.as_dict() for d in self.days],
         }
 
@@ -388,6 +388,7 @@ def account_numbers(
         shown.budget = it.budget
         shown.starts_at = it.starts_at
         shown.gone = it.gone_at is not None
+        shown.gone_on = it.gone_at.date().isoformat() if it.gone_at else ""
 
     # An enabled campaign with nothing in the window is still on the screen: a
     # campaign that started yesterday is the one most likely to need an eye.
@@ -461,15 +462,18 @@ def _needs(
 
     gone = {c.campaign_id for c in campaigns if c.gone_at is not None}
     named = {c.campaign_id: c.name for c in campaigns}
+    # Refused means Google disapproved it, not that Google has not looked yet:
+    # a new ad is UNKNOWN until its review is done. Paused ads stop nothing.
     refused = session.scalars(
         select(MirrorAd).where(
             MirrorAd.customer_id == customer_id,
             MirrorAd.gone_at.is_(None),
-            MirrorAd.approval.not_in(RUNNING),
+            MirrorAd.status == "ENABLED",
+            MirrorAd.approval == "DISAPPROVED",
         )
     )
     for ad in refused:
-        if ad.campaign_id in gone:
+        if ad.campaign_id in gone or standing(ad.approval, ad.review).key != "refused":
             continue
         headline = next((h for h in (ad.headlines or []) if h), f"Ad {ad.ad_id}")
         where = named.get(ad.campaign_id, f"campaign {ad.campaign_id}")
@@ -530,6 +534,8 @@ class CampaignHeld:
     budget: float = 0.0
     starts_at: str = ""
     gone: bool = False
+    #: The day PPCWay found it deleted in Google Ads, for saying when.
+    gone_on: str = ""
     leads: float = 0.0
     calls: float = 0.0
     forms: float = 0.0
@@ -574,6 +580,7 @@ class CampaignHeld:
             "budget": round(self.budget, 2),
             "starts_at": self.starts_at,
             "gone": self.gone,
+            "gone_on": self.gone_on,
             "leads": round(self.leads, 2),
             "calls": round(self.calls, 2),
             "forms": round(self.forms, 2),
@@ -631,6 +638,7 @@ def campaign_numbers(
     held.budget = campaign.budget
     held.starts_at = campaign.starts_at
     held.gone = campaign.gone_at is not None
+    held.gone_on = campaign.gone_at.date().isoformat() if campaign.gone_at else ""
 
     rows = session.scalars(
         select(CampaignDay)
@@ -729,6 +737,8 @@ def campaign_numbers(
             "descriptions": [d for d in (row.descriptions or []) if d],
             "final_urls": [u for u in (row.final_urls or []) if u],
             "approval": row.approval,
+            "review": row.review,
+            "standing": _standing_of(row.approval, row.review),
             "status": row.status,
             "impressions": 0,
             "clicks": 0,
@@ -831,5 +841,14 @@ def merge_live(held: CampaignHeld, live: dict[str, Any]) -> CampaignHeld:
         ad["clicks"] = found.get("clicks", 0)
         ad["click_rate"] = found.get("click_rate", 0.0)
         ad["approval"] = found.get("approval") or ad["approval"]
+        ad["review"] = found.get("review") or ad["review"]
+    for ad in held.ads:
+        ad["standing"] = _standing_of(str(ad.get("approval", "")), str(ad.get("review", "")))
     held.ads.sort(key=lambda a: -int(a.get("impressions") or 0))
     return held
+
+
+def _standing_of(approval: str, review: str) -> dict[str, str]:
+    """An ad's standing with Google, as the screens show it."""
+    where = standing(approval, review)
+    return {"key": where.key, "label": where.label, "words": where.words}

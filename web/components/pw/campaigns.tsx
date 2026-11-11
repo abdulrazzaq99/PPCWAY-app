@@ -15,6 +15,7 @@ import { Sparkline } from "@/components/pw/sparkline";
 import type { AdsSummary } from "@/lib/ads";
 import type { Inbox } from "@/lib/otto";
 import { cn } from "@/lib/cn";
+import { dayMonth } from "@/lib/report-view";
 import { LEARNING_DAYS, learning } from "@/lib/when";
 
 /*
@@ -30,7 +31,7 @@ import { LEARNING_DAYS, learning } from "@/lib/when";
 */
 type Summary = AdsSummary;
 
-const FILTERS = ["All", "Active", "Paused"] as const;
+const FILTERS = ["All", "Active", "Paused", "Deleted"] as const;
 
 export function money(amount: number, currency = ""): string {
   const sign = !currency || currency === "CAD" || currency === "USD" ? "$" : "";
@@ -98,10 +99,14 @@ export function CampaignList({ initial, days: initialDays }: { initial: Summary;
     };
   }, [chosen, ottoAsks]);
 
+  // A campaign deleted in Google Ads is neither active nor paused: it is
+  // listed only for the days it spent money in, so the totals add up.
+  const deleted = (summary.campaigns ?? []).filter((row) => row.gone).length;
   const rows = (summary.campaigns ?? []).filter((row) => {
-    const active = row.status === "ENABLED";
+    const active = row.status === "ENABLED" && !row.gone;
     if (filter === "Active" && !active) return false;
-    if (filter === "Paused" && active) return false;
+    if (filter === "Paused" && (active || row.gone)) return false;
+    if (filter === "Deleted" && !row.gone) return false;
     return row.name.toLowerCase().includes(find.trim().toLowerCase());
   });
   const currency = summary.currency ?? "";
@@ -150,7 +155,7 @@ export function CampaignList({ initial, days: initialDays }: { initial: Summary;
         <div className="flex items-center gap-3">
           <h2 className="text-[17px] leading-[22px] font-semibold">Every campaign</h2>
           <PillGroup>
-            {FILTERS.map((name) => (
+            {FILTERS.filter((name) => name !== "Deleted" || deleted > 0).map((name) => (
               <Pill key={name} active={filter === name} onClick={() => setFilter(name)}>
                 {name}
                 {name === "All" && summary.campaigns ? ` ${summary.campaigns.length}` : ""}
@@ -209,7 +214,10 @@ export function CampaignList({ initial, days: initialDays }: { initial: Summary;
                 // Google's bidding needs about a week of a campaign's own data
                 // before its cost per lead means anything. Saying so is the
                 // difference between a judgement and a guess.
-                const day = learning(row.starts_at);
+                const day = row.gone ? 0 : learning(row.starts_at);
+                const deletedWords = row.gone
+                  ? `Deleted in Google Ads${row.gone_on ? ` on ${dayMonth(row.gone_on)}` : ""}. It stays here for the days it spent money in.`
+                  : "";
                 return (
                   <tr
                     key={row.campaign_id}
@@ -237,16 +245,34 @@ export function CampaignList({ initial, days: initialDays }: { initial: Summary;
                             Learning · day {day} of {LEARNING_DAYS}
                           </Chip>
                         ) : null}
-                        {row.gone ? <Chip tone="neutral">Gone</Chip> : null}
+                        {row.gone ? (
+                          // The status column is hidden on a phone, so the
+                          // word goes beside the name there instead.
+                          <span className="sm:hidden" title={deletedWords}>
+                            <Chip tone="neutral">Deleted</Chip>
+                          </span>
+                        ) : null}
                       </span>
                     </td>
                     <td className="hidden px-3 py-3 sm:table-cell">
-                      <Chip tone={row.status === "ENABLED" ? "good" : "neutral"}>
-                        {row.status === "ENABLED" ? "Active" : "Paused"}
-                      </Chip>
+                      {row.gone ? (
+                        <span title={deletedWords}>
+                          <Chip tone="neutral">Deleted</Chip>
+                        </span>
+                      ) : (
+                        <Chip tone={row.status === "ENABLED" ? "good" : "neutral"}>
+                          {row.status === "ENABLED" ? "Active" : "Paused"}
+                        </Chip>
+                      )}
                     </td>
                     <td className="pw-num hidden px-3 py-3 text-right text-[15px] md:table-cell">
-                      {row.budget ? money(row.budget, currency) : "—"}
+                      {row.gone ? (
+                        <span className="text-pw-ink-400">None</span>
+                      ) : row.budget ? (
+                        money(row.budget, currency)
+                      ) : (
+                        "None"
+                      )}
                     </td>
                     <td className="pw-num px-2 py-3 text-right text-[15px] sm:px-3">
                       {money(row.cost, currency)}
@@ -291,6 +317,14 @@ export function CampaignList({ initial, days: initialDays }: { initial: Summary;
         )
       ) : null}
 
+      {deleted > 0 ? (
+        <p className="text-pw-ink-500 text-[13px] leading-[20px]">
+          {deleted === 1 ? "One campaign was" : `${deleted} campaigns were`} deleted in Google Ads.
+          {deleted === 1 ? " It stays" : " They stay"} in this list for the days{" "}
+          {deleted === 1 ? "it" : "they"} spent money in, so the totals still add up, and{" "}
+          {deleted === 1 ? "drops" : "drop"} out once those days are past.
+        </p>
+      ) : null}
       <p className="text-pw-ink-500 text-[13px] leading-[20px]">
         Pausing, resuming and budget changes are not switched on yet. When they are, each one
         becomes a change you approve, with the before and after shown and thirty days to undo it.

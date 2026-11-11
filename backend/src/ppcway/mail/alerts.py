@@ -39,6 +39,7 @@ import httpx
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ppcway.ads.approval import standing
 from ppcway.ads.mirror import CampaignDay, MirrorAd, MirrorCampaign, SyncRun
 from ppcway.ads.models import AdsConnection
 from ppcway.ads.numbers import plain_money
@@ -199,15 +200,21 @@ def _ad_refused(session: Session, customer_id: str, now: date) -> Alarm | None:
             select(MirrorCampaign).where(MirrorCampaign.customer_id == customer_id)
         )
     }
-    refused = list(
-        session.scalars(
+    # Only a real disapproval. A new ad's approval is UNKNOWN until Google has
+    # reviewed it, and emailing "Google will not show your ad" on launch day
+    # is the false alarm that teaches people to ignore the real one.
+    refused = [
+        ad
+        for ad in session.scalars(
             select(MirrorAd).where(
                 MirrorAd.customer_id == customer_id,
                 MirrorAd.gone_at.is_(None),
-                MirrorAd.approval.not_in(("APPROVED", "APPROVED_LIMITED", "")),
+                MirrorAd.status == "ENABLED",
+                MirrorAd.approval == "DISAPPROVED",
             )
         )
-    )
+        if standing(ad.approval, ad.review).key == "refused"
+    ]
     if not refused:
         return None
     first = refused[0]
