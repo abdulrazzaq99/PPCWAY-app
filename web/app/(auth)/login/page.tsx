@@ -99,7 +99,10 @@ function LoginPageInner() {
           footnote: "Free for 14 days. No card needed to look around.",
           below: (
             <>
-              New to PPCWay? <TextLink href="/signup">Create an account</TextLink>
+              New to PPCWay?{" "}
+              <TextLink href={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}>
+                Create an account
+              </TextLink>
             </>
           ),
           title: "Welcome back",

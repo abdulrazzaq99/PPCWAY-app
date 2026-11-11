@@ -58,7 +58,10 @@ export function SignupForm() {
       footnote="Free for 14 days. Cancel from Settings any time."
       below={
         <>
-          Already have an account? <TextLink href="/login">Sign in</TextLink>
+          Already have an account?{" "}
+          <TextLink href={next === "/home" ? "/login" : `/login?next=${encodeURIComponent(next)}`}>
+            Sign in
+          </TextLink>
         </>
       }
     >
