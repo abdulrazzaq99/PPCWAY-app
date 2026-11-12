@@ -1203,3 +1203,44 @@ def _log_refusal(refused: BlockedAddress) -> None:
     branching.
     """
     _LOG.warning("the crawler refused a URL: %s (it resolved to %s)", refused, refused.address)
+
+
+def fetch_html(
+    url: str,
+    *,
+    timeout_seconds: float,
+    client: httpx.Client | None = None,
+    resolver: Resolver | None = None,
+) -> str | None:
+    """One page's HTML, as served, behind every rule `crawl` keeps.
+
+    For a question about the page's own markup rather than its words: whether
+    the Google tag is installed (`ads.conversions.tag_on_site`). The same pinned
+    client, the same address checks and the same `robots.txt`; a refused
+    address raises `BlockedAddress` as it does in `crawl`, and anything else
+    that goes wrong is `None`.
+    """
+    owned = client is None
+    http = build_client(timeout_seconds=timeout_seconds) if client is None else client
+    pace = _Pace(1.0, now=time.monotonic, pause=time.sleep)
+    try:
+        _pinned_transport(http)
+        target = assert_safe_url(url, resolver=resolver)
+        robots = _RobotsRules(http, resolver=resolver, pace=pace)
+        try:
+            fetched = _fetch(
+                http,
+                target,
+                resolver=resolver,
+                timeout=timeout_seconds,
+                pace=pace,
+                robots=robots,
+                landed=set(),
+            )
+        except FETCH_FAILURES as exc:
+            _LOG.info("the page could not be read: %s", type(exc).__name__)
+            return None
+        return fetched[1] if fetched else None
+    finally:
+        if owned:
+            http.close()

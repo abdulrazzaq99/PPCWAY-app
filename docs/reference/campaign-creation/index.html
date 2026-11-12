@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Campaign creation research</title>
+<style>
+  :root { --ink: #16161a; --soft: #55555f; --faint: #85858f; --line: #e6e6eb; --bg: #f6f6f8; --card: #fefefe; --blue: #2f5bea; --good: #157347; --warn: #9a5a00; --bad: #b42318; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+  main { max-width: 1060px; margin: 0 auto; padding: 48px 24px 96px; }
+  h1 { font-size: 38px; line-height: 1.15; letter-spacing: -0.025em; margin: 0; }
+  h2 { font-size: 26px; letter-spacing: -0.02em; margin: 56px 0 10px; }
+  h3 { font-size: 19px; margin: 32px 0 8px; }
+  p, li { max-width: 74ch; }
+  .lede { font-size: 19px; color: var(--soft); margin-top: 12px; }
+  .meta { color: var(--faint); font-size: 14px; margin-top: 10px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px 24px; margin: 18px 0; }
+  .card.alert { border-color: #f1c9a5; background: #fff8f1; }
+  .card.alert h3 { margin-top: 0; color: var(--warn); }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin: 14px 0 6px; font-size: 14.5px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-top: 1px solid var(--line); }
+  th { background: #f0f0f4; font-weight: 600; border-top: 0; }
+  td code, li code, p code { font-size: 13px; background: #f0f0f4; padding: 1px 5px; border-radius: 5px; word-break: break-word; }
+  .tag { display: inline-block; font-size: 12.5px; font-weight: 600; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+  .have { background: #e3f4ea; color: var(--good); }
+  .part { background: #fff1dc; color: var(--warn); }
+  .none { background: #fde7e5; color: var(--bad); }
+  .gone { background: #ececf1; color: var(--soft); }
+  .s, .m, .l { font-weight: 600; }
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  .grid .card { margin: 0; }
+  .big { font-size: 30px; font-weight: 650; letter-spacing: -0.02em; }
+  ol li, ul li { margin: 4px 0; }
+  a { color: var(--blue); }
+  .phase h3 { margin-top: 0; }
+  @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } table { display: block; overflow-x: auto; } h1 { font-size: 30px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Rebuilding Google Ads campaign creation in PPCWay</h1>
+  <p class="lede">The client wants PPCWay's campaign creation to match the Google Ads "New campaign" flow, step for step, using everything the Google Ads API offers. This page says what that flow is today, what the API can and cannot do, how far PPCWay is from it, and a plan to close the gap.</p>
+  <p class="meta">Researched 12 November 2026 against Google Ads Help, the Google Ads API v25 reference, guides, release notes and deprecation pages. Every claim in the two full research files beside this page carries its source link: <a href="google-ads-ui-flow-2026-11-12.md">the screens, step by step</a> and <a href="google-ads-api-map-2026-11-12.md">the API behind each step</a>.</p>
+
+  <div class="grid">
+    <div class="card"><div class="big">Search</div><p>PPCWay builds a small part of a Search campaign today. Full parity is reachable through the API, in one all-or-nothing request, as now.</p></div>
+    <div class="card"><div class="big">Performance Max</div><p>Fully creatable through the API. It needs images, logos and optional videos, which PPCWay has no way to collect or make yet.</p></div>
+    <div class="card"><div class="big">Not creatable</div><p>Video, Smart and Local Services campaigns cannot be created through the API at all; Hotel needs Google's allowlist. These stay out of reach whatever we build.</p></div>
+  </div>
+
+  <div class="card alert">
+    <h3>Act on this first: the language setting</h3>
+    <p>Google's API deprecations page and its developer blog (13 August 2026) say that since 30 September 2026, adding a language to a Search campaign fails with <code>ContextError.OPERATION_NOT_PERMITTED_FOR_CONTEXT</code>, in every API version, and that Search ads now match on the language of the ads. PPCWay adds a language on every launch, inside the one all-or-nothing request, so when Google enforces this, every PPCWay launch fails whole.</p>
+    <p>The "ai pdf tools" campaign launched through PPCWay on 10 November appears to have gone through, so enforcement may not yet reach every account. Google's instruction is still plain: stop sending it. The fix is removing one operation from <code>builder/campaign.py</code>. It is worth doing before anything else on this page.</p>
+  </div>
+
+  <h2>What the client is asking for, read against today</h2>
+  <p>"Every single thing in that flow" has to mean the flow as Google runs it now. Google retired several settings in 2025 and 2026, and its own "Create a Search campaign" help page still shows some of them, so a rebuild copied from older guides would build things Google now refuses.</p>
+  <table>
+    <tr><th>Setting</th><th>Status in November 2026</th></tr>
+    <tr><td>Language on Search campaigns</td><td><span class="tag gone">Removed</span> Late September 2026. Google matches the language of the ads.</td></tr>
+    <tr><td>Campaign-level broad match setting</td><td><span class="tag gone">Removed</span> Refused since 3 August 2026; folded into AI Max for Search.</td></tr>
+    <tr><td>Enhanced CPC on Search</td><td><span class="tag gone">Removed</span> Since the week of 31 March 2025.</td></tr>
+    <tr><td>Call-only ads</td><td><span class="tag gone">Removed</span> Creation blocked January 2026; use a responsive search ad with a call asset.</td></tr>
+    <tr><td>New Smart campaigns through the API</td><td><span class="tag gone">Removed</span> Since 23 September 2026.</td></tr>
+    <tr><td>Dynamic Search Ads</td><td><span class="tag part">Winding down</span> Google first said no new ones from September 2026; later reports say creation runs until January 2027 and existing ones move to AI Max in February 2027. Do not build on it.</td></tr>
+    <tr><td>Standalone Display campaigns</td><td><span class="tag part">Winding down</span> Being folded into Demand Gen through 2026 and 2027.</td></tr>
+    <tr><td>AI Max for Search</td><td><span class="tag have">New</span> On by default for new Search campaigns in the Google Ads screens.</td></tr>
+  </table>
+
+  <h2>Google's Search flow, step by step, against PPCWay</h2>
+  <p>This is the order Google shows a Search campaign in, with the API field behind each part and where PPCWay stands. Effort is a rough size: <span class="s">S</span> is a day or two, <span class="m">M</span> is several days, <span class="l">L</span> is a week or more.</p>
+  <table>
+    <tr><th style="width:21%">Google's step</th><th style="width:31%">What Google asks</th><th style="width:26%">API behind it</th><th style="width:14%">PPCWay today</th><th>Effort</th></tr>
+    <tr><td>1. Objective</td><td>Sales, Leads, Website traffic, YouTube reach, App promotion, Local store visits, or no guidance. It narrows the campaign types offered.</td><td>No API field. It is a screen that decides which campaign types and goals to offer.</td><td><span class="tag none">Not asked</span></td><td class="s">S</td></tr>
+    <tr><td>1. Conversion goals</td><td>The account's default goals come pre-selected; keep, remove or add; one custom goal at most; set up tracking if none exists.</td><td><code>customer_conversion_goal</code> read; <code>campaign_conversion_goal</code> update in the same request; custom goals in a second call.</td><td><span class="tag none">Account defaults only</span></td><td class="m">M</td></tr>
+    <tr><td>1. Ways to reach the goal, name</td><td>Website visits and phone calls (Google names these two), the website, the campaign name.</td><td><code>campaign.name</code>, final URLs, a call asset.</td><td><span class="tag part">Name and website</span></td><td class="s">S</td></tr>
+    <tr><td>1. EU political ads</td><td>A required yes or no on every campaign.</td><td><code>campaign.contains_eu_political_advertising</code></td><td><span class="tag have">Done</span></td><td>None</td></tr>
+    <tr><td>2. Bidding</td><td>Focus on conversions, conversion value, clicks or impression share; optional Target CPA or Target ROAS; a maximum CPC limit for clicks; target impression share with position and limit; manual CPC.</td><td><code>maximize_conversions.target_cpa_micros</code>, <code>maximize_conversion_value.target_roas</code>, <code>target_spend.cpc_bid_ceiling_micros</code>, <code>target_impression_share</code>, <code>manual_cpc</code>, or a portfolio strategy.</td><td><span class="tag part">Clicks or conversions, no targets</span></td><td class="m">M</td></tr>
+    <tr><td>2. Customer acquisition</td><td>Bid higher for new customers, or only for new customers.</td><td><code>Goal</code> and <code>CampaignGoalConfig</code>, sent after the campaign exists (the old lifecycle goal was removed in v25).</td><td><span class="tag none">No</span></td><td class="m">M</td></tr>
+    <tr><td>3. Networks</td><td>Search partners (on by default), Display Network; channel priority is rolling out from October 2026.</td><td><code>campaign.network_settings</code></td><td><span class="tag part">Google Search only, fixed</span></td><td class="s">S</td></tr>
+    <tr><td>3. Locations</td><td>Countries, regions, cities, postcodes, radius around an address; include or exclude; presence, or presence or interest (the default).</td><td><code>campaign_criterion.location</code>, <code>.proximity</code>, <code>.location_group</code>, negative criteria; <code>geo_target_type_setting</code>.</td><td><span class="tag part">Places, presence only, no radius or exclusions</span></td><td class="m">M</td></tr>
+    <tr><td>3. Languages</td><td>Removed from Search.</td><td>Must not be sent.</td><td><span class="tag none">Sent today, remove</span></td><td class="s">S</td></tr>
+    <tr><td>3. Audience segments</td><td>Demographics, interests, remarketing, in observation (recommended) or targeting.</td><td><code>campaign_criterion.user_list</code> and others; <code>targeting_setting</code>.</td><td><span class="tag none">No</span></td><td class="m">M</td></tr>
+    <tr><td>4. AI Max for Search</td><td>On by default: search term matching, text customisation, final URL expansion; URL exclusions and inclusions; brand inclusions and exclusions; text guidelines.</td><td><code>campaign.ai_max_setting.enable_ai_max</code>, <code>asset_automation_settings</code>, <code>text_guidelines</code>, <code>brand_list</code> criteria, <code>ad_group.ai_max_ad_group_setting</code>.</td><td><span class="tag none">No</span></td><td class="m">M</td></tr>
+    <tr><td>3. Start and end dates</td><td>Start today by default; optional end; required end with a total budget.</td><td><code>campaign.start_date_time</code>, <code>end_date_time</code> (<code>yyyy-MM-dd HH:mm:ss</code>).</td><td><span class="tag none">Starts at once, no end</span></td><td class="s">S</td></tr>
+    <tr><td>3. Ad schedule</td><td>Days and hours, up to 6 slots a day, with optional bid adjustments.</td><td><code>campaign_criterion.ad_schedule</code></td><td><span class="tag none">No</span></td><td class="s">S</td></tr>
+    <tr><td>3. Devices</td><td>Computers, phones, tablets, as bid adjustments from -100% to +900%.</td><td><code>campaign_criterion.device</code> with <code>bid_modifier</code>.</td><td><span class="tag none">No</span></td><td class="s">S</td></tr>
+    <tr><td>3. URL options</td><td>Tracking template, final URL suffix, up to 8 custom parameters.</td><td><code>tracking_url_template</code>, <code>final_url_suffix</code>, <code>url_custom_parameters</code>.</td><td><span class="tag none">No</span></td><td class="s">S</td></tr>
+    <tr><td>3. IP exclusions</td><td>Up to 500 addresses.</td><td><code>campaign_criterion.ip_block</code></td><td><span class="tag none">No</span></td><td class="s">S</td></tr>
+    <tr><td>5. Keyword and asset generation</td><td>Google reads the landing page and suggests ad groups, keywords, headlines, descriptions, sitelinks and images.</td><td>Keyword ideas and recommendations through the API; Google's own text and image generator is a closed beta.</td><td><span class="tag have">Otto writes, Keyword Planner checks</span></td><td>Covered</td></tr>
+    <tr><td>6. Ad groups and keywords</td><td>Broad (the default), phrase or exact; negatives at ad group, campaign and shared-list level.</td><td><code>ad_group_criterion.keyword</code>, negative criteria, <code>shared_set</code> lists.</td><td><span class="tag part">Phrase only, campaign negatives only</span></td><td class="m">M</td></tr>
+    <tr><td>6. Responsive search ads</td><td>Final URL, two display paths of 15 characters, 3 to 15 headlines of 30, 2 to 4 descriptions of 90, pinning, Ad Strength, up to 3 ads per ad group.</td><td><code>ad_group_ad.ad.responsive_search_ad</code>, <code>path1</code>, <code>path2</code>, <code>pinned_field</code>; Ad Strength read back after creation.</td><td><span class="tag part">One ad per group, no paths, no pins</span></td><td class="m">M</td></tr>
+    <tr><td>6. Assets</td><td>Sitelinks, callouts, structured snippets, images, business name and logo, calls, lead forms, prices, promotions, apps, locations; at account, campaign or ad group level.</td><td><code>asset</code>, then <code>customer_asset</code>, <code>campaign_asset</code>, <code>ad_group_asset</code> links.</td><td><span class="tag none">None</span></td><td class="l">L</td></tr>
+    <tr><td>7. Budget</td><td>Daily, or a campaign total over 3 to 90 days; recommended amounts; shared budgets.</td><td><code>campaign_budget</code> (<code>DAILY</code> or <code>CUSTOM_PERIOD</code>); recommendations from <code>GenerateRecommendations</code>; forecasts from <code>GenerateKeywordForecastMetrics</code>.</td><td><span class="tag part">Daily only, no recommendation</span></td><td class="m">M</td></tr>
+    <tr><td>8. Review and publish</td><td>A summary, every problem listed with a way to fix it, then publish; ads go to review, usually within a business day.</td><td><code>validate_only</code> returns every error; policy exemptions on resend; review status read back.</td><td><span class="tag part">Checked first, but only the first error shown</span></td><td class="s">S</td></tr>
+  </table>
+
+  <h2>Performance Max</h2>
+  <p>Google's Performance Max flow has six steps: goal, bidding, settings, one asset group, budget, review. The API creates all of it in one request, in an order Google documents (section 11.2 of the API file). What PPCWay lacks is not the API but the assets.</p>
+  <ul>
+    <li><strong>The asset group</strong> needs 3 to 15 headlines, 1 to 5 long headlines, 2 to 5 descriptions, a business name, 4 or more landscape and 4 or more square images, 1 to 5 logos, and optional videos. Otto can write the text; the images and logos have to come from the merchant, their website, or an image generator.</li>
+    <li><strong>Signals</strong>: audience signals and up to 50 search themes per asset group, both optional.</li>
+    <li><strong>Brand guidelines</strong>: on by default, set only at creation; they need a business name and a square logo linked to the campaign.</li>
+    <li><strong>Final URL expansion</strong> is on by default, with URL and brand exclusions to rein it in.</li>
+    <li><strong>Bidding</strong> is only maximize conversions or maximize conversion value, each with an optional target, and the budget must be daily and not shared.</li>
+    <li><strong>A preview</strong> is available for Performance Max through <code>ShareablePreviewService</code>; Search has no preview in the API.</li>
+  </ul>
+
+  <h2>Every campaign type, and whether the API can create it</h2>
+  <table>
+    <tr><th>Type</th><th>Through the API</th><th>What it needs that PPCWay lacks</th></tr>
+    <tr><td>Search</td><td><span class="tag have">Yes</span></td><td>The rest of the table above.</td></tr>
+    <tr><td>Performance Max</td><td><span class="tag have">Yes</span></td><td>Images, logos, optional videos; asset group screens.</td></tr>
+    <tr><td>Demand Gen</td><td><span class="tag have">Yes</span></td><td>Images and YouTube videos; channel controls; minimum budget of 5 USD a day.</td></tr>
+    <tr><td>Display</td><td><span class="tag part">Yes, but winding down</span></td><td>Being folded into Demand Gen; build Demand Gen instead.</td></tr>
+    <tr><td>Shopping</td><td><span class="tag have">Yes</span></td><td>A linked Merchant Center account with a product feed.</td></tr>
+    <tr><td>App</td><td><span class="tag have">Yes</span></td><td>An app in the Play Store or App Store.</td></tr>
+    <tr><td>Video (YouTube)</td><td><span class="tag none">No</span></td><td>Read-only in the API. Google points to Demand Gen.</td></tr>
+    <tr><td>Smart</td><td><span class="tag none">No</span></td><td>Blocked since 23 September 2026.</td></tr>
+    <tr><td>Local Services</td><td><span class="tag none">No</span></td><td>Updates only; Local Services through Performance Max arrives in API v26.</td></tr>
+    <tr><td>Hotel</td><td><span class="tag part">Allowlisted only</span></td><td>Google's approval and a Hotel Center account.</td></tr>
+  </table>
+
+  <h2>The helpers that make the flow feel smart</h2>
+  <table>
+    <tr><th>Helper</th><th>What it gives</th><th>PPCWay today</th></tr>
+    <tr><td><code>KeywordPlanIdeaService.GenerateKeywordIdeas</code></td><td>Real searches with volume, competition and bid ranges, from a URL or seed words.</td><td><span class="tag have">Used</span></td></tr>
+    <tr><td><code>GeoTargetConstantService.SuggestGeoTargetConstants</code></td><td>Places from typed text.</td><td><span class="tag have">Used</span></td></tr>
+    <tr><td><code>RecommendationService.GenerateRecommendations</code></td><td>Budget, keyword, sitelink and bidding suggestions for a campaign that does not exist yet; built for campaign construction.</td><td><span class="tag none">No</span></td></tr>
+    <tr><td><code>KeywordPlanIdeaService.GenerateKeywordForecastMetrics</code></td><td>Expected cost, clicks or conversions for the chosen keywords and bidding.</td><td><span class="tag none">No</span></td></tr>
+    <tr><td><code>BrandSuggestionService</code></td><td>Brands from Google's brand library, for AI Max brand lists and exclusions.</td><td><span class="tag none">No</span></td></tr>
+    <tr><td><code>ShareablePreviewService</code></td><td>A preview link for a Performance Max asset group.</td><td><span class="tag none">No</span></td></tr>
+    <tr><td><code>AssetGenerationService</code></td><td>Google's own text and image generator.</td><td><span class="tag part">Closed beta; Otto writes text instead</span></td></tr>
+  </table>
+
+  <h2>A plan</h2>
+  <div class="card phase">
+    <h3>Now: keep launches working</h3>
+    <ul>
+      <li>Stop sending the language on Search launches.</li>
+      <li>Show every error Google returns at the check before launch, not only the first.</li>
+    </ul>
+  </div>
+  <div class="card phase">
+    <h3>Phase 1: Search, as complete as Google's</h3>
+    <ul>
+      <li>The objective and conversion goal step, with a prompt to set up tracking when there is none.</li>
+      <li>Every Search bidding choice with targets and limits, plus customer acquisition after creation.</li>
+      <li>Networks, locations with radius and exclusions, presence or interest, audiences in observation, dates, ad schedule, devices, URL options, IP exclusions.</li>
+      <li>AI Max with its parts and brand lists, as a choice with Google's default shown honestly.</li>
+      <li>All keyword match types, negatives at every level and shared lists.</li>
+      <li>Full responsive search ads: paths, pinning, up to 3 per ad group, Ad Strength read back.</li>
+      <li>Assets: sitelinks, callouts, structured snippets, call, price, promotion, business name and logo, images, location; lead forms once the account is eligible.</li>
+      <li>Budget: daily or total, with Google's recommendations and a forecast.</li>
+      <li>Review that lists every problem with a way to fix it, and policy exemptions where Google allows them.</li>
+    </ul>
+  </div>
+  <div class="card phase">
+    <h3>Phase 2: Performance Max</h3>
+    <ul>
+      <li>An image and logo step: upload, take from the website, or generate. This is the hard part.</li>
+      <li>The asset group, signals and search themes, brand guidelines, URL and brand exclusions, and the preview.</li>
+    </ul>
+  </div>
+  <div class="card phase">
+    <h3>Phase 3: the rest that the API allows</h3>
+    <ul>
+      <li>Demand Gen, which reuses Phase 2's images and adds videos.</li>
+      <li>Shopping, for merchants with a Merchant Center feed; App, for merchants with an app.</li>
+      <li>Move the API from v25 to v26 before v25 sunsets in August 2027.</li>
+    </ul>
+  </div>
+
+  <h2>Questions for the client before building</h2>
+  <ol>
+    <li>Which campaign types do their customers need? For small businesses after leads, Search and Performance Max cover most of it; Shopping and App only matter to merchants with a feed or an app.</li>
+    <li>Should PPCWay follow Google's defaults where they cost control, such as AI Max on and search partners on, or keep its tighter defaults and offer Google's as a choice?</li>
+    <li>Where should images and logos come from for Performance Max and Demand Gen: the merchant's uploads, their website, or generated?</li>
+    <li>Should the full flow be one long expert screen like Google's, or keep PPCWay's guided steps with an "all settings" view for experts?</li>
+  </ol>
+
+  <h2>Two smaller notes from the research</h2>
+  <ul>
+    <li>Google's API docs say developer tokens "are deprecated and have been sunset" (9 September 2026) and the header is now ignored. PPCWay still sends it; that does no harm.</li>
+    <li>API v26 shipped on 14 October 2026. PPCWay is on v25, which is supported until August 2027.</li>
+  </ul>
+</main>
+</body>
+</html>

@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 
 from ppcway.gateway import quota, switch
 from ppcway.gateway.apply import CannotApply
-from ppcway.gateway.port import Builds, Created, Together
+from ppcway.gateway.port import Applied, Batch, Builds, Created, Door, Together
 
 
 def create_together(
@@ -60,3 +60,40 @@ def create_together(
     quota.spend(session, together.customer_id, together.how_many, today=at.date())
     session.commit()
     return door.mutate_together(replace(together, validate_only=False))
+
+
+def check_together(together: Together, *, door: Builds) -> Created:
+    """Google's check of a whole request, creating nothing.
+
+    The review step's "is this ready?" before the merchant presses publish.
+    Nothing is written, so neither the switches nor the quota stop it; a
+    refusal comes back as `GoogleRefused`, with every problem Google named.
+    """
+    return door.mutate_together(replace(together, validate_only=True))
+
+
+def create_alone(
+    session: Session,
+    batch: Batch,
+    *,
+    door: Door,
+    gate_open: bool,
+    now: datetime | None = None,
+) -> Applied:
+    """One kind of thing created at its own service, behind the same switches.
+
+    For what Google keeps out of the all-or-nothing request: the goals behind
+    new-customer bidding exist only at `GoalService` and
+    `CampaignGoalConfigService`, and only once the campaign does.
+    """
+    at = now or datetime.now(UTC)
+    standing = switch.may_write(session, customer_id=batch.customer_id, gate_open=gate_open)
+    if not standing.may_write:
+        raise CannotApply(standing.because)
+    if quota.room_today(session, batch.customer_id, today=at.date()).left < batch.how_many:
+        raise CannotApply(
+            "This account has used its Google Ads allowance for today. Try again tomorrow."
+        )
+    quota.spend(session, batch.customer_id, batch.how_many, today=at.date())
+    session.commit()
+    return door.mutate(batch)

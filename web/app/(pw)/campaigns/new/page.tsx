@@ -1,35 +1,41 @@
 import type { Metadata } from "next";
-import { CampaignStepper } from "@/components/pw/campaign-stepper";
+import { NewCampaign } from "@/components/pw/create/new-campaign";
 import { Header, HeaderLink, PwPage } from "@/components/pw/shell";
-import type { Prefill } from "@/lib/builder";
+import type { Setup } from "@/lib/creation";
 import { ask } from "@/lib/pw-fetch";
 
 export const metadata: Metadata = { title: "New campaign · PPCway" };
 
 /*
-  Start a new campaign, as a stepper that works for any kind of business
-  (`components/pw/campaign-stepper.tsx`). The account's currency, the kinds
-  of business and their promises, and the website the ads already use are
-  filled in before anybody types; the rest is the merchant's to say.
+  Google's "New campaign" page (components/pw/create/new-campaign.tsx): the
+  objective, the account's conversion goals, the campaign type, the ways to
+  reach the goal and the name. The client asked on 12 November for creation
+  to follow Google's flow exactly; the research is in
+  docs/reference/campaign-creation/.
 */
+const OFFLINE: Setup = {
+  connected: false,
+  objectives: {} as Setup["objectives"],
+  types: {},
+  steps: {},
+  step_labels: {},
+  built: [],
+};
+
 export default async function NewCampaignPage() {
-  const [prefill, business] = await Promise.all([
-    ask<Prefill>("/v1/campaigns/start", { connected: false }),
-    ask<{ site?: string; trade?: string }>("/v1/ads/business", {}),
+  const [setup, business] = await Promise.all([
+    ask<Setup>("/v1/campaigns/setup", OFFLINE),
+    ask<{ site?: string }>("/v1/ads/business", {}),
   ]);
   return (
     <>
       <Header
         eyebrow="Campaigns"
-        title="Start a new campaign."
+        title="New campaign"
         right={<HeaderLink href="/campaigns">Back to campaigns</HeaderLink>}
       />
       <PwPage>
-        <CampaignStepper
-          prefill={prefill}
-          site={business.site ?? ""}
-          trade={business.trade ?? ""}
-        />
+        <NewCampaign setup={setup} website={business.site ?? ""} />
       </PwPage>
     </>
   );

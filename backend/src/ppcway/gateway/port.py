@@ -39,6 +39,34 @@ _PATHS = {
     "ad_group_ad": "adGroupAds",
     "shared_set": "sharedSets",
     "shared_criterion": "sharedCriteria",
+    # What a whole new campaign needs beyond the first builder's six, since
+    # 12 November: assets and where they are linked, Performance Max asset
+    # groups and their signals, campaign goals, shared-list links, bid
+    # adjustments and audiences (`builder.ops`).
+    "asset": "assets",
+    "customer_asset": "customerAssets",
+    "campaign_asset": "campaignAssets",
+    "ad_group_asset": "adGroupAssets",
+    "asset_group": "assetGroups",
+    "asset_group_asset": "assetGroupAssets",
+    "asset_group_signal": "assetGroupSignals",
+    "asset_group_listing_group_filter": "assetGroupListingGroupFilters",
+    "asset_set": "assetSets",
+    "asset_set_asset": "assetSetAssets",
+    "campaign_asset_set": "campaignAssetSets",
+    "campaign_conversion_goal": "campaignConversionGoals",
+    "conversion_goal_campaign_config": "conversionGoalCampaignConfigs",
+    "campaign_shared_set": "campaignSharedSets",
+    "campaign_bid_modifier": "campaignBidModifiers",
+    "ad_group_bid_modifier": "adGroupBidModifiers",
+    "audience": "audiences",
+    # Not mutate operations: Google takes these only at their own services,
+    # after the campaign exists (new-customer bidding, `builder.publish`).
+    "goal": "goals",
+    "campaign_goal_config": "campaignGoalConfigs",
+    # Conversion setup on Google's own steps (`ads.conversions`).
+    "conversion_action": "conversionActions",
+    "customer_conversion_goal": "customerConversionGoals",
 }
 
 
@@ -247,6 +275,15 @@ class GoogleRefused(RuntimeError):
     reaching past the seam -- which is the thing `tests/gateway/test_one_door.py`
     exists to stop.
     """
+
+    #: Every error Google gave, when it gave more than a sentence: each with
+    #: the operation's index, what it was about, the field and Google's code.
+    #: Empty for a refusal that came with no detail.
+    problems: list[dict[str, Any]]
+
+    def __init__(self, *args: object) -> None:
+        super().__init__(*args)
+        self.problems = []
 
 
 @runtime_checkable

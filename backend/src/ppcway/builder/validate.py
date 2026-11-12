@@ -119,6 +119,10 @@ class Business:
     accreditations: tuple[str, ...] = ()
     #: Their own brand terms, which an ad may of course use.
     brand_words: tuple[str, ...] = ()
+    #: The business summary from Google's "Keyword and asset generation" step,
+    #: in the merchant's words. Context for the writer only: like the site's
+    #: title, it licenses no claim; the promises ticked above still decide.
+    summary: str = ""
 
 
 @dataclass(frozen=True, slots=True)

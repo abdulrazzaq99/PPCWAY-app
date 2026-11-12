@@ -19,6 +19,15 @@ const ALLOWED = [
   /^drafts$/,
   /^drafts\/[0-9a-f-]{36}$/,
   /^drafts\/[0-9a-f-]{36}\/launch$/,
+  // Creation on Google's own steps (12 November 2026).
+  /^setup$/,
+  /^v2$/,
+  /^v2\/[0-9a-f-]{36}$/,
+  /^v2\/[0-9a-f-]{36}\/(generate|images|check|launch|budget|discard)$/,
+  /^audiences$/,
+  /^brands$/,
+  /^geocode$/,
+  /^shared$/,
 ];
 
 async function pass(request: Request, path: string[]) {

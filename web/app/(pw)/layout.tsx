@@ -8,6 +8,7 @@ import {
   Megaphone,
   PencilSimple,
   Sparkle,
+  Target,
   TrendUp,
 } from "@phosphor-icons/react/dist/ssr";
 import { cookies, headers } from "next/headers";
@@ -27,6 +28,7 @@ const size = 18;
 const MAIN = [
   { href: "/home", label: "Home", icon: <House size={size} weight="bold" /> },
   { href: "/campaigns", label: "Campaigns", icon: <Megaphone size={size} weight="bold" /> },
+  { href: "/conversions", label: "Conversions", icon: <Target size={size} weight="bold" /> },
   { href: "/otto", label: "Otto inbox", icon: <Sparkle size={size} weight="bold" /> },
   { href: "/reports", label: "Reports", icon: <ChartBar size={size} weight="bold" /> },
   { href: "/chat", label: "Chat with Otto", icon: <ChatCircleDots size={size} weight="bold" /> },

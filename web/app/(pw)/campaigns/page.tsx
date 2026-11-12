@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { CampaignList } from "@/components/pw/campaigns";
+import { Drafts, type DraftRow } from "@/components/pw/create/drafts";
 import { Header, HeaderLink, PwPage } from "@/components/pw/shell";
 import type { AdsSummary } from "@/lib/ads";
 import { ask } from "@/lib/pw-fetch";
@@ -20,7 +21,10 @@ function span(summary: AdsSummary): string {
 export default async function CampaignsPage() {
   // The window ends yesterday, the same as Google's own "last 30 days", so the
   // dates come with the figures rather than being worked out again here.
-  const summary = await ask<AdsSummary>("/v1/ads/summary?days=30", { read: false });
+  const [summary, { drafts }] = await Promise.all([
+    ask<AdsSummary>("/v1/ads/summary?days=30", { read: false }),
+    ask<{ drafts: DraftRow[] }>("/v1/campaigns/drafts", { drafts: [] }),
+  ]);
   const covered = span(summary);
 
   return (
@@ -31,6 +35,7 @@ export default async function CampaignsPage() {
         right={<HeaderLink href="/campaigns/new">+ New campaign</HeaderLink>}
       />
       <PwPage>
+        <Drafts drafts={drafts} />
         <CampaignList initial={summary} days={30} />
       </PwPage>
     </>

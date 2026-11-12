@@ -2581,6 +2581,1062 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             **_draft_view(draft),
         }
 
+    # --- Campaign creation on Google's own steps (12 November 2026) ---------
+    #
+    # The client asked for creation to follow Google Ads' "New campaign" flow
+    # exactly. Step 1 makes the draft (objective, goals, type, ways to reach
+    # the goal, name); every later step saves into it; the review step asks
+    # Google to check the whole request; publish creates it all or nothing.
+    # The research and the field-by-field map are in
+    # docs/reference/campaign-creation/. The first builder's endpoints above
+    # stay for the drafts it made.
+
+    def _account_today(connection: AdsConnection) -> date:
+        """Today where the account is: its dates are in its own time zone."""
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            zone = ZoneInfo(connection.time_zone) if connection.time_zone else UTC
+        except ZoneInfoNotFoundError:
+            zone = UTC
+        return datetime.now(zone).date()
+
+    def _reads(connection: AdsConnection) -> dict[str, Any]:
+        keys = _read_keys(connection)
+        return {
+            "access_token": keys["access_token"],
+            "developer_token": keys["developer_token"],
+            "api_version": keys["api_version"],
+            "login_customer_id": settings.google_ads_login_customer_id,
+        }
+
+    def _spec_draft(session: Session, draft_id: UUID, organization_id: UUID) -> Any:
+        from ppcway.builder.spec import is_v2
+
+        draft = _their_draft(session, draft_id, organization_id)
+        if not is_v2(draft.plan):
+            raise HTTPException(409, "That draft was made by the first builder.")
+        return draft
+
+    def _spec_view(draft: Any, connection: AdsConnection | None = None) -> dict[str, Any]:
+        from ppcway.builder.checks import problems
+        from ppcway.builder.spec import STEPS, CampaignSpec, step_labels
+
+        spec = CampaignSpec.model_validate(draft.plan or {})
+        today = _account_today(connection) if connection else datetime.now(UTC).date()
+        return {
+            "id": str(draft.id),
+            "v": 2,
+            "status": draft.status,
+            "spec": spec.dump(),
+            "steps": [
+                {"id": s, "label": step_labels(spec.type)[s]} for s in ["goal", *STEPS[spec.type]]
+            ],
+            "problems": [p.as_dict() for p in problems(spec, today=today)],
+            "outcome": draft.outcome,
+            "campaign": draft.campaign_resource,
+            "created_at": draft.created_at.isoformat() if draft.created_at else None,
+        }
+
+    def _door(connection: AdsConnection) -> Any:
+        from ppcway.gateway import send as sending
+
+        try:
+            return sending.doors(settings)(connection)
+        except sending.NoDoor as exc:
+            raise HTTPException(409, str(exc)) from None
+
+    @app.get("/v1/campaigns/setup")
+    def creation_setup(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """What Google's step 1 shows: objectives, types, and the account's goals."""
+        from ppcway.ads import setup as reads
+        from ppcway.builder.kinds import catalogue
+        from ppcway.builder.spec import BUILT, OBJECTIVES, STEP_LABELS, STEPS, TYPES
+
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        connection = _connection(session, account)
+        base = {
+            "objectives": OBJECTIVES,
+            "types": TYPES,
+            "steps": STEPS,
+            "step_labels": STEP_LABELS,
+            "built": list(BUILT),
+            **catalogue(),
+        }
+        if connection is None or not connection.customer_id:
+            return {"connected": False, **base}
+        goals: dict[str, Any] = {"goals": [], "tracking": False}
+        trouble = ""
+        try:
+            goals = reads.conversion_goals(connection.customer_id, **_reads(connection))
+        except HTTPException as exc:
+            trouble = str(exc.detail)
+        return {
+            "connected": True,
+            "currency": connection.currency,
+            "time_zone": connection.time_zone,
+            "account_name": connection.customer_name,
+            "business_name": place.name,
+            "home": reads.time_zone_home(connection.time_zone),
+            "may_launch": may(session, account, place, "approve"),
+            "conversion": goals,
+            "trouble": trouble,
+            **base,
+        }
+
+    @app.get("/v1/campaigns/drafts")
+    def creation_drafts(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Drafts not yet published, newest first, as Google lists them over its campaigns."""
+        from ppcway.builder.models import CampaignDraft
+
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        rows = session.scalars(
+            select(CampaignDraft)
+            .where(CampaignDraft.organization_id == place.id, CampaignDraft.status == "draft")
+            .order_by(CampaignDraft.created_at.desc())
+            .limit(25)
+        )
+        return {
+            "drafts": [
+                {
+                    "id": str(d.id),
+                    "name": str((d.plan or {}).get("name") or "Untitled campaign"),
+                    "type": str((d.plan or {}).get("type") or "SEARCH"),
+                    "v": int((d.plan or {}).get("v") or 1),
+                    "created_at": d.created_at.isoformat() if d.created_at else None,
+                }
+                for d in rows
+            ]
+        }
+
+    @app.post("/v1/campaigns/v2", status_code=201)
+    def creation_start(
+        body: dict[str, Any],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Step 1 done: the draft, with Google's defaults for every later step."""
+        from ppcway.ads.setup import time_zone_home
+        from ppcway.builder.models import CampaignDraft
+        from ppcway.builder.spec import BUILT, TYPES, Goals, Place, Ways, new_spec
+
+        account, place, connection = _builder_connection(session, x_session_token, "propose")
+        kind = str(body.get("type") or "")
+        if kind not in TYPES:
+            raise HTTPException(422, "Choose a campaign type.")
+        if not TYPES[kind]["creatable"]:
+            raise HTTPException(422, str(TYPES[kind]["why"]))
+        if kind not in BUILT:
+            raise HTTPException(422, f"PPCWay does not build {TYPES[kind]['label']} campaigns yet.")
+        website = str((body.get("ways") or {}).get("website_url") or body.get("website") or "")
+        home = time_zone_home(connection.time_zone)
+        spec = new_spec(
+            objective=str(body.get("objective") or "none"),
+            type_=kind,
+            name=str(body.get("name") or ""),
+            website=website,
+            currency=connection.currency,
+            time_zone=connection.time_zone,
+            home=Place.model_validate(home) if home else None,
+        )
+        if isinstance(body.get("goals"), dict):
+            spec.goals = Goals.model_validate(body["goals"])
+        if isinstance(body.get("ways"), dict):
+            spec.ways = Ways.model_validate(body["ways"])
+        if spec.ways.calls and spec.ways.phone_number:
+            spec.assets.call = True
+        if kind == "APP" and spec.ways.app_id:
+            spec.app.app_id = spec.ways.app_id.strip()
+            spec.app.store = spec.ways.app_store
+        spec.assets.business_name = (connection.customer_name or "")[:25]
+        draft = CampaignDraft(
+            organization_id=place.id,
+            customer_id=connection.customer_id,
+            created_by=account.id,
+            plan=spec.dump(),
+        )
+        session.add(draft)
+        session.commit()
+        return _spec_view(draft, connection)
+
+    @app.get("/v1/campaigns/v2/{draft_id}")
+    def creation_read(
+        draft_id: UUID,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        _account, place, connection = _builder_connection(session, x_session_token, "view")
+        return _spec_view(_spec_draft(session, draft_id, place.id), connection)
+
+    @app.post("/v1/campaigns/v2/{draft_id}")
+    def creation_save(
+        draft_id: UUID,
+        body: dict[str, Any],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Save whole sections of the campaign, as each step changes them.
+
+        Ad text the merchant types goes through PPCWay's checks too, and what
+        they say comes back as advice beside the line rather than the line
+        being thrown away: in Google's editor a merchant's own words stay.
+        """
+        from pydantic import ValidationError
+
+        from ppcway.builder.spec import CampaignSpec
+        from ppcway.builder.validate import Business, Kind, check
+
+        _account, place, connection = _builder_connection(session, x_session_token, "propose")
+        draft = _spec_draft(session, draft_id, place.id)
+        if draft.status != "draft":
+            raise HTTPException(409, "That campaign is published; change it in Google Ads.")
+        data = dict(draft.plan or {})
+        for key, value in body.items():
+            if key in {"v", "type", "currency", "time_zone"}:
+                continue
+            data[key] = value
+        try:
+            spec = CampaignSpec.model_validate(data)
+        except ValidationError as exc:
+            first = exc.errors()[0]
+            where = ".".join(str(p) for p in first.get("loc", ()))
+            raise HTTPException(422, f"{where}: {first.get('msg', 'not valid')}") from None
+        advice: list[dict[str, str]] = []
+        if "ad_groups" in body:
+            known = dict(spec.business)
+            for key in ("services", "places", "accreditations", "brand_words", "promises"):
+                known[key] = tuple(known.get(key) or ())
+            business = Business(
+                **{k: v for k, v in known.items() if k in Business.__dataclass_fields__}
+            )
+            for group in spec.ad_groups:
+                for ad in group.ads:
+                    for lines, kind in (
+                        (ad.headlines, Kind.HEADLINE),
+                        (ad.descriptions, Kind.DESCRIPTION),
+                    ):
+                        said = check(
+                            [x.text for x in lines if x.text.strip()], kind=kind, business=business
+                        )
+                        advice.extend(
+                            {"group": group.name, "text": r.text, "because": r.because}
+                            for r in said.refused
+                        )
+        draft.plan = spec.dump()
+        session.commit()
+        return {**_spec_view(draft, connection), "advice": advice}
+
+    @app.post("/v1/campaigns/v2/{draft_id}/discard")
+    def creation_discard(
+        draft_id: UUID,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Remove a draft nobody published. A published campaign is Google's to remove."""
+        _account, place, _connection = _builder_connection(session, x_session_token, "propose")
+        draft = _their_draft(session, draft_id, place.id)
+        if draft.status != "draft":
+            raise HTTPException(409, "That campaign is published; remove it in Google Ads.")
+        session.delete(draft)
+        session.commit()
+        return {"discarded": True}
+
+    @app.post("/v1/campaigns/v2/{draft_id}/generate")
+    def creation_generate(
+        draft_id: UUID,
+        body: dict[str, Any],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Google's "Keyword and asset generation": ad groups written from the site.
+
+        For each product or service: the searches Keyword Planner confirms
+        people make, then fifteen headlines and four descriptions Otto writes
+        and PPCWay's checks pass (`builder.build.write_theme`). Nothing is sent
+        to Google's write side; the merchant reviews it on the next step.
+        """
+        from dataclasses import asdict
+
+        from ppcway.ads.planner import ideas_for
+        from ppcway.builder.build import write_theme
+        from ppcway.builder.kinds import kind_of, known_promises
+        from ppcway.builder.site import read_site
+        from ppcway.builder.spec import AdGroup, AdText, CampaignSpec, Generation, Keyword, SearchAd
+        from ppcway.builder.validate import Business
+
+        _account, place, connection = _builder_connection(session, x_session_token, "propose")
+        draft = _spec_draft(session, draft_id, place.id)
+        spec = CampaignSpec.model_validate(draft.plan or {})
+        services = list(
+            dict.fromkeys(str(s).strip() for s in body.get("services") or [] if str(s).strip())
+        )[:10]
+        if not services:
+            raise HTTPException(422, "Say what you sell: at least one product or service.")
+        url = str(body.get("url") or spec.final_url).strip()
+        if not url.startswith(("http://", "https://")):
+            raise HTTPException(422, "Give the page people land on, starting with https://.")
+        site = read_site(url)
+        name = site.name or spec.assets.business_name or connection.customer_name or ""
+        places = (
+            [p.resource for p in spec.locations.targets]
+            if spec.locations.mode == "custom"
+            else (
+                [spec.locations.home.resource]
+                if spec.locations.mode == "home" and spec.locations.home
+                else []
+            )
+        )
+        business = Business(
+            name=name,
+            site_title=site.title,
+            services=tuple(services),
+            places=tuple(p.name for p in spec.locations.targets),
+            kind=kind_of(body.get("kind")).id,
+            promises=known_promises(body.get("promises")),
+            brand_words=tuple(dict.fromkeys(w for w in (site.name, connection.customer_name) if w)),
+            summary=str(body.get("summary") or "").strip()[:2000],
+        )
+        language = spec.languages[0].resource if spec.languages else "languageConstants/1000"
+        keys = _read_keys(connection)
+
+        def ask_planner(theme: str) -> Any:
+            return ideas_for(
+                [theme],
+                places=places,
+                language=language,
+                customer_id=connection.customer_id,
+                access_token=keys["access_token"],
+                developer_token=keys["developer_token"],
+                api_version=keys["api_version"],
+                login_customer_id=settings.google_ads_login_customer_id,
+            )
+
+        from concurrent.futures import ThreadPoolExecutor
+
+        models = _models()
+        with ThreadPoolExecutor(max_workers=len(services)) as pool:
+            written = list(
+                pool.map(
+                    lambda theme: write_theme(
+                        theme, ask_planner=ask_planner, models=models, business=business
+                    ),
+                    services,
+                )
+            )
+        spec.ad_groups = [
+            AdGroup(
+                name=theme.name,
+                keywords=[
+                    Keyword(
+                        text=str(k["text"]),
+                        match="BROAD",
+                        monthly=int(k.get("monthly") or 0),
+                        competition=str(k.get("competition") or ""),
+                        top_of_page_low=float(k.get("top_of_page_low") or 0),
+                        top_of_page_high=float(k.get("top_of_page_high") or 0),
+                    )
+                    for k in theme.keywords
+                ],
+                ads=(
+                    [
+                        SearchAd(
+                            final_url=url,
+                            headlines=[AdText(text=h) for h in theme.headlines],
+                            descriptions=[AdText(text=d) for d in theme.descriptions],
+                            ai_written=models is not None,
+                        )
+                    ]
+                    if theme.headlines or theme.descriptions
+                    else []
+                ),
+                dropped=theme.dropped,
+                short=theme.short,
+            )
+            for theme in written
+        ]
+        spec.generation = Generation(
+            url=url,
+            summary=str(body.get("summary") or "")[:2000],
+            services=services,
+            kind=business.kind,
+            promises=list(business.promises),
+            done=True,
+        )
+        if not spec.assets.business_name and name:
+            spec.assets.business_name = name[:25]
+        spec.business = {
+            k: list(v) if isinstance(v, tuple) else v for k, v in asdict(business).items()
+        }
+        draft.plan = spec.dump()
+        session.commit()
+        return _spec_view(draft, connection)
+
+    @app.post("/v1/campaigns/v2/{draft_id}/images")
+    def creation_image(
+        draft_id: UUID,
+        body: dict[str, Any],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Add an image to the account's asset library, as Google's screens do on upload.
+
+        Measured first, so an image of the wrong shape is refused here with
+        its size rather than at launch with the whole campaign.
+        """
+        import base64 as _b64
+        import binascii
+
+        from ppcway.ads.setup import image_url
+        from ppcway.builder import images
+        from ppcway.gateway import switch
+        from ppcway.gateway.apply import CannotApply
+        from ppcway.gateway.assets import upload_image
+        from ppcway.gateway.port import GoogleRefused
+
+        _account, place, connection = _builder_connection(session, x_session_token, "propose")
+        _spec_draft(session, draft_id, place.id)
+        shape = str(body.get("shape") or "")
+        if shape not in images.SHAPES:
+            raise HTTPException(422, "Say which kind of image this is.")
+        try:
+            data = _b64.b64decode(str(body.get("data") or ""), validate=True)
+        except (binascii.Error, ValueError):
+            raise HTTPException(422, "That image did not arrive whole.") from None
+        if len(data) > images.MOST_BYTES:
+            raise HTTPException(422, "Google takes images up to 5,120 KB.")
+        try:
+            picture = images.read(data)
+        except images.NotAnImage as exc:
+            raise HTTPException(422, str(exc)) from None
+        wrong = images.fits(picture, shape)
+        if wrong:
+            raise HTTPException(422, wrong)
+        name = str(body.get("name") or f"{shape} {picture.width}x{picture.height}")
+        try:
+            asset = upload_image(
+                session,
+                customer_id=connection.customer_id,
+                data=data,
+                name=f"{name} · {str(draft_id)[:8]}",
+                door=_door(connection),
+                gate_open=switch.gate(session, default=settings.ads_writes_enabled).is_open,
+            )
+        except CannotApply as exc:
+            raise HTTPException(409, str(exc)) from None
+        except GoogleRefused as exc:
+            raise HTTPException(422, str(exc)) from None
+        if not asset:
+            raise HTTPException(502, "Google kept the image but did not say what it called it.")
+        found = image_url(connection.customer_id, asset, **_reads(connection))
+        return {
+            "asset": asset,
+            "url": str(found.get("url") or ""),
+            "width": picture.width,
+            "height": picture.height,
+            "name": name,
+        }
+
+    @app.post("/v1/campaigns/v2/{draft_id}/check")
+    def creation_check(
+        draft_id: UUID,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """The review step: PPCWay's checks, then Google's, creating nothing."""
+        from ppcway.ads.setup import billing_ready
+        from ppcway.builder.publish import check
+        from ppcway.builder.spec import CampaignSpec
+
+        _account, place, connection = _builder_connection(session, x_session_token, "propose")
+        draft = _spec_draft(session, draft_id, place.id)
+        said = check(
+            CampaignSpec.model_validate(draft.plan or {}),
+            customer_id=connection.customer_id,
+            door=_door(connection),
+            today=_account_today(connection),
+            tag=str(draft.id)[:8],
+        )
+        found = list(said.problems)
+        billing = billing_ready(connection.customer_id, **_reads(connection))
+        if billing["known"] and not billing["ready"]:
+            # Google publishes into an account that cannot pay, and nothing serves.
+            found.append(
+                {
+                    "step": "review",
+                    "words": "This account has no approved way to pay. Set up billing in Google"
+                    " Ads (Billing, then Settings) or the campaign will be created and never"
+                    " show.",
+                    "blocks": False,
+                    "code": "billing",
+                }
+            )
+        return {"ok": said.ok, "words": said.words, "problems": found}
+
+    @app.post("/v1/campaigns/v2/{draft_id}/launch")
+    def creation_publish(
+        draft_id: UUID,
+        tasks: BackgroundTasks,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Google's "Publish campaign": created whole in Google Ads, or nothing is."""
+        import httpx as _httpx
+
+        from ppcway.ads.sync import _ask
+        from ppcway.builder.publish import new_customer_goal, publish
+        from ppcway.builder.spec import CampaignSpec
+        from ppcway.gateway import switch
+
+        account, place, connection = _builder_connection(session, x_session_token, "approve")
+        draft = _spec_draft(session, draft_id, place.id)
+        door = _door(connection)
+        gate_open = switch.gate(session, default=settings.ads_writes_enabled).is_open
+        said = publish(
+            session,
+            draft,
+            door=door,
+            gate_open=gate_open,
+            account_id=account.id,
+            today=_account_today(connection),
+        )
+        words = said.words
+        if said.ok and said.campaign:
+            spec = CampaignSpec.model_validate(draft.plan or {})
+            if spec.bidding.new_customers != "off":
+                existing = ""
+                reads = _reads(connection)
+                with _httpx.Client(timeout=_httpx.Timeout(30)) as client:
+                    rows, _trouble = _ask(
+                        connection.customer_id,
+                        "SELECT goal.resource_name, goal.goal_type FROM goal"
+                        " WHERE goal.goal_type = 'NEW_CUSTOMER_ACQUISITION'",
+                        client=client,
+                        **reads,
+                    )
+                if rows:
+                    existing = str((rows[0].get("goal") or {}).get("resourceName") or "")
+                failed = new_customer_goal(
+                    session,
+                    customer_id=connection.customer_id,
+                    campaign=said.campaign,
+                    mode=spec.bidding.new_customers,
+                    value=spec.bidding.new_customer_value,
+                    existing_goal=existing,
+                    door=door,
+                    gate_open=gate_open,
+                )
+                if failed:
+                    words += (
+                        " Google would not take the new-customer bidding setting, so set it"
+                        f" in Google Ads: {failed}"
+                    )
+            opened = SyncRun(
+                customer_id=connection.customer_id,
+                kind="structure",
+                status="running",
+                stage="Asking Google for your account",
+            )
+            session.add(opened)
+            session.commit()
+            tasks.add_task(_sync, opened.id, connection.id, settings, "structure")
+        # The draft first, so Google's reasons for a refusal are what "problems"
+        # holds, not PPCWay's own checks from the view.
+        return {
+            **_spec_view(draft, connection),
+            "ok": said.ok,
+            "words": words,
+            "problems": said.problems,
+            "campaign": said.campaign or draft.campaign_resource,
+        }
+
+    @app.post("/v1/campaigns/v2/{draft_id}/budget")
+    def creation_budget_advice(
+        draft_id: UUID,
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Google's recommended budgets for this campaign, and what a budget buys.
+
+        `RecommendationService.GenerateRecommendations` is built for a campaign
+        that does not exist yet; the forecast is Keyword Planner's. Either may
+        have nothing to say for a small or new account, and then says so.
+        """
+        from ppcway.ads import setup as reads
+        from ppcway.builder.spec import CampaignSpec
+
+        _account, place, connection = _builder_connection(session, x_session_token, "propose")
+        spec = CampaignSpec.model_validate(_spec_draft(session, draft_id, place.id).plan or {})
+        keys = _reads(connection)
+        keywords: list[tuple[str, str]] = [
+            (k.text, str(k.match)) for g in spec.ad_groups for k in g.keywords
+        ][:50]
+        geo: list[str | int] = (
+            [p.resource for p in spec.locations.targets]
+            if spec.locations.mode == "custom"
+            else ([spec.locations.home.resource] if spec.locations.home else [])
+        )
+        strategy = {
+            "conversions": "MAXIMIZE_CONVERSIONS",
+            "conversion_value": "MAXIMIZE_CONVERSION_VALUE",
+            "clicks": "TARGET_SPEND",
+            "impression_share": "TARGET_IMPRESSION_SHARE",
+        }[spec.bidding.focus]
+        if spec.bidding.strategy == "manual_cpc":
+            strategy = "MANUAL_CPC"
+        # Google wants the countries as ISO codes for a Search suggestion, or
+        # it says nothing. Its country geo targets are 2000 plus the ISO
+        # number; the ones PPCWay's merchants are in are spelled out here.
+        iso = {
+            "2840": "US", "2124": "CA", "2826": "GB", "2036": "AU", "2586": "PK",
+            "2356": "IN", "2372": "IE", "2554": "NZ", "2276": "DE", "2250": "FR",
+            "2724": "ES", "2380": "IT", "2528": "NL", "2784": "AE", "2682": "SA",
+            "2702": "SG", "2710": "ZA", "2484": "MX", "2076": "BR", "2616": "PL",
+        }  # fmt: skip
+        home = reads.time_zone_home(connection.time_zone) or {}
+        countries = [
+            iso[str(g).rsplit("/", 1)[-1]]
+            for g in [*geo, str(home.get("resource") or "")]
+            if str(g).rsplit("/", 1)[-1] in iso
+        ]
+        advice = reads.budget_recommendation(
+            connection.customer_id,
+            channel=spec.type,
+            final_url=spec.final_url,
+            keywords=keywords,
+            bidding_strategy_type=strategy,
+            country_codes=list(dict.fromkeys(countries)),
+            language_codes=["en"],
+            location_ids=[str(g).rsplit("/", 1)[-1] for g in geo],
+            current_budget=spec.budget.amount or None,
+            target_cpa=spec.bidding.target_cpa if spec.bidding.set_target else None,
+            target_roas=(spec.bidding.target_roas or 0) / 100 if spec.bidding.set_target else None,
+            **keys,
+        )
+        forecast: dict[str, Any] = {}
+        if keywords and spec.budget.amount > 0 and spec.type == "SEARCH":
+            forecast = reads.keyword_forecast(
+                connection.customer_id,
+                keywords=keywords,
+                geo_ids=geo,
+                language_id="languageConstants/1000",
+                currency=connection.currency,
+                daily_budget=spec.budget.amount,
+                max_cpc=spec.bidding.max_cpc,
+                strategy=(
+                    "maximize_conversions"
+                    if spec.bidding.focus.startswith("conversion")
+                    else "maximize_clicks"
+                ),
+                time_zone=connection.time_zone,
+                **keys,
+            )
+        return {"recommendation": advice, "forecast": forecast}
+
+    @app.get("/v1/campaigns/audiences")
+    def creation_audiences(
+        session: Annotated[Session, Depends(get_session)],
+        q: str = "",
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Audience segments to browse: the account's own data, then Google's."""
+        from ppcway.ads.setup import audience_segments
+
+        _account, _place, connection = _builder_connection(session, x_session_token, "propose")
+        return {
+            "segments": audience_segments(
+                connection.customer_id, q.strip()[:80], **_reads(connection)
+            )
+        }
+
+    @app.get("/v1/campaigns/brands")
+    def creation_brands(
+        session: Annotated[Session, Depends(get_session)],
+        q: str = "",
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Brands from Google's brand library, for brand inclusions and exclusions."""
+        from ppcway.ads.setup import suggest_brands
+
+        _account, _place, connection = _builder_connection(session, x_session_token, "propose")
+        if len(q.strip()) < 2:
+            return {"brands": []}
+        return {
+            "brands": suggest_brands(connection.customer_id, q.strip()[:80], **_reads(connection))
+        }
+
+    @app.get("/v1/campaigns/geocode")
+    def creation_geocode(
+        session: Annotated[Session, Depends(get_session)],
+        q: str = "",
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Where an address is, for a radius around it. Google targets the point."""
+        from ppcway.audit.places import PlacesError, geocode
+
+        _builder_connection(session, x_session_token, "propose")
+        if len(q.strip()) < 3:
+            return {"found": None}
+        try:
+            point = geocode(q.strip()[:200], api_key=_maps_key(), region="")
+        except PlacesError as exc:
+            log.warning("geocode failed: %s", exc)
+            raise HTTPException(502, "Google Maps could not find that address just now.") from None
+        if point is None:
+            return {"found": None}
+        return {"found": {"label": q.strip()[:200], "latitude": point[0], "longitude": point[1]}}
+
+    @app.get("/v1/campaigns/shared")
+    def creation_shared(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """The account's shared library: budgets, negative keyword lists, Merchant Center."""
+        from ppcway.ads import setup as reads
+
+        _account, _place, connection = _builder_connection(session, x_session_token, "propose")
+        keys = _reads(connection)
+        return {
+            "budgets": reads.shared_budgets(connection.customer_id, **keys),
+            "negative_lists": reads.negative_keyword_lists(connection.customer_id, **keys),
+            "merchants": reads.merchant_accounts(connection.customer_id, **keys),
+        }
+
+    # --- Conversions on Google's own steps (12 November 2026) ---------------
+    #
+    # Google's Conversions setup: choose data sources, create conversion
+    # actions, see the summary and the tag to install. Reads say what the
+    # account measures; every change goes through the gateway's switches and
+    # needs somebody who may approve changes. See `ads.conversions`.
+
+    def _conversion_site(session: Session, connection: AdsConnection, given: str) -> str:
+        if given.strip().startswith(("http://", "https://")):
+            return given.strip()[:2000]
+        known = known_business(
+            session,
+            customer_id=connection.customer_id,
+            account_name=connection.customer_name,
+            maps_key="",
+        )
+        site = str(known.as_dict().get("site") or "")
+        if site and not site.startswith(("http://", "https://")):
+            site = f"https://{site}"
+        return site
+
+    def _conversion_door(connection: AdsConnection) -> Any:
+        from ppcway.gateway import send as sending
+
+        try:
+            return sending.doors(settings)(connection)
+        except sending.NoDoor as exc:
+            raise HTTPException(409, str(exc)) from None
+
+    @app.get("/v1/conversions")
+    def conversions_summary(
+        session: Annotated[Session, Depends(get_session)],
+        site: str = "",
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Google's Conversions summary: the tag, every action, what can be imported."""
+        from ppcway.ads import conversions as conv
+
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "view")
+        connection = _connection(session, account)
+        sources = {
+            key: {
+                "label": spec["label"],
+                "categories": [
+                    {"id": c, "label": conv.CATEGORY_LABEL.get(c, c)} for c in spec["categories"]
+                ],
+                "call": bool(spec.get("call")),
+                "app": bool(spec.get("app")),
+            }
+            for key, spec in conv.SOURCES.items()
+        }
+        if connection is None or not connection.customer_id:
+            return {"connected": False, "source_options": sources}
+        keys = _read_keys(connection)
+        said = conv.measurement(
+            connection.customer_id,
+            access_token=keys["access_token"],
+            developer_token=keys["developer_token"],
+            login_customer_id=settings.google_ads_login_customer_id,
+            api_version=keys["api_version"],
+        )
+        website = _conversion_site(session, connection, site)
+        tag = (
+            conv.tag_on_site(website, str(said.get("tracking_id") or ""))
+            if website
+            else conv.Tag(read=False)
+        )
+        return {
+            "connected": True,
+            "currency": connection.currency,
+            "account_name": connection.customer_name,
+            "website": website,
+            "may_change": may(session, account, place, "approve"),
+            "tag": {
+                "read": tag.read,
+                "google_tag": tag.google_tag,
+                "this_account": tag.this_account,
+                "tag_manager": tag.tag_manager,
+                "found_ids": list(tag.found_ids),
+            },
+            # The ways to measure that setup offers; `sources` (from
+            # `measurement`) is which of them the account already measures.
+            "source_options": sources,
+            **said,
+        }
+
+    @app.post("/v1/conversions")
+    def conversions_create(
+        body: dict[str, Any],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Google's "Create conversion actions": every action asked for, in one request.
+
+        Checked here first, so a missing name or a window Google would refuse
+        is said before anything is sent. Then created through the gateway, and
+        read back so the summary can show each one's tag.
+        """
+        from ppcway.ads import conversions as conv
+        from ppcway.builder import conversions as changes
+        from ppcway.gateway import switch
+        from ppcway.gateway.apply import CannotApply
+        from ppcway.gateway.create import create_alone
+        from ppcway.gateway.port import Batch, GoogleRefused
+
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "approve")
+        connection = _connection(session, account)
+        if connection is None or not connection.customer_id:
+            raise HTTPException(409, "Connect a Google Ads account first.")
+        wanted: list[changes.NewAction] = []
+        for raw in body.get("actions") or []:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                wanted.append(
+                    changes.NewAction(
+                        source=str(raw.get("source") or ""),
+                        name=str(raw.get("name") or ""),
+                        category=str(raw.get("category") or ""),
+                        value=(
+                            "different"
+                            if raw.get("value") == "different"
+                            else "none"
+                            if raw.get("value") == "none"
+                            else "same"
+                        ),
+                        amount=float(raw.get("amount") or 0),
+                        count="one" if raw.get("count") == "one" else "every",
+                        click_days=int(raw.get("click_days") or 30),
+                        view_days=int(raw.get("view_days") or 1),
+                        attribution="last_click"
+                        if raw.get("attribution") == "last_click"
+                        else "data_driven",
+                        primary=bool(raw.get("primary", True)),
+                        call_seconds=int(raw.get("call_seconds") or 60),
+                        app_id=str(raw.get("app_id") or ""),
+                    )
+                )
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    422, "A number in one of the actions is not a number."
+                ) from None
+        if not wanted:
+            raise HTTPException(422, "Choose at least one conversion action to create.")
+        problems = [p for action in wanted for p in changes.problems_with(action)]
+        if problems:
+            raise HTTPException(422, " ".join(problems))
+        names = [a.name.strip().lower() for a in wanted]
+        if len(set(names)) != len(names):
+            raise HTTPException(
+                422, "Two conversion actions have the same name. Google needs each to be different."
+            )
+        batch = Batch(
+            customer_id=connection.customer_id,
+            operations=tuple(changes.create_operations(wanted, currency=connection.currency)),
+            partial_failure=True,
+        )
+        try:
+            applied = create_alone(
+                session,
+                batch,
+                door=_conversion_door(connection),
+                gate_open=switch.gate(session, default=settings.ads_writes_enabled).is_open,
+            )
+        except CannotApply as exc:
+            raise HTTPException(409, str(exc)) from None
+        except GoogleRefused as exc:
+            raise HTTPException(422, str(exc)) from None
+        created = [n for n in applied.landed if n]
+        refused = [
+            {
+                "name": wanted[r.at].name if r.at < len(wanted) else "",
+                "message": r.message,
+                "code": r.code,
+            }
+            for r in applied.refused
+        ]
+        keys = _read_keys(connection)
+        said = conv.measurement(
+            connection.customer_id,
+            access_token=keys["access_token"],
+            developer_token=keys["developer_token"],
+            login_customer_id=settings.google_ads_login_customer_id,
+            api_version=keys["api_version"],
+        )
+        return {
+            "created": [a for a in said.get("actions", []) if a["resource"] in created],
+            "created_names": created,
+            "refused": refused,
+            "tracking_id": said.get("tracking_id", ""),
+            "global_site_tag": said.get("global_site_tag", ""),
+        }
+
+    def _conversion_change(
+        session: Session, x_session_token: str | None, ops: list[Any]
+    ) -> dict[str, Any]:
+        from ppcway.gateway import switch
+        from ppcway.gateway.apply import CannotApply
+        from ppcway.gateway.create import create_alone
+        from ppcway.gateway.port import Batch, GoogleRefused
+
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "approve")
+        connection = _connection(session, account)
+        if connection is None or not connection.customer_id:
+            raise HTTPException(409, "Connect a Google Ads account first.")
+        try:
+            applied = create_alone(
+                session,
+                Batch(
+                    customer_id=connection.customer_id, operations=tuple(ops), partial_failure=True
+                ),
+                door=_conversion_door(connection),
+                gate_open=switch.gate(session, default=settings.ads_writes_enabled).is_open,
+            )
+        except CannotApply as exc:
+            raise HTTPException(409, str(exc)) from None
+        except GoogleRefused as exc:
+            raise HTTPException(422, str(exc)) from None
+        return {
+            "changed": [n for n in applied.landed if n],
+            "refused": [{"message": r.message, "code": r.code} for r in applied.refused],
+        }
+
+    def _connected_currency(session: Session, x_session_token: str | None) -> tuple[str, str]:
+        account = _signed_in(session, x_session_token)
+        connection = _connection(session, account)
+        if connection is None or not connection.customer_id:
+            raise HTTPException(409, "Connect a Google Ads account first.")
+        return connection.customer_id, connection.currency
+
+    @app.post("/v1/conversions/update")
+    def conversions_update(
+        body: dict[str, Any],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Change one conversion action's settings, as its Google settings page does."""
+        from ppcway.builder import conversions as changes
+
+        customer_id, currency = _connected_currency(session, x_session_token)
+        resource = str(body.get("resource") or "")
+        if not resource.startswith(f"customers/{customer_id}/conversionActions/"):
+            raise HTTPException(422, "That is not one of this account's conversion actions.")
+        try:
+            op = changes.update_operation(
+                resource, dict(body.get("change") or {}), currency=currency
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        return _conversion_change(session, x_session_token, [op])
+
+    @app.post("/v1/conversions/import")
+    def conversions_import(
+        body: dict[str, Any],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Import conversions Google lists from Google Analytics, Firebase or a partner."""
+        from ppcway.builder import conversions as changes
+
+        customer_id, _currency = _connected_currency(session, x_session_token)
+        resources = [
+            str(r)
+            for r in body.get("resources") or []
+            if str(r).startswith(f"customers/{customer_id}/conversionActions/")
+        ][:100]
+        if not resources:
+            raise HTTPException(422, "Choose the conversions to import.")
+        return _conversion_change(
+            session, x_session_token, [changes.import_operation(r) for r in resources]
+        )
+
+    @app.post("/v1/conversions/goal")
+    def conversions_goal(
+        body: dict[str, Any],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Make a goal an account default, which every campaign then bids for unless it chooses."""
+        from ppcway.builder import conversions as changes
+
+        customer_id, _currency = _connected_currency(session, x_session_token)
+        category = str(body.get("category") or "")
+        origin = str(body.get("origin") or "")
+        if not category.isupper() or not origin.isupper():
+            raise HTTPException(422, "Say which goal.")
+        return _conversion_change(
+            session,
+            x_session_token,
+            [
+                changes.goal_operation(
+                    customer_id, category, origin, biddable=bool(body.get("biddable"))
+                )
+            ],
+        )
+
+    @app.get("/v1/conversions/tag")
+    def conversions_tag(
+        session: Annotated[Session, Depends(get_session)],
+        url: str = "",
+        tracking: str = "",
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Check a page for the Google tag again, after the merchant installed it."""
+        import re as _re
+
+        from ppcway.ads import conversions as conv
+
+        _signed_in(session, x_session_token)
+        address = url.strip()
+        if not address.startswith(("http://", "https://")) or len(address) > 2000:
+            raise HTTPException(422, "Give the page as an address starting with https://.")
+        tag_id = tracking.strip() if _re.fullmatch(r"AW-\d{6,}", tracking.strip()) else ""
+        tag = conv.tag_on_site(address, tag_id)
+        return {
+            "read": tag.read,
+            "google_tag": tag.google_tag,
+            "this_account": tag.this_account,
+            "tag_manager": tag.tag_manager,
+            "found_ids": list(tag.found_ids),
+        }
+
     @app.post("/v1/ads/sync", response_model=SyncOut, status_code=202)
     def refresh_now(
         tasks: BackgroundTasks,

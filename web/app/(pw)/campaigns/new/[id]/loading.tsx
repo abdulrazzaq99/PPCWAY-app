@@ -1,7 +1,7 @@
 import { CircleNotch } from "@phosphor-icons/react/dist/ssr";
 import { Header, PwCard, PwPage } from "@/components/pw/shell";
 
-/* Shown while the campaign Otto has just written is opened for reading. */
+/* Shown while a campaign being created is opened. */
 function Bar({ className }: { className: string }) {
   return (
     <span
@@ -13,7 +13,7 @@ function Bar({ className }: { className: string }) {
 export default function LoadingDraft() {
   return (
     <>
-      <Header eyebrow="New campaign" title="Here's the campaign we built for you." />
+      <Header eyebrow="Campaigns" title="New campaign" />
       <PwPage>
         <p
           role="status"
@@ -26,7 +26,7 @@ export default function LoadingDraft() {
             aria-hidden
             className="text-pw-blue shrink-0 animate-spin motion-reduce:animate-none"
           />
-          Opening your campaign. Nothing goes live until you launch it.
+          Opening your campaign. Nothing goes live until you publish it.
         </p>
         <PwCard className="p-6 sm:p-8">
           <div className="flex gap-6">

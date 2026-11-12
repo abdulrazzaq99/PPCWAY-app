@@ -139,6 +139,11 @@ def _profile(business: Business) -> str:
         says.append(f"Kind of business: {kind_of(business.kind).label}")
     if business.site_title:
         says.append(f"Their website's title: {business.site_title}")
+    if business.summary:
+        says.append(
+            "How they describe the business (context only; it licenses no promise):"
+            f" {business.summary}"
+        )
     if business.services:
         says.append(f"What they sell: {', '.join(business.services)}")
     if business.places:

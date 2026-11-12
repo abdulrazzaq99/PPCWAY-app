@@ -57,6 +57,33 @@ _SERVICE = {
     "ad_group_ad": ("adGroupAds", "adGroupAdOperation"),
     "shared_set": ("sharedSets", "sharedSetOperation"),
     "shared_criterion": ("sharedCriteria", "sharedCriterionOperation"),
+    "asset": ("assets", "assetOperation"),
+    "customer_asset": ("customerAssets", "customerAssetOperation"),
+    "campaign_asset": ("campaignAssets", "campaignAssetOperation"),
+    "ad_group_asset": ("adGroupAssets", "adGroupAssetOperation"),
+    "asset_group": ("assetGroups", "assetGroupOperation"),
+    "asset_group_asset": ("assetGroupAssets", "assetGroupAssetOperation"),
+    "asset_group_signal": ("assetGroupSignals", "assetGroupSignalOperation"),
+    "asset_group_listing_group_filter": (
+        "assetGroupListingGroupFilters",
+        "assetGroupListingGroupFilterOperation",
+    ),
+    "asset_set": ("assetSets", "assetSetOperation"),
+    "asset_set_asset": ("assetSetAssets", "assetSetAssetOperation"),
+    "campaign_asset_set": ("campaignAssetSets", "campaignAssetSetOperation"),
+    "campaign_conversion_goal": ("campaignConversionGoals", "campaignConversionGoalOperation"),
+    "conversion_goal_campaign_config": (
+        "conversionGoalCampaignConfigs",
+        "conversionGoalCampaignConfigOperation",
+    ),
+    "campaign_shared_set": ("campaignSharedSets", "campaignSharedSetOperation"),
+    "campaign_bid_modifier": ("campaignBidModifiers", "campaignBidModifierOperation"),
+    "ad_group_bid_modifier": ("adGroupBidModifiers", "adGroupBidModifierOperation"),
+    "audience": ("audiences", "audienceOperation"),
+    "goal": ("goals", "goalOperation"),
+    "campaign_goal_config": ("campaignGoalConfigs", "campaignGoalConfigOperation"),
+    "conversion_action": ("conversionActions", "conversionActionOperation"),
+    "customer_conversion_goal": ("customerConversionGoals", "customerConversionGoalOperation"),
 }
 
 
@@ -130,11 +157,68 @@ class GoogleDoor:
 _CALLED: dict[str, str] = {
     "campaign_budget": "the budget",
     "campaign": "the campaign",
-    "campaign_criterion": "a place, language or excluded search",
+    "campaign_criterion": "a campaign setting",
     "ad_group": "an ad group",
     "ad_group_criterion": "a keyword",
     "ad_group_ad": "an ad",
+    "asset": "an asset",
+    "campaign_asset": "an asset on the campaign",
+    "customer_asset": "an account asset",
+    "ad_group_asset": "an asset on an ad group",
+    "asset_group": "the asset group",
+    "asset_group_asset": "an asset in the asset group",
+    "asset_group_signal": "a signal or search theme",
+    "shared_set": "a shared list",
+    "shared_criterion": "an entry in a shared list",
+    "campaign_shared_set": "a shared list on the campaign",
+    "campaign_conversion_goal": "a conversion goal",
+    "campaign_bid_modifier": "a bid adjustment",
+    "ad_group_bid_modifier": "a bid adjustment",
+    "audience": "an audience",
 }
+
+
+def problems_in(reply: httpx.Response, together: Together) -> list[dict[str, Any]]:
+    """Every error Google gave for an all-or-nothing request, not only the first.
+
+    Google's own review screen lists every problem with a way to fix each, and
+    a validate-only call returns them all at once; a merchant shown one at a
+    time fixes one, presses again, and meets the next. Each comes back with
+    the operation it was about, so the screen can send them to the right step.
+    """
+    try:
+        said = reply.json()
+    except ValueError:
+        return []
+    out: list[dict[str, Any]] = []
+    for detail in (said.get("error") or {}).get("details") or []:
+        for failure in (detail.get("errors") or []) if isinstance(detail, dict) else []:
+            message = str(failure.get("message") or "")
+            if not message:
+                continue
+            at: int | None = None
+            path: list[str] = []
+            for part in (failure.get("location") or {}).get("fieldPathElements") or []:
+                name = str(part.get("fieldName") or "")
+                if name in {"mutate_operations", "mutateOperations"} and at is None:
+                    raw = part.get("index")
+                    at = raw if isinstance(raw, int) else None
+                    continue
+                if name:
+                    path.append(name)
+            op = together.operations[at] if at is not None and at < together.how_many else None
+            out.append(
+                {
+                    "at": at,
+                    "resource_type": op.resource_type if op else "",
+                    "about": _about(op) if op else "the campaign",
+                    "field": ".".join(path),
+                    "code": _code_of(failure.get("errorCode") or {}),
+                    "message": message,
+                    "trigger": str((failure.get("trigger") or {}).get("stringValue") or ""),
+                }
+            )
+    return out
 
 
 def _together(door: GoogleDoor, c: httpx.Client, together: Together) -> Created:
@@ -159,7 +243,9 @@ def _together(door: GoogleDoor, c: httpx.Client, together: Together) -> Created:
     except httpx.HTTPError as exc:
         raise GoogleRefused(f"Google could not be reached: {exc}") from None
     if reply.status_code >= 400:
-        raise GoogleRefused(_why_together(reply, together))
+        refused = GoogleRefused(_why_together(reply, together))
+        refused.problems = problems_in(reply, together)
+        raise refused
     if together.validate_only:
         return Created(names=(), checked_only=True)
 
