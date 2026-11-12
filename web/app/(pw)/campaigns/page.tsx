@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { CampaignList } from "@/components/pw/campaigns";
-import { Drafts, type DraftRow } from "@/components/pw/create/drafts";
+import type { DraftRow } from "@/components/pw/create/drafts";
 import { Header, HeaderLink, PwPage } from "@/components/pw/shell";
 import type { AdsSummary } from "@/lib/ads";
 import { ask } from "@/lib/pw-fetch";
@@ -35,8 +35,7 @@ export default async function CampaignsPage() {
         right={<HeaderLink href="/campaigns/new">+ New campaign</HeaderLink>}
       />
       <PwPage>
-        <Drafts drafts={drafts} />
-        <CampaignList initial={summary} days={30} />
+        <CampaignList initial={summary} days={30} drafts={drafts} />
       </PwPage>
     </>
   );
