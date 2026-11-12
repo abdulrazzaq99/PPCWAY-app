@@ -7,7 +7,7 @@ created only the keywords, because the client's eight builder steps (`v0.1
 designs (Figma 87:10926 and 17:2048) say what it is.
 
 **One request, and nothing to roll back.** The budget, the campaign, its
-places, language and excluded searches, the ad groups, keywords and ads go to
+places and excluded searches, the ad groups, keywords and ads go to
 Google as one request that applies whole or not at all (`gateway.create`). The
 brief asked for rollback because a launch sent piece by piece can half-land;
 sent as one request it cannot, which is better than any rollback.

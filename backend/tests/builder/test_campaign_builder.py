@@ -97,16 +97,16 @@ def test_the_campaign_is_search_only_shown_to_people_in_the_places_and_declared(
     assert _ops(a_plan(bidding="leads"))[1].fields["maximizeConversions"] == {}
 
 
-def test_places_language_and_excluded_searches_hang_off_the_campaign() -> None:
+def test_places_and_excluded_searches_hang_off_the_campaign() -> None:
     criteria = [op.fields for op in _ops(a_plan()) if op.resource_type == "campaign_criterion"]
     campaign = f"customers/{CUSTOMER}/campaigns/-2"
     assert {"campaign": campaign, "location": {"geoTargetConstant": "geoTargetConstants/2616"}} in (
         criteria
     )
-    assert {
-        "campaign": campaign,
-        "language": {"languageConstant": "languageConstants/1000"},
-    } in criteria
+    # Google refuses a language on a Search campaign since late September
+    # 2026 (ContextError.OPERATION_NOT_PERMITTED_FOR_CONTEXT), and one refused
+    # operation fails the whole all-or-nothing launch.
+    assert not any("language" in c for c in criteria), "no language on a Search campaign"
     negatives = [c for c in criteria if c.get("negative")]
     assert negatives == [
         {"campaign": campaign, "negative": True, "keyword": {"text": "jobs", "matchType": "PHRASE"}}

@@ -4,7 +4,7 @@ The builder writes a `CampaignPlan`: what the campaign is about, where and in
 which language it shows, what it spends, how Google bids, and per theme the
 keywords Keyword Planner confirmed and the ad text that passed checking. The
 merchant reads it, edits it, and approves it. `operations_for` then turns it
-into a single `Together` request -- budget, campaign, places, language,
+into a single `Together` request -- budget, campaign, places,
 excluded searches, ad groups, keywords, ads -- that Google applies whole or
 not at all, so a launch can never leave half a campaign spending money.
 
@@ -143,8 +143,6 @@ def missing(plan: CampaignPlan) -> list[str]:
         out.append("Give the page people land on, starting with https://.")
     if not plan.places:
         out.append("Choose at least one place for the ads to show.")
-    if not plan.language.resource:
-        out.append("Choose the language your customers search in.")
     if plan.bidding not in BIDDING:
         out.append("Choose how Google should bid.")
     if not plan.themes:
@@ -217,13 +215,12 @@ def operations_for(plan: CampaignPlan, customer_id: str, *, tag: str) -> Togethe
                 fields={"campaign": campaign, "location": {"geoTargetConstant": place.resource}},
             )
         )
-    ops.append(
-        Operation(
-            resource_type="campaign_criterion",
-            doing=Doing.CREATE,
-            fields={"campaign": campaign, "language": {"languageConstant": plan.language.resource}},
-        )
-    )
+    # No language. Google stopped language targeting on Search campaigns in
+    # late September 2026 and refuses a language criterion on one with
+    # ContextError.OPERATION_NOT_PERMITTED_FOR_CONTEXT, in every API version;
+    # Search ads now match the language of the ad itself. Sent inside this
+    # all-or-nothing request, one refused language would fail the whole
+    # launch. (developers.google.com/google-ads/api/docs/deprecations)
     for word in dict.fromkeys(n.strip().lower() for n in plan.negatives if n.strip()):
         ops.append(
             Operation(
