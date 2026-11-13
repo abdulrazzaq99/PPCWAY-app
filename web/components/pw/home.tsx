@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CampaignStatus } from "@/components/pw/campaign-status";
 import { ConnectButton, ResendConfirmation } from "@/components/pw/connect-button";
 import { Chip, Kpi, PwCard } from "@/components/pw/shell";
 import { Sparkline } from "@/components/pw/sparkline";
@@ -530,9 +531,7 @@ function Campaigns({
                   />
                 </td>
                 <td className="px-5 py-3 sm:px-6">
-                  <Chip tone={row.status === "ENABLED" ? "good" : "neutral"}>
-                    {row.status === "ENABLED" ? "Active" : "Paused"}
-                  </Chip>
+                  <CampaignStatus row={row} />
                 </td>
               </tr>
             ))}

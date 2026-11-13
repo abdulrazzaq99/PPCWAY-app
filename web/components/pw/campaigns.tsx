@@ -3,6 +3,11 @@
 import { useEffect, useState } from "react";
 import { CampaignDetail, type Detail, type Suggestions } from "@/components/pw/campaign-detail";
 import {
+  CampaignStatus,
+  deletedWords as deletedNote,
+  isDeleted,
+} from "@/components/pw/campaign-status";
+import {
   Figures,
   LeadsByDay,
   MoneyAndLeads,
@@ -16,7 +21,6 @@ import { Sparkline } from "@/components/pw/sparkline";
 import type { AdsSummary } from "@/lib/ads";
 import type { Inbox } from "@/lib/otto";
 import { cn } from "@/lib/cn";
-import { dayMonth } from "@/lib/report-view";
 import { LEARNING_DAYS, learning } from "@/lib/when";
 
 /*
@@ -111,12 +115,13 @@ export function CampaignList({
 
   // A campaign deleted in Google Ads is neither active nor paused: it is
   // listed only for the days it spent money in, so the totals add up.
-  const deleted = (summary.campaigns ?? []).filter((row) => row.gone).length;
+  const deleted = (summary.campaigns ?? []).filter(isDeleted).length;
   const rows = (summary.campaigns ?? []).filter((row) => {
-    const active = row.status === "ENABLED" && !row.gone;
+    const gone = isDeleted(row);
+    const active = row.status === "ENABLED" && !gone;
     if (filter === "Active" && !active) return false;
-    if (filter === "Paused" && (active || row.gone)) return false;
-    if (filter === "Deleted" && !row.gone) return false;
+    if (filter === "Paused" && (active || gone)) return false;
+    if (filter === "Deleted" && !gone) return false;
     return row.name.toLowerCase().includes(find.trim().toLowerCase());
   });
   const currency = summary.currency ?? "";
@@ -232,10 +237,8 @@ export function CampaignList({
                     // Google's bidding needs about a week of a campaign's own data
                     // before its cost per lead means anything. Saying so is the
                     // difference between a judgement and a guess.
-                    const day = row.gone ? 0 : learning(row.starts_at);
-                    const deletedWords = row.gone
-                      ? `Deleted in Google Ads${row.gone_on ? ` on ${dayMonth(row.gone_on)}` : ""}. It stays here for the days it spent money in.`
-                      : "";
+                    const day = isDeleted(row) ? 0 : learning(row.starts_at);
+                    const deletedWords = deletedNote(row);
                     return (
                       <tr
                         key={row.campaign_id}
@@ -263,7 +266,7 @@ export function CampaignList({
                                 Learning · day {day} of {LEARNING_DAYS}
                               </Chip>
                             ) : null}
-                            {row.gone ? (
+                            {isDeleted(row) ? (
                               // The status column is hidden on a phone, so the
                               // word goes beside the name there instead.
                               <span className="sm:hidden" title={deletedWords}>
@@ -273,18 +276,10 @@ export function CampaignList({
                           </span>
                         </td>
                         <td className="hidden px-3 py-3 sm:table-cell">
-                          {row.gone ? (
-                            <span title={deletedWords}>
-                              <Chip tone="neutral">Deleted</Chip>
-                            </span>
-                          ) : (
-                            <Chip tone={row.status === "ENABLED" ? "good" : "neutral"}>
-                              {row.status === "ENABLED" ? "Active" : "Paused"}
-                            </Chip>
-                          )}
+                          <CampaignStatus row={row} />
                         </td>
                         <td className="pw-num hidden px-3 py-3 text-right text-[15px] md:table-cell">
-                          {row.gone ? (
+                          {isDeleted(row) ? (
                             <span className="text-pw-ink-400">None</span>
                           ) : row.budget ? (
                             money(row.budget, currency)
