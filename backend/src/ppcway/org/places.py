@@ -65,22 +65,27 @@ def home_for(session: DbSession, account: UserAccount) -> Organization:
     queue on it, and the one that waited sees the membership the first one
     committed. The lock is on `account` rather than on `organization` because
     the account is what exists before the race starts.
+
+    **Only when there is no business yet.** The lock lasts until the caller's
+    request ends, and almost every request asks this question. Taken every
+    time, it made each request wait for that person's previous one: a report
+    PDF, which waits up to a minute for a browser opening the report as the
+    same person, held the lock while that browser's own request queued behind
+    it, and the PDF failed after sixty seconds (13 Nov 2026). Somebody who
+    already belongs to a business cannot race to make one, so they are read
+    without it.
     """
+    held = _memberships(session, account)
     # Postgres only. SQLite has no row locks and no concurrency to speak of in
     # the tests, so there it is a plain no-op rather than an error.
-    if session.bind is not None and session.bind.dialect.name == "postgresql":
+    if not held and session.bind is not None and session.bind.dialect.name == "postgresql":
         session.execute(
             select(UserAccount.id).where(UserAccount.id == account.id).with_for_update()
         )
+        # Read again behind the lock: a caller that waited here sees the
+        # membership the one before it committed.
+        held = _memberships(session, account)
 
-    held = list(
-        session.execute(
-            select(Organization, Membership.role)
-            .join(Membership, Membership.organization_id == Organization.id)
-            .where(Membership.account_id == account.id)
-            .order_by(Membership.created_at.asc())
-        ).all()
-    )
     if len(held) == 1:
         return held[0][0]
     if held:
@@ -105,6 +110,20 @@ def home_for(session: DbSession, account: UserAccount) -> Organization:
     session.add(Membership(organization_id=place.id, account_id=account.id, role=Role.OWNER.value))
     session.commit()
     return place
+
+
+def _memberships(session: DbSession, account: UserAccount) -> list[tuple[Organization, str]]:
+    """Every business this person is in, with their role, the first joined first."""
+    return list(
+        session.execute(
+            select(Organization, Membership.role)
+            .join(Membership, Membership.organization_id == Organization.id)
+            .where(Membership.account_id == account.id)
+            .order_by(Membership.created_at.asc())
+        )
+        .tuples()
+        .all()
+    )
 
 
 def _placeholder(session: DbSession, place: Organization, role: str) -> bool:

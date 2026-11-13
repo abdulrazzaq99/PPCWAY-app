@@ -3819,8 +3819,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not report.read:
             raise HTTPException(409, report.trouble or "There is nothing to report yet.")
         business = connection.customer_name or "Google Ads"
+        customer_id = connection.customer_id
         period = period_words(report.starts_on, report.ends_on)
         base = settings.app_base_url.rstrip("/")
+        # Hold nothing in the database while the page prints. The browser opens
+        # it signed in as this same person, and that page asks this API for the
+        # figures: a lock or a transaction still open here would keep it waiting
+        # on the request that is waiting for it, until the printer gives up.
+        session.commit()
         try:
             made = to_pdf(
                 f"{base}/reports/pdf?days={window}",
@@ -3829,7 +3835,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 margin={"top": "12mm", "bottom": "16mm", "left": "0mm", "right": "0mm"},
             )
         except NotPrinted as exc:
-            log.warning("report for %s would not print: %s", connection.customer_id, exc)
+            log.warning("report for %s would not print: %s", customer_id, exc)
             raise HTTPException(503, "The report could not be made into a PDF just now.") from exc
         name = f"PPCWay report - {file_name(business)} - {period}.pdf"
         return Response(

@@ -67,3 +67,43 @@ def test_four_requests_at_once_still_make_one_business(
         session.execute(sa.delete(Organization).where(Organization.id == made[0]))
         session.execute(sa.delete(UserAccount).where(UserAccount.id == account_id))
         session.commit()
+
+
+def test_someone_with_a_business_is_never_kept_waiting_by_their_own_other_request(
+    factory: sessionmaker[Session],
+) -> None:
+    """The lock is for making a business, not for finding one.
+
+    A report PDF waits up to a minute for a browser that opens the report page
+    signed in as the same person. While the first request still held the row
+    lock taken here, that page's own request queued behind it, the browser gave
+    up after sixty seconds and the PDF failed; a "Share this report" pressed
+    meanwhile sat on "Making a link…" for the whole minute (13 Nov 2026).
+    """
+    email = f"wait-{uuid.uuid4().hex[:8]}@example.com"
+    with factory() as session:
+        account = UserAccount(google_sub=f"google-{email}", email=email, name="Wait Test")
+        session.add(account)
+        session.commit()
+        account_id = account.id
+        made = home_for(session, account).id
+
+    with factory() as first, factory() as second:
+        them = first.get(UserAccount, account_id)
+        assert them is not None
+        # A long request: it has found the business and its transaction is
+        # still open while it waits on something else.
+        assert home_for(first, them).id == made
+
+        second.execute(sa.text("SET lock_timeout = '2s'"))
+        again = second.get(UserAccount, account_id)
+        assert again is not None
+        assert home_for(second, again).id == made, "the second request had to wait for the first"
+        first.rollback()
+        second.rollback()
+
+    with factory() as session:
+        session.execute(sa.delete(Membership).where(Membership.account_id == account_id))
+        session.execute(sa.delete(Organization).where(Organization.id == made))
+        session.execute(sa.delete(UserAccount).where(UserAccount.id == account_id))
+        session.commit()

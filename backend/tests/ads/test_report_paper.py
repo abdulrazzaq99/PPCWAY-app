@@ -178,6 +178,38 @@ def test_the_pdf_is_printed_from_the_report_page_signed_in_as_the_asker(world: W
     assert "pageNumber" in str(job["footer"]) and "PDFezy" in str(job["footer"])
 
 
+def test_no_database_transaction_is_held_while_the_page_prints(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The browser opens the report page as the same person, and that page asks
+    the API for the figures. Anything this request still held in the database
+    would keep the page waiting on the request that is waiting for the page."""
+    app, factory, _ = world
+    held: list[bool] = []
+    real = app_module.to_pdf
+
+    def watching(url: str, **how: object) -> bytes:
+        held.append(any(s.in_transaction() for s in list(_open_sessions)))
+        return real(url, **how)
+
+    _open_sessions: list[Session] = []
+    real_init = Session.__init__
+
+    def track(self: Session, *args: object, **kwargs: object) -> None:
+        real_init(self, *args, **kwargs)  # type: ignore[arg-type]
+        _open_sessions.append(self)
+
+    monkeypatch.setattr(Session, "__init__", track)
+    monkeypatch.setattr(app_module, "to_pdf", watching)
+    with TestClient(app) as client:
+        owner = _signed_in_with_figures(client, factory)
+        _open_sessions.clear()
+        reply = client.get("/v1/reports/pdf?days=30", headers=owner)
+
+    assert reply.status_code == 200, reply.text
+    assert held == [False], "a transaction was open while the page printed"
+
+
 def test_the_pdf_is_never_kept(world: World) -> None:
     app, factory, printed = world
     with TestClient(app) as client:
