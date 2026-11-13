@@ -6,6 +6,7 @@ to their own worker, this endpoint only enqueues.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections.abc import Iterator
@@ -135,6 +136,7 @@ from ppcway.org.places import (
 from ppcway.rules.offered import changes_between, inbox_for
 from ppcway.share.links import make_link, open_link, revoke
 from ppcway.share.models import ShareLink
+from ppcway.site import models as _site_models  # noqa: F401
 
 log = logging.getLogger(__name__)
 
@@ -1721,6 +1723,407 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # refuses, which is better than sending to a 404 host.
             log.exception("MODEL_ARMOR_TEMPLATE is not a template name; chat will refuse")
             return None
+
+    # ------------------------------------------------------------------
+    # The merchant's own website: the PPCWay script, its visits and leads,
+    # and leads that became jobs sent back to Google Ads. See `ppcway.site`.
+
+    def _site_snippet(key: str) -> str:
+        base = settings.app_base_url.rstrip("/")
+        return f'<script async src="{base}/t.js" data-key="{key}"></script>'
+
+    def _place_connection(session: Session, organization_id: UUID) -> AdsConnection | None:
+        """A business's live Google Ads connection, for work nobody is signed in to."""
+        return session.scalar(
+            select(AdsConnection)
+            .where(
+                AdsConnection.organization_id == organization_id,
+                AdsConnection.revoked_at.is_(None),
+                AdsConnection.customer_id.is_not(None),
+                AdsConnection.customer_id != "",
+            )
+            .order_by(AdsConnection.created_at.desc())
+            .limit(1)
+        )
+
+    @app.post("/v1/site/collect", status_code=204)
+    async def site_collect(
+        request: Request,
+        session: Annotated[Session, Depends(get_session)],
+        x_visitor_address: Annotated[str | None, Header()] = None,
+        x_visitor_agent: Annotated[str | None, Header()] = None,
+    ) -> Response:
+        """What the script on a merchant's website reports. Public; trusts nothing.
+
+        Always the same empty answer, whatever happened: a scanner learns
+        nothing about which keys exist. What happened goes to the log.
+        """
+        from ppcway.site.collect import parse, take
+
+        raw = await request.body()
+        if len(raw) > 20_000:
+            return Response(status_code=204)
+        try:
+            event = parse(json.loads(raw or b"null"))
+        except ValueError:
+            event = None
+        if event is not None:
+            what = take(
+                session,
+                event,
+                address=(x_visitor_address or "")[:100],
+                user_agent=(x_visitor_agent or request.headers.get("user-agent", ""))[:400],
+            )
+            if what.endswith("limit"):
+                log.info("site event held back: %s", what)
+        return Response(status_code=204)
+
+    @app.get("/v1/site/config")
+    def site_config(k: str, session: Annotated[Session, Depends(get_session)]) -> dict[str, str]:
+        """What the script should also tell Google Ads, for a key. Public.
+
+        Only the `send_to` ids the merchant chose, which are in the page source
+        of any site that installs Google's own tag anyway. Nothing else.
+        """
+        from ppcway.site.models import SiteKey
+
+        site = session.scalar(select(SiteKey).where(SiteKey.key == k[:40])) if k else None
+        if site is None:
+            return {"tag": "", "form": "", "call": ""}
+        chosen = site.form_send_to or site.call_send_to
+        return {
+            "tag": chosen.split("/")[0] if chosen else "",
+            "form": site.form_send_to,
+            "call": site.call_send_to,
+        }
+
+    @app.get("/v1/site")
+    def site_read(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """The Website screen's set-up: the script, whether it is working, the switches."""
+        from ppcway.site.collect import key_for
+
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "view")
+        site = key_for(session, place.id)
+        connection = _connection(session, account)
+        return {
+            "key": site.key,
+            "snippet": _site_snippet(site.key),
+            "script_url": f"{settings.app_base_url.rstrip('/')}/t.js",
+            "installed": site.last_seen_at is not None,
+            "last_seen_at": (
+                (
+                    site.last_seen_at
+                    if site.last_seen_at.tzinfo
+                    else site.last_seen_at.replace(tzinfo=UTC)
+                ).isoformat()
+                if site.last_seen_at
+                else None
+            ),
+            "last_seen_url": site.last_seen_url,
+            "send_jobs": site.send_jobs,
+            "job_action": site.job_action,
+            "form_send_to": site.form_send_to,
+            "call_send_to": site.call_send_to,
+            "connected": bool(connection and connection.customer_id),
+            "currency": (connection.currency if connection else "") or place.currency,
+            "may_change": may(session, account, place, "approve"),
+        }
+
+    @app.get("/v1/site/choices")
+    def site_choices(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """The account's website conversion actions the script could fire, with
+        Google's `send_to` for each, read from the tag Google gives for it."""
+        from ppcway.ads import conversions as conv
+
+        account = _signed_in(session, x_session_token)
+        connection = _connection(session, account)
+        if connection is None or not connection.customer_id:
+            return {"actions": [], "reason": "Connect a Google Ads account first."}
+        keys = _read_keys(connection)
+        try:
+            said = conv.measurement(
+                connection.customer_id,
+                access_token=keys["access_token"],
+                developer_token=keys["developer_token"],
+                login_customer_id=settings.google_ads_login_customer_id,
+                api_version=keys["api_version"],
+            )
+        except Exception as exc:  # noqa: BLE001 - a read that failed is said, not raised
+            log.warning("site choices for %s not read: %s", connection.customer_id, exc)
+            return {"actions": [], "reason": "Google Ads could not be read just now."}
+        out = []
+        for action in said.get("actions", []):
+            if action.get("type") != "WEBPAGE" or action.get("status") != "ENABLED":
+                continue
+            for snippet in action.get("snippets") or []:
+                found = re.search(
+                    r"['\"]send_to['\"]\s*:\s*['\"](AW-\d+/[\w-]+)",
+                    snippet.get("event_snippet", ""),
+                )
+                if found:
+                    out.append(
+                        {
+                            "name": action["name"],
+                            "category": action.get("category_label", ""),
+                            "send_to": found.group(1),
+                        }
+                    )
+                    break
+        return {
+            "actions": out,
+            "reason": "" if out else "This account has no website conversion actions yet.",
+        }
+
+    @app.post("/v1/site/settings")
+    def site_settings(
+        body: dict[str, Any],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Change what the script does: send jobs to Google Ads, fire Google's conversions.
+
+        Switching jobs on creates the "Jobs from PPCWay leads" conversion action
+        in the account straight away, so a problem is said now rather than when
+        the first job is marked.
+        """
+        from ppcway.site.collect import key_for
+
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "approve")
+        site = key_for(session, place.id)
+        for name in ("form_send_to", "call_send_to"):
+            if name in body:
+                chosen = str(body.get(name) or "").strip()
+                if chosen and not re.fullmatch(r"AW-\d{4,15}/[\w-]{3,60}", chosen):
+                    raise HTTPException(422, "That is not a Google Ads conversion to fire.")
+                setattr(site, name, chosen)
+        if "send_jobs" in body:
+            wanted = bool(body.get("send_jobs"))
+            if wanted and not site.job_action:
+                connection = _connection(session, account)
+                if connection is None or not connection.customer_id:
+                    raise HTTPException(409, "Connect a Google Ads account first.")
+                site.job_action = _ensure_job_action(session, connection)
+            site.send_jobs = wanted
+        session.commit()
+        return site_read(session, x_session_token)
+
+    def _ensure_job_action(session: Session, connection: AdsConnection) -> str:
+        """The "Jobs from PPCWay leads" action: found if it exists, made if not."""
+        from ppcway.ads import conversions as conv
+        from ppcway.builder import conversions as changes
+        from ppcway.gateway import switch
+        from ppcway.gateway.apply import CannotApply
+        from ppcway.gateway.create import create_alone
+        from ppcway.gateway.port import Batch, GoogleRefused
+        from ppcway.site.jobs import JOB_ACTION_NAME
+
+        keys = _read_keys(connection)
+        said = conv.measurement(
+            connection.customer_id,
+            access_token=keys["access_token"],
+            developer_token=keys["developer_token"],
+            login_customer_id=settings.google_ads_login_customer_id,
+            api_version=keys["api_version"],
+        )
+        for action in said.get("actions", []):
+            if (
+                action.get("type") == "UPLOAD_CLICKS"
+                and action.get("name") == JOB_ACTION_NAME
+                and action.get("status") != "REMOVED"
+            ):
+                return str(action["resource"])
+        wanted = changes.NewAction(
+            source="offline",
+            name=JOB_ACTION_NAME,
+            category="CONVERTED_LEAD",
+            value="different",
+            amount=0,
+            count="one",
+            click_days=90,
+            primary=True,
+        )
+        try:
+            applied = create_alone(
+                session,
+                Batch(
+                    customer_id=connection.customer_id,
+                    operations=tuple(
+                        changes.create_operations([wanted], currency=connection.currency)
+                    ),
+                    partial_failure=True,
+                ),
+                door=_conversion_door(connection),
+                gate_open=switch.gate(session, default=settings.ads_writes_enabled).is_open,
+            )
+        except CannotApply as exc:
+            raise HTTPException(409, str(exc)) from None
+        except GoogleRefused as exc:
+            raise HTTPException(422, str(exc)) from None
+        made = applied.landed[0] if applied.landed else None
+        if not made:
+            why = applied.refused[0].message if applied.refused else "Google did not say why."
+            raise HTTPException(422, f"Google would not create the jobs conversion: {why}")
+        return made
+
+    @app.get("/v1/site/stats")
+    def site_stats(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+        days: int = 30,
+    ) -> dict[str, Any]:
+        from ppcway.site.stats import overview
+
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "view")
+        connection = _connection(session, account)
+        return overview(
+            session,
+            place.id,
+            days=max(1, min(days, 365)),
+            time_zone=(connection.time_zone if connection else "") or "",
+        )
+
+    @app.get("/v1/site/leads")
+    def site_leads(
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+        status: str = "",
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        from ppcway.site.stats import lead_list
+
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "view")
+        return {"leads": lead_list(session, place.id, status=status, limit=limit)}
+
+    @app.post("/v1/site/leads/{lead_id}")
+    def site_mark_lead(
+        lead_id: UUID,
+        body: dict[str, Any],
+        session: Annotated[Session, Depends(get_session)],
+        x_session_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """Say what a lead turned out to be. A job, with sending on, goes to
+        Google Ads now, or on the hourly pass if Google is not ready for it."""
+        from ppcway.site import jobs
+        from ppcway.site.collect import key_for
+        from ppcway.site.models import SiteLead
+        from ppcway.site.stats import STATUSES, as_dict
+
+        account = _signed_in(session, x_session_token)
+        place = _home(session, account)
+        _allowed(session, account, place, "approve")
+        lead = session.get(SiteLead, lead_id)
+        if lead is None or lead.organization_id != place.id:
+            raise HTTPException(404, "No such lead.")
+        status = str(body.get("status") or "")
+        if status not in STATUSES:
+            raise HTTPException(422, "Say whether it was a job, not a job, or spam.")
+        value: float | None = None
+        if status == "job" and body.get("value") not in (None, ""):
+            try:
+                value = round(float(body["value"]), 2)
+            except (TypeError, ValueError):
+                raise HTTPException(422, "The job's value has to be a number.") from None
+            if not 0 <= value <= 10_000_000:
+                raise HTTPException(422, "The job's value has to be between 0 and 10,000,000.")
+        site = key_for(session, place.id)
+        connection = _connection(session, account)
+        jobs.mark(
+            lead,
+            status=status,
+            value=value,
+            currency=(connection.currency if connection else "") or place.currency,
+            by=account.id,
+            sending=site.send_jobs and bool(site.job_action),
+        )
+        session.commit()
+        if lead.upload == "waiting" and connection is not None:
+            _send_jobs(session, place.id, connection)
+            session.refresh(lead)
+        return as_dict(lead)
+
+    def _send_jobs(
+        session: Session, organization_id: UUID, connection: AdsConnection
+    ) -> dict[str, int]:
+        """Every job this business has waiting, sent to Google Ads in one request."""
+        from ppcway.gateway import send as sending
+        from ppcway.gateway import switch
+        from ppcway.gateway.apply import CannotApply
+        from ppcway.gateway.create import upload_alone
+        from ppcway.gateway.port import GoogleRefused, Uploads
+        from ppcway.site import jobs
+        from ppcway.site.collect import key_for
+
+        site = key_for(session, organization_id)
+        leads = jobs.waiting(session, organization_id)
+        if not leads or not site.send_jobs or not site.job_action or not connection.customer_id:
+            return {"sent": 0, "later": 0, "failed": 0}
+        conversions = tuple(jobs.click_conversion(lead, site.job_action) for lead in leads)
+        try:
+            door = sending.doors(settings)(connection)
+            if not isinstance(door, Uploads):
+                raise sending.NoDoor("This deployment cannot send conversions to Google Ads.")
+            uploaded = upload_alone(
+                session,
+                connection.customer_id,
+                conversions,
+                door=door,
+                gate_open=switch.gate(session, default=settings.ads_writes_enabled).is_open,
+            )
+        except (sending.NoDoor, CannotApply) as exc:
+            session.rollback()
+            jobs.hold_all(leads, str(exc))
+            session.commit()
+            return {"sent": 0, "later": len(leads), "failed": 0}
+        except GoogleRefused as exc:
+            log.warning("jobs for %s refused whole: %s", connection.customer_id, exc)
+            for lead in leads:
+                lead.upload, lead.upload_note = "failed", str(exc)[:300]
+            session.commit()
+            return {"sent": 0, "later": 0, "failed": len(leads)}
+        outcome = jobs.read_outcome(
+            leads,
+            uploaded.landed,
+            {one.at: (one.code, one.message) for one in uploaded.refused},
+        )
+        session.commit()
+        return {"sent": outcome.sent, "later": outcome.later, "failed": outcome.failed}
+
+    @app.post("/v1/internal/site")
+    def scheduled_site(
+        x_sync_key: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        """The hourly pass: jobs Google was not ready for, and data past its keep."""
+        from ppcway.site import jobs
+
+        expected = settings.sync_key.get_secret_value() if settings.sync_key else ""
+        if not expected or not x_sync_key or not compare_digest(x_sync_key, expected):
+            raise HTTPException(403, "Not for you.")
+        totals = {"sent": 0, "later": 0, "failed": 0, "businesses": 0}
+        with session_factory()() as session:
+            for organization_id in jobs.businesses_waiting(session):
+                connection = _place_connection(session, organization_id)
+                if connection is None:
+                    continue
+                done = _send_jobs(session, organization_id, connection)
+                totals["businesses"] += 1
+                for name in ("sent", "later", "failed"):
+                    totals[name] += done[name]
+            purged = jobs.purge(session)
+        return {**totals, "purged": purged}
 
     @app.post("/v1/internal/nightly")
     def scheduled_nightly(

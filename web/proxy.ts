@@ -42,6 +42,12 @@ const OPEN = [
   "/api/audit",
   "/api/places",
   "/api/public",
+  // The script on merchants' websites, and where it reports. Visitors to a
+  // merchant's site have no PPCWay password and no PPCWay account.
+  "/t.js",
+  "/api/collect",
+  // The WordPress plugin, which the merchant's web person may download.
+  "/downloads",
 ];
 
 /*
@@ -68,6 +74,7 @@ const SIGNED_IN_ONLY = [
   "/agency",
   "/admin",
   "/audit/mine",
+  "/website",
 ];
 const SESSION_COOKIE = "ppcway_session";
 

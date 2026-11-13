@@ -266,6 +266,15 @@ class Applied:
         return not self.refused and all(name is not None for name in self.landed)
 
 
+@dataclass(frozen=True, slots=True)
+class Uploaded:
+    """What became of conversions uploaded to Google: one entry per conversion
+    sent, at the same index, True when Google took it."""
+
+    landed: tuple[bool, ...]
+    refused: tuple[Refused, ...] = ()
+
+
 class GoogleRefused(RuntimeError):
     """Google would not take the request at all, as opposed to part of it.
 
@@ -291,6 +300,16 @@ class Door(Protocol):
     """The one door to Google. Only `ppcway.gateway` may hold one of these."""
 
     def mutate(self, batch: Batch) -> Applied: ...
+
+
+@runtime_checkable
+class Uploads(Protocol):
+    """The same door, for conversions that happened away from Google: a lead
+    that became a job, attached to the ad click that brought it."""
+
+    def upload_clicks(
+        self, customer_id: str, conversions: tuple[dict[str, Any], ...]
+    ) -> Uploaded: ...
 
 
 @runtime_checkable

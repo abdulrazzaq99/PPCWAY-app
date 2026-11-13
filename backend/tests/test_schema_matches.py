@@ -42,6 +42,8 @@ from ppcway.opt import consent as _consent  # noqa: F401
 from ppcway.opt import models as _opt  # noqa: F401
 from ppcway.org import models as _org  # noqa: F401
 from ppcway.share import models as _share  # noqa: F401
+from ppcway.site import models as _site  # noqa: F401
+from ppcway.staff import models as _staff  # noqa: F401
 
 #: Alembic's own bookkeeping, which no model describes.
 ITS_OWN = {"alembic_version", "alembic_version_app"}

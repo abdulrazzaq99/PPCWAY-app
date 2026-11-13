@@ -33,6 +33,7 @@ from ppcway.gateway.port import (
     Operation,
     Refused,
     Together,
+    Uploaded,
 )
 
 # Re-exported: this module raises it, and the seam defines it.
@@ -122,6 +123,44 @@ class GoogleDoor:
         finally:
             if own:
                 c.close()
+
+    def upload_clicks(self, customer_id: str, conversions: tuple[dict[str, Any], ...]) -> Uploaded:
+        """Conversions that happened away from Google, attached to their ad clicks.
+
+        `ConversionUploadService.UploadClickConversions`, which Google only
+        accepts with partial failure on: one job Google will not take (a click
+        it has not seen yet, say) must not stop the rest. The answer is read
+        the same way as a mutate's, one entry per conversion sent.
+        """
+        own = self.client is None
+        c = self.client or httpx.Client(timeout=httpx.Timeout(120))
+        url = f"{API}/{self.keys.api_version}/customers/{customer_id}:uploadClickConversions"
+        headers = {
+            "Authorization": f"Bearer {self.keys.access_token}",
+            "developer-token": self.keys.developer_token,
+            "content-type": "application/json",
+        }
+        if self.keys.login_customer_id:
+            headers["login-customer-id"] = self.keys.login_customer_id
+        try:
+            reply = c.post(
+                url,
+                json={"conversions": list(conversions), "partialFailure": True},
+                headers=headers,
+            )
+        except httpx.HTTPError as exc:
+            raise GoogleRefused(f"Google could not be reached: {exc}") from None
+        finally:
+            if own:
+                c.close()
+        if reply.status_code >= 400:
+            raise GoogleRefused(_why(reply))
+        said = reply.json()
+        refused = tuple(_refusals(said.get("partialFailureError") or {}, field="conversions"))
+        failed_at = {one.at for one in refused}
+        return Uploaded(
+            landed=tuple(i not in failed_at for i in range(len(conversions))), refused=refused
+        )
 
     def _send(self, c: httpx.Client, batch: Batch) -> Applied:
         service, _key = _SERVICE[batch.operations[0].resource_type]
@@ -354,12 +393,16 @@ def _read(said: dict[str, Any], how_many: int) -> Applied:
     return Applied(landed=tuple(landed), refused=refused, operations_used=how_many)
 
 
-def _refusals(error: dict[str, Any]) -> list[Refused]:
-    """Every operation Google named as refused, with the index it was at."""
+def _refusals(error: dict[str, Any], *, field: str = "operations") -> list[Refused]:
+    """Every operation Google named as refused, with the index it was at.
+
+    `field` is the list the index points into: `operations` for a mutate,
+    `conversions` for an upload.
+    """
     out: list[Refused] = []
     for detail in error.get("details") or []:
         for failure in detail.get("errors") or []:
-            at = _index_of(failure.get("location") or {})
+            at = _index_of(failure.get("location") or {}, field=field)
             code = _code_of(failure.get("errorCode") or {})
             out.append(
                 Refused(
@@ -371,7 +414,7 @@ def _refusals(error: dict[str, Any]) -> list[Refused]:
     return out
 
 
-def _index_of(location: dict[str, Any]) -> int | None:
+def _index_of(location: dict[str, Any], *, field: str = "operations") -> int | None:
     """Which operation this error was about.
 
     Google reports it as a list of field path elements, one of which carries
@@ -379,7 +422,7 @@ def _index_of(location: dict[str, Any]) -> int | None:
     elements for a nested field and the index is not always first.
     """
     for part in location.get("fieldPathElements") or []:
-        if part.get("fieldName") == "operations" and "index" in part:
+        if part.get("fieldName") == field and "index" in part:
             try:
                 return int(part["index"])
             except (TypeError, ValueError):

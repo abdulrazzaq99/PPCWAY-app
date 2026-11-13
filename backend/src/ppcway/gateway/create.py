@@ -26,12 +26,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy.orm import Session
 
 from ppcway.gateway import quota, switch
 from ppcway.gateway.apply import CannotApply
-from ppcway.gateway.port import Applied, Batch, Builds, Created, Door, Together
+from ppcway.gateway.port import Applied, Batch, Builds, Created, Door, Together, Uploaded, Uploads
 
 
 def create_together(
@@ -97,3 +98,32 @@ def create_alone(
     quota.spend(session, batch.customer_id, batch.how_many, today=at.date())
     session.commit()
     return door.mutate(batch)
+
+
+def upload_alone(
+    session: Session,
+    customer_id: str,
+    conversions: tuple[dict[str, Any], ...],
+    *,
+    door: Uploads,
+    gate_open: bool,
+    now: datetime | None = None,
+) -> Uploaded:
+    """Jobs the merchant marked, sent as conversions behind the same switches.
+
+    Not an automated change: the merchant said each one was a job. So, like a
+    launch, the guardrails for Otto's proposals do not decide it, and the
+    switches still do, because "stop every write" has to mean every write.
+    Each conversion is counted against the day like an operation.
+    """
+    at = now or datetime.now(UTC)
+    standing = switch.may_write(session, customer_id=customer_id, gate_open=gate_open)
+    if not standing.may_write:
+        raise CannotApply(standing.because)
+    if quota.room_today(session, customer_id, today=at.date()).left < len(conversions):
+        raise CannotApply(
+            "This account has used its Google Ads allowance for today. Try again tomorrow."
+        )
+    quota.spend(session, customer_id, len(conversions), today=at.date())
+    session.commit()
+    return door.upload_clicks(customer_id, conversions)
