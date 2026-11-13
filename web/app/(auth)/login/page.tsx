@@ -1,8 +1,9 @@
 "use client";
 
-import { Suspense, useState, type FormEvent } from "react";
+import { Suspense, useState, type FormEvent, type MouseEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthCard, AuthShell } from "@/components/auth/auth-shell";
+import { CodeStep, askForCode, looksLikeAnAddress, type Asked } from "@/components/auth/code-step";
 import { GoogleButton } from "@/components/auth/google-button";
 import { Button, TextLink } from "@/components/ui/button";
 import { Field, Input, PasswordInput } from "@/components/ui/field";
@@ -27,6 +28,34 @@ function LoginPageInner() {
   const next = params.get("next") || "";
   const [working, setWorking] = useState(false);
   const [trouble, setTrouble] = useState("");
+  /* Set once a code has been asked for: the card becomes "Check your email". */
+  const [codeFor, setCodeFor] = useState<{
+    email: string;
+    first: Extract<Asked, { ok: true }>;
+  } | null>(null);
+  const [asking, setAsking] = useState(false);
+  /* Kept so "Use a different address" comes back with it still typed. */
+  const [lastEmail, setLastEmail] = useState("");
+
+  /*
+    The other way in with an address: a code by email instead of the password.
+    Reads the address already typed in the same form, so nobody types it twice.
+  */
+  async function emailCode(event: MouseEvent<HTMLButtonElement>) {
+    const form = event.currentTarget.form;
+    const email = String((form ? new FormData(form).get("email") : "") ?? "").trim();
+    if (!looksLikeAnAddress(email)) {
+      setTrouble("Type your email address first, and we will send a code to it.");
+      return;
+    }
+    setLastEmail(email);
+    setAsking(true);
+    setTrouble("");
+    const said = await askForCode(email);
+    setAsking(false);
+    if (said.ok) setCodeFor({ email, first: said });
+    else setTrouble(said.error);
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -117,48 +146,60 @@ function LoginPageInner() {
       below={shell.below}
       brand={agency ? "brightpath" : "ppcway"}
     >
-      <AuthCard title={shell.title} onSubmit={submit} intro={null}>
-        <GoogleButton next={next} />
-        <p className="text-faint text-[13px] leading-4 font-medium">or use your email</p>
-        <Field label="Email">
-          {(id) => (
-            <Input
-              id={id}
-              name="email"
-              type="email"
-              autoComplete="email"
-              placeholder="you@yourbusiness.ca"
-              defaultValue={agency ? "owner@northgatehvac.ca" : "dana@alphaplumbing.ca"}
-            />
-          )}
-        </Field>
-        <Field
-          label="Password"
-          labelAside={
-            <TextLink href="/forgot-password" size={13} className="tap">
-              Forgot it?
-            </TextLink>
-          }
-        >
-          {(id) => (
-            <PasswordInput
-              id={id}
-              name="password"
-              autoComplete="current-password"
-              defaultValue="correct horse"
-            />
-          )}
-        </Field>
-        {trouble ? (
-          <p className="text-red text-[14px] leading-[18px] font-medium" role="alert">
-            {trouble}
-          </p>
-        ) : null}
+      {codeFor ? (
+        <CodeStep
+          email={codeFor.email}
+          next={next}
+          first={codeFor.first}
+          cta="Sign in"
+          onBack={() => setCodeFor(null)}
+        />
+      ) : (
+        <AuthCard title={shell.title} onSubmit={submit} intro={null}>
+          <GoogleButton next={next} />
+          <p className="text-faint text-[13px] leading-4 font-medium">or use your email</p>
+          <Field label="Email">
+            {(id) => (
+              <Input
+                id={id}
+                name="email"
+                type="email"
+                autoComplete="email"
+                placeholder="you@yourbusiness.ca"
+                defaultValue={lastEmail}
+              />
+            )}
+          </Field>
+          <Field
+            label="Password"
+            labelAside={
+              <TextLink href="/forgot-password" size={13} className="tap">
+                Forgot it?
+              </TextLink>
+            }
+          >
+            {(id) => <PasswordInput id={id} name="password" autoComplete="current-password" />}
+          </Field>
+          {trouble ? (
+            <p className="text-red text-[14px] leading-[18px] font-medium" role="alert">
+              {trouble}
+            </p>
+          ) : null}
 
-        <Button type="submit" full className="h-12" working={working && "Signing in"}>
-          {shell.cta}
-        </Button>
-      </AuthCard>
+          <Button type="submit" full className="h-12" working={working && "Signing in"}>
+            {shell.cta}
+          </Button>
+          <Button
+            variant="secondary"
+            full
+            className="h-12"
+            onClick={emailCode}
+            working={asking && "Sending a code"}
+          >
+            Email me a code instead
+          </Button>
+        </AuthCard>
+      )}
     </AuthShell>
   );
 }

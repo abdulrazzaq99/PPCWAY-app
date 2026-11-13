@@ -82,6 +82,9 @@ from ppcway.auth.accounts import (
     start_reset,
     verify,
 )
+from ppcway.auth.codes import GOOD_FOR as CODE_GOOD_FOR
+from ppcway.auth.codes import Answer as CodeAnswer
+from ppcway.auth.codes import post_code, sign_in_by_code
 from ppcway.auth.google import SignInRefused, verify_google_token
 from ppcway.auth.models import UserAccount
 from ppcway.auth.opening import NOT_YET, may_come_in, open_to_everybody
@@ -111,6 +114,7 @@ from ppcway.mail.letters import (
     fix_list,
     invitation,
     reset_password,
+    sign_in_code,
     verify_email,
 )
 from ppcway.mail.send import Letter, NotSent, Post, send
@@ -211,6 +215,23 @@ class PasswordIn(BaseModel):
 
 class TokenIn(BaseModel):
     token: str = Field(min_length=10, max_length=200)
+
+
+class CodeAskIn(BaseModel):
+    """An address to send a sign-in code to."""
+
+    email: EmailStr
+
+
+class CodeSignInIn(BaseModel):
+    """The address again, and the six digits that came to it.
+
+    `name` is only used when the address is new and this is a sign-up.
+    """
+
+    email: EmailStr
+    code: str = Field(min_length=1, max_length=12)
+    name: str = Field(default="", max_length=200)
 
 
 class ResetIn(BaseModel):
@@ -979,6 +1000,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # One message for a wrong address and a wrong password: which it was
             # is not a stranger's business.
             raise HTTPException(401, "That address and password do not match.")
+        token = sign_in_existing(session, account)
+        return SignedInOut(token=token, person=PersonOut.of(account))
+
+    @app.post("/v1/auth/code")
+    def ask_for_a_code(
+        body: CodeAskIn,
+        session: Annotated[Session, Depends(get_session)],
+    ) -> dict[str, Any]:
+        """Email six digits that sign this address in, or make its account.
+
+        The same reply whether or not the address has an account; an unknown
+        one is a sign-up. See `auth.codes`.
+        """
+        _may_sign_in(session, str(body.email))
+        posted = post_code(session, str(body.email))
+        if not posted.sent:
+            if posted.for_the_hour:
+                raise HTTPException(
+                    429,
+                    "That address has had several codes in the last hour. "
+                    f"Try again in {max(1, round(posted.wait_seconds / 60))} minutes,"
+                    " or sign in another way.",
+                )
+            return {"sent": False, "wait_seconds": posted.wait_seconds}
+        minutes = int(CODE_GOOD_FOR.total_seconds() // 60)
+        try:
+            send(_post(), sign_in_code(to=str(body.email), code=posted.code, minutes=minutes))
+        except NotSent as exc:
+            log.warning("a sign-in code did not go: %s", exc)
+            raise HTTPException(502, "We could not send that email just now.") from exc
+        return {"sent": True, "wait_seconds": 0, "minutes": minutes}
+
+    @app.post("/v1/auth/code/check", response_model=SignedInOut)
+    def sign_in_with_a_code(
+        body: CodeSignInIn,
+        session: Annotated[Session, Depends(get_session)],
+    ) -> SignedInOut:
+        """Six digits from the email, and a session."""
+        _may_sign_in(session, str(body.email))
+        answer, account = sign_in_by_code(session, str(body.email), body.code, name=body.name)
+        if answer is not CodeAnswer.RIGHT or account is None:
+            raise HTTPException(400, answer.said)
         token = sign_in_existing(session, account)
         return SignedInOut(token=token, person=PersonOut.of(account))
 

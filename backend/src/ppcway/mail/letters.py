@@ -110,6 +110,32 @@ def reset_password(*, to: str, name: str, link: str) -> Letter:
     return Letter(to=to, subject="Set a new PPCway password", text=text, html=html)
 
 
+def sign_in_code(*, to: str, code: str, minutes: int) -> Letter:
+    """The six digits that sign somebody in, or make their account.
+
+    The code is in the subject too: a phone shows the subject on the lock
+    screen, and that is usually all somebody needs to read. No link, on
+    purpose: a link that signs you in works for whoever the email is forwarded
+    to, and the code only works on the page that asked for it.
+    """
+    text = (
+        f"Your PPCway sign-in code is {code}\n\n"
+        "Type it on the page that asked for it. "
+        f"It works once, for {minutes} minutes.\n\n"
+        "If you did not ask for it, ignore this. Nobody can sign in without the "
+        "code, and nothing about your account has changed.\n\n"
+        f"{FOOT}"
+    )
+    html = _wrap(
+        f"Your sign-in code is {code}",
+        "<p>Type it on the page that asked for it. "
+        f"It works once, for {minutes} minutes.</p>"
+        "<p>If you did not ask for it, ignore this. Nobody can sign in without the "
+        "code, and nothing about your account has changed.</p>",
+    )
+    return Letter(to=to, subject=f"{code} is your PPCway sign-in code", text=text, html=html)
+
+
 def audit_ready(*, to: str, business: str, score: int, link: str, paper: bytes = b"") -> Letter:
     """The free audit, when somebody asked for it by email.
 

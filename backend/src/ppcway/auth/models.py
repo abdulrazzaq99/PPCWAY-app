@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Uuid, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ppcway.db.base import Base
@@ -72,3 +72,28 @@ class Session(Base):
     #: The last time this cookie was presented. A session in daily use rolls its
     #: expiry forward; one left alone for a month stops working, as it should.
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SignInCode(Base):
+    """Six digits sent to an address, which sign that address in once.
+
+    Keyed by the address rather than the account, because somebody signing up
+    this way has no account until the code comes back: the account is made
+    when the address is proved, not when somebody types it.
+
+    The code is held as an Argon2 hash, not a plain one. Six digits are only a
+    million possibilities, and a plain hash of each takes a laptop under a
+    second to try; Argon2 makes the same search take hours, long after the code
+    has expired.
+    """
+
+    __tablename__ = "account_code"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
+    #: Lower-cased, as typed. Every code ever sent to it, newest last.
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    code_hash: Mapped[str] = mapped_column(String(255))
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    #: Wrong guesses so far. At the limit the code is spent.
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

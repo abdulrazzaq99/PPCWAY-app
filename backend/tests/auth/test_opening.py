@@ -124,6 +124,25 @@ def test_a_stranger_cannot_sign_in_with_a_password(
     assert said.status_code == 403
 
 
+def test_a_stranger_cannot_get_a_sign_in_code(
+    latched: tuple[FastAPI, sessionmaker[Session]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A code is a sign-up for a new address, so it answers to the same latch,
+    and no email goes to an address that could not use it."""
+    app, _ = latched
+    sent: list[object] = []
+    monkeypatch.setattr(api_module, "send", lambda *a, **k: sent.append(a))
+    with TestClient(app) as client:
+        asked = client.post("/v1/auth/code", json={"email": "stranger@example.com"})
+        checked = client.post(
+            "/v1/auth/code/check", json={"email": "stranger@example.com", "code": "123456"}
+        )
+    assert asked.status_code == 403
+    assert asked.json()["detail"] == NOT_YET
+    assert checked.status_code == 403
+    assert sent == []
+
+
 def test_a_named_address_still_gets_in(latched: tuple[FastAPI, sessionmaker[Session]]) -> None:
     app, _ = latched
     with TestClient(app) as client:
